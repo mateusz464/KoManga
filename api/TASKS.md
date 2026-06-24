@@ -81,12 +81,12 @@
 **Description:** Implement the client against the real Suwayomi GraphQL schema, satisfying API-201. Include retry/timeout handling.
 **Acceptance criteria:**
 - All API-201 tests pass.
-- Verified against a live Suwayomi instance (manual check noted in PR). _(Pending: no live Suwayomi available in this environment — run once API-203 brings one up.)_
+- Verified against a live Suwayomi instance (manual check noted in PR). _(2026-06-24: ran against live Suwayomi **v2.2.2100** via the API-203 stack — **FAILED, schema drift**. `fetchSourceManga` is a **Mutation**, not a `Query` field; `manga(id:)` and `chapter(id:)` take **`Int!`**, not `String!`. `listSources()` happy path + GraphQL-error/transport-error normalisation all pass. Adapter GraphQL documents must be fixed before this criterion is met — re-open API-202.)_
 - Timeouts and transport errors surface as typed errors.
 **Blocked by:** API-201.
 **Estimate:** M
 
-### API-203 — Suwayomi service in Compose (internal only)
+### API-203 — Suwayomi service in Compose (internal only) — **Done**
 **Description:** Add the Suwayomi service to `docker-compose.yml` on an internal network (not publicly reachable), with a named data volume. First infra ticket, pulled in here because integration needs a real instance.
 **Acceptance criteria:**
 - `docker compose up suwayomi` starts a healthy instance.
