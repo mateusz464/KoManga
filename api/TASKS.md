@@ -38,7 +38,7 @@
 **Blocked by:** API-101.
 **Estimate:** S
 
-### API-103 — Config & secrets loading
+### API-103 — Config & secrets loading — **Done**
 **Description:** Centralised, typed config module loading from environment (Suwayomi URL, auth token/credential, cache limits, port). Fail fast with a clear error on missing required values.
 **Acceptance criteria:**
 - Config is accessed through one typed module, never `process.env` scattered around.
