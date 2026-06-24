@@ -69,7 +69,7 @@
 
 > The adapter that isolates the rest of the API from Suwayomi's GraphQL schema. Everything downstream depends on this and mocks it in tests.
 
-### API-201 — [TEST] Suwayomi client contract
+### API-201 — [TEST] Suwayomi client contract — **Done**
 **Description:** Define and test the interface our code uses to talk to Suwayomi (methods for list sources, search, manga details, chapter list, fetch raw page). Tests run against a mocked GraphQL transport.
 **Acceptance criteria:**
 - An interface (port) for the Suwayomi client exists and is documented.
