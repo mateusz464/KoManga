@@ -55,7 +55,7 @@
 **Blocked by:** API-102.
 **Estimate:** S
 
-### API-105 — Error handling & response contract (impl)
+### API-105 — Error handling & response contract (impl) — **Done**
 **Description:** Implement centralised error middleware and the standard response envelope to satisfy API-104.
 **Acceptance criteria:**
 - All API-104 tests pass.
