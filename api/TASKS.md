@@ -20,7 +20,7 @@
 
 > Minimal scaffold only — just enough to build, run, lint, and test. Infra (Docker services, etc.) is added by the feature that first needs it.
 
-### API-101 — Initialise TypeScript Node project
+### API-101 — Initialise TypeScript Node project — **Done**
 **Description:** Create the repo skeleton: `package.json`, TypeScript config, project structure (`src/`, `test/`), and a runnable entrypoint that starts an HTTP server with a `/health` route.
 **Acceptance criteria:**
 - `npm install` succeeds from a clean clone.
@@ -29,7 +29,7 @@
 **Dependencies:** none.
 **Estimate:** S
 
-### API-102 — Test & lint tooling
+### API-102 — Test & lint tooling — **Done**
 **Description:** Add the test runner, an HTTP-level test helper, linter, and formatter. Wire npm scripts (`test`, `lint`, `format`).
 **Acceptance criteria:**
 - `npm test` runs and reports (a trivial passing test is fine).
@@ -47,7 +47,7 @@
 **Blocked by:** API-101.
 **Estimate:** S
 
-### API-104 — [TEST] Error handling & response contract
+### API-104 — [TEST] Error handling & response contract — **Done**
 **Description:** Write tests defining the standard JSON error shape, status-code mapping, and a 404 fallback.
 **Acceptance criteria:**
 - Tests assert a consistent error body shape across thrown errors.
