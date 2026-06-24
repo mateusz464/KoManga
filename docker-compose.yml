@@ -1,15 +1,5 @@
-# docker-compose.yml — KoManga stack (Mac Mini, single host).
-#
-# Built up ticket by ticket. The `api` and `cloudflared` services are added
-# later (API-801 / API-802). API-203 adds only `suwayomi`: the Tachiyomi source
-# engine the API talks to over GraphQL.
-#
-# Network policy (RFC §3, §9): Suwayomi is NEVER published to the host's public
-# interface. It is reachable only by other services on the internal `komanga`
-# network, via the `suwayomi` hostname (matches SUWAYOMI_URL in api/.env.example).
-# The network is a normal bridge — not `internal: true` — because Suwayomi needs
-# outbound internet access to scrape manga sources; it just has no inbound port
-# mapping to the host.
+# KoManga stack. The `api` and `cloudflared` services are added later
+# (API-801 / API-802); for now just `suwayomi`.
 
 services:
   suwayomi:
@@ -18,24 +8,22 @@ services:
     restart: unless-stopped
     networks:
       - komanga
-    # No `ports:` mapping on purpose — nothing is published to the host.
-    # `expose` documents the in-network port for other Compose services only.
+    # No published ports: Suwayomi must never be reachable from the host's
+    # public interface (RFC §9) — only in-network, via the `suwayomi` hostname.
     expose:
       - "4567"
     volumes:
-      # Named volume → Suwayomi's data (catalogue, installed sources, settings)
-      # survives container restarts and recreation.
       - suwayomi-data:/home/suwayomi/.local/share/Tachidesk
     healthcheck:
-      # Unauthenticated status endpoint; marks the service healthy once the HTTP
-      # server is accepting requests, which is what `depends_on` waits for.
-      # Image ships curl (not wget), so probe with curl.
+      # Image ships curl, not wget.
       test: ["CMD", "curl", "-fsS", "http://localhost:4567/api/v1/settings/about"]
       interval: 30s
       timeout: 10s
       retries: 5
       start_period: 90s
 
+# A plain bridge, not `internal: true`: Suwayomi needs outbound internet to
+# scrape sources; it just has no inbound port mapping to the host.
 networks:
   komanga:
     driver: bridge

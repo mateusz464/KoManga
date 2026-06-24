@@ -1,17 +1,6 @@
-// The minimal GraphQL seam the Suwayomi adapter depends on. Keeping it this thin
-// (a) stops graphql-request types leaking into our code, and (b) lets the
-// adapter's mapping/error logic be tested against a mocked transport (API-201)
-// without a live GraphQL server. The concrete implementation (API-202) wraps
-// graphql-request's GraphQLClient and adds timeout + retry handling.
-
 import { GraphQLClient } from "graphql-request";
 
 export interface GraphQLTransport {
-  /**
-   * Execute a GraphQL document with optional variables, resolving with the raw
-   * response data. Rejects on GraphQL errors and transport/network failures —
-   * the adapter normalises those into a typed SuwayomiError.
-   */
   request(
     document: string,
     variables?: Record<string, unknown>,
@@ -19,13 +8,9 @@ export interface GraphQLTransport {
 }
 
 export interface GraphQLTransportOptions {
-  /** Absolute URL of the Suwayomi GraphQL endpoint. */
   readonly endpoint: string;
-  /** Bearer/credential header value sent on every request, if any. */
   readonly authToken?: string;
-  /** Per-request timeout in milliseconds. */
   readonly timeoutMs?: number;
-  /** Number of retry attempts on transport/network failure (not GraphQL errors). */
   readonly retries?: number;
 }
 
@@ -33,12 +18,6 @@ const DEFAULT_TIMEOUT_MS = 10_000;
 const DEFAULT_RETRIES = 2;
 const RETRY_BASE_DELAY_MS = 100;
 
-/**
- * Real transport backed by graphql-request. Adds a per-request timeout (via an
- * AbortSignal) and a small bounded retry with backoff for transient transport
- * failures. GraphQL errors (a valid response carrying an `errors` array) are not
- * retried — they are deterministic and surfaced straight away.
- */
 export class GraphQLRequestTransport implements GraphQLTransport {
   private readonly client: GraphQLClient;
   private readonly timeoutMs: number;

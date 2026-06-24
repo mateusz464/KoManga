@@ -81,7 +81,7 @@
 **Description:** Implement the client against the real Suwayomi GraphQL schema, satisfying API-201. Include retry/timeout handling.
 **Acceptance criteria:**
 - All API-201 tests pass.
-- Verified against a live Suwayomi instance (manual check noted in PR). _(2026-06-24: ran against live Suwayomi **v2.2.2100** via the API-203 stack — **FAILED, schema drift**. `fetchSourceManga` is a **Mutation**, not a `Query` field; `manga(id:)` and `chapter(id:)` take **`Int!`**, not `String!`. `listSources()` happy path + GraphQL-error/transport-error normalisation all pass. Adapter GraphQL documents must be fixed before this criterion is met — re-open API-202.)_
+- Verified against a live Suwayomi instance (manual check noted in PR). _(2026-06-24: **PASS** against live Suwayomi **v2.2.2100** via the API-203 stack, after fixing schema drift the live check caught — search is a `fetchSourceManga` **mutation** with required `type: SEARCH`; `manga`/`chapter` ids are **`Int!`** (adapter coerces); `MangaType.genres`→`genre` (aliased); chapter pages via the `fetchChapterPages` **mutation**. All 5 adapter documents validate against the live schema; `listSources()` maps real data; GraphQL + transport/timeout errors normalise to typed `SuwayomiError` (502). 29 unit tests + lint + type-check green.)_
 - Timeouts and transport errors surface as typed errors.
 **Blocked by:** API-201.
 **Estimate:** M

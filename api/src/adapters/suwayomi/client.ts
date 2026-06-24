@@ -1,10 +1,3 @@
-// graphql-request adapter implementing the SuwayomiClient port (API-202). All
-// Suwayomi GraphQL coupling lives here: the documents below and the mapping from
-// raw response shapes to domain types. Every method runs through `run()`, which
-// normalises any transport rejection (GraphQL error, timeout, network failure)
-// into a single typed SuwayomiError so the underlying reason never reaches the
-// caller (CLAUDE.md §6, §13).
-
 import {
   SuwayomiError,
   type Chapter,
@@ -19,8 +12,6 @@ import {
 } from "../../services/ports/suwayomi-client.js";
 import type { GraphQLTransport } from "./transport.js";
 
-// --- GraphQL documents (the only place that knows Suwayomi's schema) ---------
-
 const LIST_SOURCES = /* GraphQL */ `
   query ListSources {
     sources {
@@ -34,9 +25,12 @@ const LIST_SOURCES = /* GraphQL */ `
   }
 `;
 
+// Search is a mutation (it triggers a live source fetch) and `type` is required.
 const SEARCH = /* GraphQL */ `
-  query Search($source: LongString!, $query: String!, $page: Int!) {
-    fetchSourceManga(input: { source: $source, query: $query, page: $page }) {
+  mutation Search($source: LongString!, $query: String!, $page: Int!) {
+    fetchSourceManga(
+      input: { type: SEARCH, source: $source, query: $query, page: $page }
+    ) {
       mangas {
         id
         title
@@ -48,7 +42,7 @@ const SEARCH = /* GraphQL */ `
 `;
 
 const MANGA_DETAILS = /* GraphQL */ `
-  query MangaDetails($id: String!) {
+  query MangaDetails($id: Int!) {
     manga(id: $id) {
       id
       sourceId
@@ -58,13 +52,13 @@ const MANGA_DETAILS = /* GraphQL */ `
       description
       thumbnailUrl
       status
-      genres
+      genres: genre
     }
   }
 `;
 
 const LIST_CHAPTERS = /* GraphQL */ `
-  query ListChapters($id: String!) {
+  query ListChapters($id: Int!) {
     manga(id: $id) {
       chapters {
         nodes {
@@ -80,16 +74,14 @@ const LIST_CHAPTERS = /* GraphQL */ `
   }
 `;
 
+// Page URLs come from this mutation, not from a field on the chapter.
 const FETCH_CHAPTER_PAGES = /* GraphQL */ `
-  query ChapterPages($chapterId: String!) {
-    chapter(id: $chapterId) {
-      pageCount
+  mutation ChapterPages($chapterId: Int!) {
+    fetchChapterPages(input: { chapterId: $chapterId }) {
       pages
     }
   }
 `;
-
-// --- Raw response shapes (graphql-request returns `unknown`) ------------------
 
 interface RawSource {
   id: unknown;
@@ -123,11 +115,8 @@ interface RawChapter {
   pageCount?: unknown;
 }
 
-/** Optional second argument; absent in the contract tests (transport-only). */
 export interface SuwayomiClientOptions {
-  /** Absolute base URL of the Suwayomi server, used to resolve page image URLs. */
   readonly baseUrl?: string;
-  /** Fetches raw bytes for an absolute URL. Injectable; defaults to global fetch. */
   readonly fetchBytes?: (url: string) => Promise<RawPage>;
 }
 
@@ -167,7 +156,7 @@ export class SuwayomiGraphQLClient implements SuwayomiClient {
 
   async getMangaDetails(mangaId: string): Promise<MangaDetails> {
     const data = await this.run<{ manga?: RawMangaDetails }>(MANGA_DETAILS, {
-      id: mangaId,
+      id: toIntId(mangaId),
     });
     if (!data.manga) {
       throw new SuwayomiError();
@@ -178,16 +167,16 @@ export class SuwayomiGraphQLClient implements SuwayomiClient {
   async listChapters(mangaId: string): Promise<Chapter[]> {
     const data = await this.run<{
       manga?: { chapters?: { nodes?: RawChapter[] } };
-    }>(LIST_CHAPTERS, { id: mangaId });
+    }>(LIST_CHAPTERS, { id: toIntId(mangaId) });
     return (data.manga?.chapters?.nodes ?? []).map(mapChapter);
   }
 
   async fetchPage(ref: PageRef): Promise<RawPage> {
     const data = await this.run<{
-      chapter?: { pages?: unknown };
-    }>(FETCH_CHAPTER_PAGES, { chapterId: ref.chapterId });
-    const pages = Array.isArray(data.chapter?.pages)
-      ? (data.chapter.pages as unknown[])
+      fetchChapterPages?: { pages?: unknown };
+    }>(FETCH_CHAPTER_PAGES, { chapterId: toIntId(ref.chapterId) });
+    const pages = Array.isArray(data.fetchChapterPages?.pages)
+      ? (data.fetchChapterPages.pages as unknown[])
       : [];
     const url = pages[ref.pageIndex];
     if (typeof url !== "string") {
@@ -196,11 +185,6 @@ export class SuwayomiGraphQLClient implements SuwayomiClient {
     return this.fetchBytes(this.resolveUrl(url));
   }
 
-  /**
-   * Run a GraphQL document through the transport, normalising any rejection into
-   * a typed SuwayomiError. The original cause is attached for server-side
-   * logging only and never reaches the client (CLAUDE.md §6).
-   */
   private async run<T>(
     document: string,
     variables?: Record<string, unknown>,
@@ -220,7 +204,10 @@ export class SuwayomiGraphQLClient implements SuwayomiClient {
   }
 }
 
-// --- Mapping (raw → domain). IDs are normalised to strings (CLAUDE.md §11) ---
+// Domain ids are strings; Suwayomi keys manga/chapter by Int.
+function toIntId(id: string): number {
+  return Number(id);
+}
 
 function mapSource(node: RawSource): Source {
   return {
