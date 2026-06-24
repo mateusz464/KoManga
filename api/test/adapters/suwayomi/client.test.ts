@@ -49,9 +49,7 @@ describe("SuwayomiGraphQLClient (port contract)", () => {
     it("search forwards source/query/page and maps the result page", async () => {
       const { transport, request } = transportReturning({
         fetchSourceManga: {
-          mangas: [
-            { id: "10", title: "Solo Leveling", thumbnailUrl: "/t/10" },
-          ],
+          mangas: [{ id: "10", title: "Solo Leveling", thumbnailUrl: "/t/10" }],
           hasNextPage: true,
         },
       });

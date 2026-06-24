@@ -15,7 +15,9 @@
     "format:check": "prettier --check ."
   },
   "dependencies": {
-    "express": "^5.1.0"
+    "express": "^5.1.0",
+    "graphql": "^16.14.2",
+    "graphql-request": "^7.4.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",

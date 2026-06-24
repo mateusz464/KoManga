@@ -77,11 +77,11 @@
 **Blocked by:** API-105, API-103.
 **Estimate:** M
 
-### API-202 — Suwayomi GraphQL client (impl)
+### API-202 — Suwayomi GraphQL client (impl) — **Done**
 **Description:** Implement the client against the real Suwayomi GraphQL schema, satisfying API-201. Include retry/timeout handling.
 **Acceptance criteria:**
 - All API-201 tests pass.
-- Verified against a live Suwayomi instance (manual check noted in PR).
+- Verified against a live Suwayomi instance (manual check noted in PR). _(Pending: no live Suwayomi available in this environment — run once API-203 brings one up.)_
 - Timeouts and transport errors surface as typed errors.
 **Blocked by:** API-201.
 **Estimate:** M
