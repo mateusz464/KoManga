@@ -18,6 +18,13 @@ export class PageService {
     private readonly suwayomi: SuwayomiClient,
     private readonly imageProcessor: ImageProcessor,
     private readonly sessionCache: SessionCache,
+    // Background-prefetch window (RFC §5): after serving a page, warm the next
+    // `prefetchWindow` pages of the same chapter into the cache without blocking
+    // the response. 0 disables prefetch. The window is configurable, wired from
+    // Config.prefetch.window at the composition root. The prefetch behaviour is
+    // implemented in API-410 — this is the scaffold that lets the API-409 tests
+    // construct the service and fail red.
+    private readonly prefetchWindow = 0,
   ) {}
 
   async getPage(pageId: string, profile: ImageProfile): Promise<ServedPage> {
