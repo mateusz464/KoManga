@@ -132,7 +132,7 @@
 **Estimate:** S
 **Notes (2026-06-25):** `GET /api/search` wired through the layers mirroring API-302: `routes/search.ts` (edge validation + envelope) → `services/search-service.ts` (delegates to the port) → injected `SuwayomiClient`. The route validates the query string (missing `q` or `source` → `BadRequestError` 400, no client call), maps `source`→`sourceId`/`q`→`query`, and coerces `page` to a number, omitting it when absent/non-numeric. Upstream `SuwayomiError` propagates to the central error middleware → 502 envelope. All 6 API-303 tests green; full suite 38 passing, lint + build clean.
 
-### API-305 — [TEST] Manga details + chapter list endpoint
+### API-305 — [TEST] Manga details + chapter list endpoint — **Done**
 **Description:** Tests for `GET /api/manga/:id` returning details plus the chapter list, with reading direction metadata included.
 **Acceptance criteria:**
 - Tests assert details + ordered chapter list shape.
@@ -140,6 +140,7 @@
 - Unknown manga id → 404.
 **Blocked by:** API-202.
 **Estimate:** M
+**Notes (2026-06-25):** `test/http/manga.test.ts` drives the contract with the `SuwayomiClient` mocked at the port boundary and injected via `createApp({ suwayomi })`, mirroring API-301/303. Success envelope chosen as `{ data: { manga: MangaDetails, chapters: Chapter[], readingDirection } }` — the endpoint combines the two port calls (`getMangaDetails` + `listChapters`) and adds the API-owned reading direction (RFC §6). Covers: details + chapters returned with chapters **sorted ascending by `chapterNumber`** (upstream order deliberately scrambled so the impl must sort), `readingDirection` present and defaulting to `"rtl"` (manga standard per RFC §6), empty chapter list, unknown manga → port rejects `NotFoundError` → 404 envelope (asserts the port was reached so the generic 404 fallback can't make it pass green), and upstream `SuwayomiError` → 502. All 5 fail red (404, route unimplemented) pending API-306; existing 38 tests + lint green.
 
 ### API-306 — Manga details + chapter list endpoint (impl)
 **Description:** Implement `GET /api/manga/:id`.
