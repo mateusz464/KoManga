@@ -35,7 +35,9 @@ function clientReturning(options: {
     }
     return options.details as MangaDetails;
   });
-  const listChapters = vi.fn(async (_id: string) => options.chapters ?? []);
+  const listChapters = vi.fn(async (_id: string) => [
+    ...(options.chapters ?? []),
+  ]);
   const unexpected = vi.fn(async () => {
     throw new Error("unexpected Suwayomi call");
   });
