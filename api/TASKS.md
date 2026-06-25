@@ -200,11 +200,12 @@
 **Estimate:** M
 **Notes (2026-06-25):** Defined the `SessionCache` port (`src/services/ports/session-cache.ts`): `get(pageId, profile)` / `set(pageId, profile, page)` over `CachedPage = { bytes, contentType }`, keyed by page id **+** profile (re-uses `ImageProfile` from the image-processor port so `raw`/`eink` of one page are distinct entries). Bounds (`maxBytes`, `ttlMs`) and an **injectable `clock`** are passed to the concrete `InMemorySessionCache` adapter by construction (DI from `Config.cache` at the composition root) — the clock makes TTL deterministic without real time (CLAUDE.md §7). `test/adapters/cache/session-cache.test.ts` exercises the **real in-memory adapter** (CLAUDE.md §4.4, adapter-level) against a stub whose `get`/`set` throw, so all behavioural assertions run and fail red pending API-406. Coverage: hit/miss + overwrite; profile-aware keying (raw vs eink distinct, one profile not served for the other, distinct page ids distinct); TTL (served before, not after, re-set refreshes TTL); size-bound eviction (total live bytes ≤ bound, **oldest** evicted first, survivors retained); and a mock conforming to the port (mockability). 12 behavioural tests fail red + 1 mockability test passes; existing 69 pass (suite 82), lint + typecheck clean.
 
-### API-406 — Session cache (impl)
+### API-406 — Session cache (impl) — **Done**
 **Description:** Implement the session cache satisfying API-405.
 **Acceptance criteria:** All API-405 tests pass.
 **Blocked by:** API-405.
 **Estimate:** M
+**Notes (2026-06-25):** Implemented `InMemorySessionCache` (`src/adapters/cache/in-memory-session-cache.ts`) behind the API-405 `SessionCache` port. Backed by a single `Map` keyed by `"<pageId> <profile>"` so `raw`/`eink` of one page are distinct entries; the `Map`'s insertion order gives oldest-first eviction for free. TTL is lazy: `get()` checks `clock() - storedAt >= ttlMs` against the injected clock and drops expired entries on read (never serves them). `set()` overwrites by removing the old entry first, so re-insertion both moves the key to the newest position and refreshes its TTL; a running `totalBytes` tally drives `evictToFit()`, which evicts from the oldest end until the total is within `maxBytes`. Bounds + clock are injected by construction (DI from `Config.cache` at the composition root), nothing read from env in the adapter. All 13 API-405 tests green; full suite 82 passing, lint + build clean.
 
 ### API-407 — [TEST] Single-page endpoint with profile negotiation
 **Description:** Tests for `GET /api/page/:id?profile=` integrating Suwayomi fetch → processing → cache. Mocks Suwayomi client + processing; asserts cache-miss fetches and processes, cache-hit skips fetch.
