@@ -23,6 +23,19 @@ function mangaNotFoundError(): unknown {
   };
 }
 
+// Shape of the rejection `graphql-request` throws for an unknown chapter id on
+// the `fetchChapterPages` mutation: Suwayomi returns `fetchChapterPages: null`
+// plus a GraphQL "Collection is empty." error. Confirmed against live Suwayomi
+// v2.2.2100 during API-402 verification.
+function chapterNotFoundError(): unknown {
+  return {
+    response: {
+      data: { fetchChapterPages: null },
+      errors: [{ message: "Collection is empty." }],
+    },
+  };
+}
+
 // Contract test for the Suwayomi client port (API-201). The adapter is
 // exercised against a *mocked GraphQL transport* so the mapping and error
 // contract are pinned without a live Suwayomi server. The concrete mapping is
@@ -205,6 +218,35 @@ describe("SuwayomiGraphQLClient (port contract)", () => {
 
       await expect(client.listChapters("999999")).rejects.toBeInstanceOf(
         NotFoundError,
+      );
+    });
+
+    it("getChapterPageCount maps Suwayomi's empty-collection error to NotFoundError", async () => {
+      const transport = transportFailing(chapterNotFoundError());
+      const client = new SuwayomiGraphQLClient(transport);
+
+      await expect(client.getChapterPageCount("999999")).rejects.toBeInstanceOf(
+        NotFoundError,
+      );
+    });
+
+    it("fetchPage maps an unknown chapter to NotFoundError", async () => {
+      const transport = transportFailing(chapterNotFoundError());
+      const client = new SuwayomiGraphQLClient(transport);
+
+      await expect(
+        client.fetchPage({ chapterId: "999999", pageIndex: 0 }),
+      ).rejects.toBeInstanceOf(NotFoundError);
+    });
+
+    it("a non-not-found GraphQL error on a chapter query stays a SuwayomiError", async () => {
+      const transport = transportFailing(
+        new Error("GraphQL Error: source temporarily unavailable"),
+      );
+      const client = new SuwayomiGraphQLClient(transport);
+
+      await expect(client.getChapterPageCount("100")).rejects.toBeInstanceOf(
+        SuwayomiError,
       );
     });
 

@@ -194,11 +194,21 @@ export class SuwayomiGraphQLClient implements SuwayomiClient {
 
   // The `fetchChapterPages` mutation is the single source of a chapter's pages;
   // both the page count and individual page fetches derive from its `pages`
-  // array, so the GraphQL coupling lives in one place (CLAUDE.md §13).
+  // array, so the GraphQL coupling lives in one place (CLAUDE.md §13). An unknown
+  // chapter id surfaces as a GraphQL "Collection is empty." error, which we map
+  // to a 404 rather than the generic 502 (verified against live Suwayomi, API-402).
   private async fetchPageUrls(chapterId: string): Promise<unknown[]> {
-    const data = await this.run<{
-      fetchChapterPages?: { pages?: unknown };
-    }>(FETCH_CHAPTER_PAGES, { chapterId: toIntId(chapterId) });
+    let data: { fetchChapterPages?: { pages?: unknown } };
+    try {
+      data = (await this.transport.request(FETCH_CHAPTER_PAGES, {
+        chapterId: toIntId(chapterId),
+      })) as { fetchChapterPages?: { pages?: unknown } };
+    } catch (cause) {
+      if (isChapterNotFound(cause)) {
+        throw new NotFoundError(`Chapter ${chapterId} not found`);
+      }
+      throw new SuwayomiError(undefined, cause);
+    }
     return Array.isArray(data.fetchChapterPages?.pages)
       ? (data.fetchChapterPages.pages as unknown[])
       : [];
@@ -297,6 +307,26 @@ function isMangaNotFound(cause: unknown): boolean {
     const isNullViolation = /null/i.test(String(error?.message ?? ""));
     return onMangaPath && isNullViolation;
   });
+}
+
+// An unknown chapter on the `fetchChapterPages` mutation comes back as a GraphQL
+// "Collection is empty." error (rather than a typed not-found channel) — the only
+// signal Suwayomi gives for a missing chapter here. Confirmed live (API-402).
+function isChapterNotFound(cause: unknown): boolean {
+  if (typeof cause !== "object" || cause === null || !("response" in cause)) {
+    return false;
+  }
+  const response = (cause as { response?: unknown }).response;
+  if (typeof response !== "object" || response === null) {
+    return false;
+  }
+  const errors = (response as { errors?: unknown }).errors;
+  if (!Array.isArray(errors)) {
+    return false;
+  }
+  return errors.some((error: RawGraphQLError) =>
+    /collection is empty/i.test(String(error?.message ?? "")),
+  );
 }
 
 function mapSource(node: RawSource): Source {

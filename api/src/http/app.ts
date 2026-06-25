@@ -3,9 +3,11 @@ import type { SuwayomiClient } from "../services/ports/suwayomi-client.js";
 import { SourceService } from "../services/source-service.js";
 import { SearchService } from "../services/search-service.js";
 import { MangaService } from "../services/manga-service.js";
+import { ChapterService } from "../services/chapter-service.js";
 import { sourcesRouter } from "../routes/sources.js";
 import { searchRouter } from "../routes/search.js";
 import { mangaRouter } from "../routes/manga.js";
+import { chapterRouter } from "../routes/chapter.js";
 import { errorHandler, notFoundHandler } from "./error-handler.js";
 
 // Composition happens at the edge: concrete adapters are injected in and wired
@@ -24,6 +26,7 @@ export function createApp(deps: AppDependencies): express.Express {
   app.use("/api", sourcesRouter(new SourceService(deps.suwayomi)));
   app.use("/api", searchRouter(new SearchService(deps.suwayomi)));
   app.use("/api", mangaRouter(new MangaService(deps.suwayomi)));
+  app.use("/api", chapterRouter(new ChapterService(deps.suwayomi)));
 
   // 404 fallback for unmatched routes, then the centralised error handler.
   app.use(notFoundHandler);
