@@ -2,6 +2,26 @@ import { describe, expect, it, vi } from "vitest";
 import { SuwayomiGraphQLClient } from "../../../src/adapters/suwayomi/client.js";
 import type { GraphQLTransport } from "../../../src/adapters/suwayomi/transport.js";
 import { SuwayomiError } from "../../../src/services/ports/suwayomi-client.js";
+import { NotFoundError } from "../../../src/http/errors.js";
+
+// Shape of the rejection `graphql-request` throws for a missing manga: Suwayomi
+// declares `manga` non-null, so an unknown id surfaces as a GraphQL response
+// error (non-null violation on the `manga` path) rather than `manga: null`.
+// Confirmed against live Suwayomi v2.2.2100 during API-306 verification.
+function mangaNotFoundError(): unknown {
+  return {
+    response: {
+      errors: [
+        {
+          message:
+            "The field at path '/manga' was declared as a non null type, " +
+            "but the code involved in retrieving data has wrongly returned a null value.",
+          path: ["manga"],
+        },
+      ],
+    },
+  };
+}
 
 // Contract test for the Suwayomi client port (API-201). The adapter is
 // exercised against a *mocked GraphQL transport* so the mapping and error
@@ -132,6 +152,46 @@ describe("SuwayomiGraphQLClient (port contract)", () => {
       const rejection = client.listSources();
       await expect(rejection).rejects.toBeInstanceOf(SuwayomiError);
       await expect(rejection).rejects.not.toThrow(secret);
+    });
+  });
+
+  describe("not found", () => {
+    it("getMangaDetails maps Suwayomi's missing-manga error to NotFoundError", async () => {
+      const transport = transportFailing(mangaNotFoundError());
+      const client = new SuwayomiGraphQLClient(transport);
+
+      await expect(client.getMangaDetails("999999")).rejects.toBeInstanceOf(
+        NotFoundError,
+      );
+    });
+
+    it("getMangaDetails maps a null manga payload to NotFoundError", async () => {
+      const { transport } = transportReturning({ manga: null });
+      const client = new SuwayomiGraphQLClient(transport);
+
+      await expect(client.getMangaDetails("999999")).rejects.toBeInstanceOf(
+        NotFoundError,
+      );
+    });
+
+    it("listChapters maps Suwayomi's missing-manga error to NotFoundError", async () => {
+      const transport = transportFailing(mangaNotFoundError());
+      const client = new SuwayomiGraphQLClient(transport);
+
+      await expect(client.listChapters("999999")).rejects.toBeInstanceOf(
+        NotFoundError,
+      );
+    });
+
+    it("a non-not-found GraphQL error on a manga query stays a SuwayomiError", async () => {
+      const transport = transportFailing(
+        new Error("GraphQL Error: timeout talking to source"),
+      );
+      const client = new SuwayomiGraphQLClient(transport);
+
+      await expect(client.getMangaDetails("10")).rejects.toBeInstanceOf(
+        SuwayomiError,
+      );
     });
   });
 

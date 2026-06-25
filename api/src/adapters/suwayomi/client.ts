@@ -1,3 +1,4 @@
+import { NotFoundError } from "../../http/errors.js";
 import {
   SuwayomiError,
   type Chapter,
@@ -160,19 +161,20 @@ export class SuwayomiGraphQLClient implements SuwayomiClient {
   }
 
   async getMangaDetails(mangaId: string): Promise<MangaDetails> {
-    const data = await this.run<{ manga?: RawMangaDetails }>(MANGA_DETAILS, {
-      id: toIntId(mangaId),
-    });
+    const data = await this.runManga<{ manga?: RawMangaDetails }>(
+      MANGA_DETAILS,
+      mangaId,
+    );
     if (!data.manga) {
-      throw new SuwayomiError();
+      throw new NotFoundError(`Manga ${mangaId} not found`);
     }
     return mapMangaDetails(data.manga);
   }
 
   async listChapters(mangaId: string): Promise<Chapter[]> {
-    const data = await this.run<{
+    const data = await this.runManga<{
       manga?: { chapters?: { nodes?: RawChapter[] } };
-    }>(LIST_CHAPTERS, { id: toIntId(mangaId) });
+    }>(LIST_CHAPTERS, mangaId);
     return (data.manga?.chapters?.nodes ?? []).map(mapChapter);
   }
 
@@ -197,6 +199,22 @@ export class SuwayomiGraphQLClient implements SuwayomiClient {
     try {
       return (await this.transport.request(document, variables)) as T;
     } catch (cause) {
+      throw new SuwayomiError(undefined, cause);
+    }
+  }
+
+  // Queries rooted at the non-null `manga(id:)` field: an unknown id surfaces as
+  // a GraphQL non-null violation on the `manga` path, which we map to a 404
+  // rather than the generic 502 (verified against live Suwayomi, API-306).
+  private async runManga<T>(document: string, mangaId: string): Promise<T> {
+    try {
+      return (await this.transport.request(document, {
+        id: toIntId(mangaId),
+      })) as T;
+    } catch (cause) {
+      if (isMangaNotFound(cause)) {
+        throw new NotFoundError(`Manga ${mangaId} not found`);
+      }
       throw new SuwayomiError(undefined, cause);
     }
   }
@@ -239,6 +257,34 @@ export function createSuwayomiClient(
 // Domain ids are strings; Suwayomi keys manga/chapter by Int.
 function toIntId(id: string): number {
   return Number(id);
+}
+
+interface RawGraphQLError {
+  message?: unknown;
+  path?: unknown;
+}
+
+// `graphql-request` attaches the GraphQL response (with its `errors`) to the
+// thrown error. A missing manga is signalled as a non-null violation on the
+// `manga` path — the only "not found" channel Suwayomi gives us for `manga(id:)`.
+function isMangaNotFound(cause: unknown): boolean {
+  if (typeof cause !== "object" || cause === null || !("response" in cause)) {
+    return false;
+  }
+  const response = (cause as { response?: unknown }).response;
+  if (typeof response !== "object" || response === null) {
+    return false;
+  }
+  const errors = (response as { errors?: unknown }).errors;
+  if (!Array.isArray(errors)) {
+    return false;
+  }
+  return errors.some((error: RawGraphQLError) => {
+    const onMangaPath =
+      Array.isArray(error?.path) && error.path.includes("manga");
+    const isNullViolation = /null/i.test(String(error?.message ?? ""));
+    return onMangaPath && isNullViolation;
+  });
 }
 
 function mapSource(node: RawSource): Source {
