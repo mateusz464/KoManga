@@ -125,11 +125,12 @@
 **Estimate:** M
 **Notes (2026-06-25):** `test/http/search.test.ts` drives the contract with the `SuwayomiClient` mocked at the port boundary and injected via `createApp({ suwayomi })`. Maps URL params → `SearchParams` (`source`→`sourceId`, `q`→`query`, `page`→numeric `page`); success envelope is `{ data: SearchResult }` to mirror API-301's `{ data: ... }`. Covers: valid search forwards `q`/`source`, numeric `page` forwarding, empty result set, missing `q` → 400, missing `source` → 400 (both `BAD_REQUEST`, no client call), and upstream `SuwayomiError` → 502 envelope. All 6 fail red (404, route unimplemented) pending API-304; existing 32 tests + lint green.
 
-### API-304 — Search endpoint (impl)
+### API-304 — Search endpoint (impl) — **Done**
 **Description:** Implement `GET /api/search`.
 **Acceptance criteria:** All API-303 tests pass.
 **Blocked by:** API-303.
 **Estimate:** S
+**Notes (2026-06-25):** `GET /api/search` wired through the layers mirroring API-302: `routes/search.ts` (edge validation + envelope) → `services/search-service.ts` (delegates to the port) → injected `SuwayomiClient`. The route validates the query string (missing `q` or `source` → `BadRequestError` 400, no client call), maps `source`→`sourceId`/`q`→`query`, and coerces `page` to a number, omitting it when absent/non-numeric. Upstream `SuwayomiError` propagates to the central error middleware → 502 envelope. All 6 API-303 tests green; full suite 38 passing, lint + build clean.
 
 ### API-305 — [TEST] Manga details + chapter list endpoint
 **Description:** Tests for `GET /api/manga/:id` returning details plus the chapter list, with reading direction metadata included.
