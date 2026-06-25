@@ -190,7 +190,7 @@
 **Estimate:** M
 **Notes (2026-06-25):** Implemented `SharpImageProcessor` (`src/adapters/images/sharp-image-processor.ts`) behind the API-403 `ImageProcessor` port. `raw` is a lossless passthrough (returns the `SourceImage` untouched). `eink` pipes through `sharp`: `.resize({ width, height, fit: "inside", withoutEnlargement: true })` (fits within the configured Kobo resolution, preserves aspect ratio, no upscaling) → `.greyscale()` → `.normalise()` (contrast-tune for e-ink) → `.toFormat(format)`, returning the bytes plus the format's content-type. Target dims + format come from the injected `EinkProfileOptions` (wired from `Config.image` at the composition root), never hardcoded — kept reusable for future server-side clients (CLAUDE.md §6/§10). All 10 API-403 tests green; full suite 69 passing, lint + typecheck clean.
 
-### API-405 — [TEST] Session cache (profile-aware)
+### API-405 — [TEST] Session cache (profile-aware) — **Done**
 **Description:** Tests for the ephemeral cache: keyed by page + profile, TTL expiry, size-bound eviction, hit/miss behaviour.
 **Acceptance criteria:**
 - Same page under `raw` vs `eink` are distinct entries.
@@ -198,6 +198,7 @@
 - Cache exposed behind an interface (mockable).
 **Blocked by:** API-105, API-103.
 **Estimate:** M
+**Notes (2026-06-25):** Defined the `SessionCache` port (`src/services/ports/session-cache.ts`): `get(pageId, profile)` / `set(pageId, profile, page)` over `CachedPage = { bytes, contentType }`, keyed by page id **+** profile (re-uses `ImageProfile` from the image-processor port so `raw`/`eink` of one page are distinct entries). Bounds (`maxBytes`, `ttlMs`) and an **injectable `clock`** are passed to the concrete `InMemorySessionCache` adapter by construction (DI from `Config.cache` at the composition root) — the clock makes TTL deterministic without real time (CLAUDE.md §7). `test/adapters/cache/session-cache.test.ts` exercises the **real in-memory adapter** (CLAUDE.md §4.4, adapter-level) against a stub whose `get`/`set` throw, so all behavioural assertions run and fail red pending API-406. Coverage: hit/miss + overwrite; profile-aware keying (raw vs eink distinct, one profile not served for the other, distinct page ids distinct); TTL (served before, not after, re-set refreshes TTL); size-bound eviction (total live bytes ≤ bound, **oldest** evicted first, survivors retained); and a mock conforming to the port (mockability). 12 behavioural tests fail red + 1 mockability test passes; existing 69 pass (suite 82), lint + typecheck clean.
 
 ### API-406 — Session cache (impl)
 **Description:** Implement the session cache satisfying API-405.
