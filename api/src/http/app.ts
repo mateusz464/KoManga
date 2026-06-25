@@ -22,6 +22,9 @@ export interface AppDependencies {
   // here so endpoints that don't serve images keep their existing call sites.
   readonly imageProcessor?: ImageProcessor;
   readonly sessionCache?: SessionCache;
+  // Background-prefetch window for the single-page endpoint (API-410). Configured
+  // via Config.prefetch.window at the composition root; defaults to no prefetch.
+  readonly prefetchWindow?: number;
 }
 
 export function createApp(deps: AppDependencies): express.Express {
@@ -43,7 +46,12 @@ export function createApp(deps: AppDependencies): express.Express {
     app.use(
       "/api",
       pageRouter(
-        new PageService(deps.suwayomi, deps.imageProcessor, deps.sessionCache),
+        new PageService(
+          deps.suwayomi,
+          deps.imageProcessor,
+          deps.sessionCache,
+          deps.prefetchWindow,
+        ),
       ),
     );
   }

@@ -23,7 +23,12 @@ const sessionCache = new InMemorySessionCache({
   ttlMs: config.cache.ttlSeconds * 1000,
 });
 
-const app = createApp({ suwayomi, imageProcessor, sessionCache });
+const app = createApp({
+  suwayomi,
+  imageProcessor,
+  sessionCache,
+  prefetchWindow: config.prefetch.window,
+});
 
 app.listen(config.port, () => {
   console.log(`KoManga API listening on port ${config.port}`);
