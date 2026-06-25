@@ -101,13 +101,14 @@
 
 > Sources, search, manga details, chapter listing. No image data yet — metadata only.
 
-### API-301 — [TEST] List sources endpoint
+### API-301 — [TEST] List sources endpoint — **Done**
 **Description:** Tests for `GET /api/sources` using a mocked Suwayomi client.
 **Acceptance criteria:**
 - Tests assert response shape and that it maps the client output correctly.
 - Tests cover the empty-sources case.
 **Blocked by:** API-202.
 **Estimate:** S
+**Notes (2026-06-25):** `test/http/sources.test.ts` drives the contract with the `SuwayomiClient` mocked at the port boundary and injected via `createApp({ suwayomi })`. Success envelope chosen as `{ data: ... }` to mirror the established error envelope `{ error: { code, message } }` (RFC §8 leaves shapes to implementation). Covers: maps `listSources()` output → `{ data: Source[] }`, empty-sources → `{ data: [] }`, and upstream `SuwayomiError` → 502 envelope. All 3 fail red (404, route unimplemented) pending API-302; existing 29 tests + lint green.
 
 ### API-302 — List sources endpoint (impl)
 **Description:** Implement `GET /api/sources`.
