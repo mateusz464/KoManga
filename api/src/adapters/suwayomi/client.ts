@@ -10,7 +10,12 @@ import {
   type Source,
   type SuwayomiClient,
 } from "../../services/ports/suwayomi-client.js";
-import type { GraphQLTransport } from "./transport.js";
+import { GraphQLRequestTransport, type GraphQLTransport } from "./transport.js";
+
+// Suwayomi serves GraphQL under this fixed path; the base URL from config points
+// at the server root. Keeping the path here (CLAUDE.md §13) means a Suwayomi
+// endpoint change touches only this adapter.
+const GRAPHQL_PATH = "/api/graphql";
 
 const LIST_SOURCES = /* GraphQL */ `
   query ListSources {
@@ -202,6 +207,33 @@ export class SuwayomiGraphQLClient implements SuwayomiClient {
     }
     return new URL(url, this.baseUrl).toString();
   }
+}
+
+export interface SuwayomiConnectionOptions {
+  /** Suwayomi server root, e.g. `http://suwayomi:4567` (no GraphQL path). */
+  readonly baseUrl: string;
+  readonly authToken?: string;
+  readonly timeoutMs?: number;
+  readonly retries?: number;
+}
+
+/**
+ * Builds a ready-to-use client from a single base URL: the GraphQL transport
+ * targets `${baseUrl}/api/graphql`, while the client keeps `baseUrl` to resolve
+ * relative page/image URLs Suwayomi returns. This is the only place that knows
+ * how a Suwayomi base URL maps to its endpoints.
+ */
+export function createSuwayomiClient(
+  options: SuwayomiConnectionOptions,
+): SuwayomiGraphQLClient {
+  const baseUrl = options.baseUrl.replace(/\/+$/, "");
+  const transport = new GraphQLRequestTransport({
+    endpoint: `${baseUrl}${GRAPHQL_PATH}`,
+    ...(options.authToken !== undefined ? { authToken: options.authToken } : {}),
+    ...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}),
+    ...(options.retries !== undefined ? { retries: options.retries } : {}),
+  });
+  return new SuwayomiGraphQLClient(transport, { baseUrl });
 }
 
 // Domain ids are strings; Suwayomi keys manga/chapter by Int.

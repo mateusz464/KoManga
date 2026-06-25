@@ -110,11 +110,12 @@
 **Estimate:** S
 **Notes (2026-06-25):** `test/http/sources.test.ts` drives the contract with the `SuwayomiClient` mocked at the port boundary and injected via `createApp({ suwayomi })`. Success envelope chosen as `{ data: ... }` to mirror the established error envelope `{ error: { code, message } }` (RFC §8 leaves shapes to implementation). Covers: maps `listSources()` output → `{ data: Source[] }`, empty-sources → `{ data: [] }`, and upstream `SuwayomiError` → 502 envelope. All 3 fail red (404, route unimplemented) pending API-302; existing 29 tests + lint green.
 
-### API-302 — List sources endpoint (impl)
+### API-302 — List sources endpoint (impl) — **Done**
 **Description:** Implement `GET /api/sources`.
 **Acceptance criteria:** All API-301 tests pass.
 **Blocked by:** API-301.
 **Estimate:** S
+**Notes (2026-06-25):** `GET /api/sources` wired through the layers: `routes/sources.ts` (envelope only) → `services/source-service.ts` (delegates to the port) → injected `SuwayomiClient`. `createApp` now takes its ports as injected deps (`AppDependencies`); composition root (`index.ts`) constructs the real `SuwayomiGraphQLClient`/transport. Upstream `SuwayomiError` propagates to the central error middleware → 502 envelope (Express 5 forwards async rejections). All 3 API-301 tests green; full suite 32 passing, lint + build clean.
 
 ### API-303 — [TEST] Search endpoint
 **Description:** Tests for `GET /api/search?q=&source=` (mocked client): query forwarding, pagination params, empty results, missing-param validation.

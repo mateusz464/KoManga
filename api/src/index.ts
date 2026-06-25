@@ -1,9 +1,16 @@
 import { loadConfig } from "./config/index.js";
+import { createSuwayomiClient } from "./adapters/suwayomi/client.js";
 import { createApp } from "./http/app.js";
 
-// Load config before binding the port so misconfiguration fails fast.
+// Composition root: load config, construct concrete adapters, inject them.
 const config = loadConfig();
-const app = createApp();
+
+const suwayomi = createSuwayomiClient({
+  baseUrl: config.suwayomi.url,
+  authToken: config.auth.token,
+});
+
+const app = createApp({ suwayomi });
 
 app.listen(config.port, () => {
   console.log(`KoManga API listening on port ${config.port}`);

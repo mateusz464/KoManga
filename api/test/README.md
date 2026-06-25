@@ -8,9 +8,11 @@ Test runner: **Vitest**. HTTP-level helper: **supertest**.
 ## Writing HTTP endpoint tests (the documented pattern)
 
 Endpoint tests exercise the Express app **through HTTP** without binding a port.
-The composition root exposes an app factory, `createApp()`, in
-`src/http/app.ts`. supertest accepts that Express instance directly and issues
-in-process requests against it.
+The composition root exposes an app factory, `createApp(deps)`, in
+`src/http/app.ts`. It takes the external ports (e.g. the `SuwayomiClient`) as
+injected dependencies, so tests pass mocks at the port boundary. supertest
+accepts the returned Express instance directly and issues in-process requests
+against it.
 
 The pattern, per CLAUDE.md §4 (endpoint tests go through Express with
 services/ports mocked, asserting status codes and the response envelope):
@@ -19,12 +21,14 @@ services/ports mocked, asserting status codes and the response envelope):
 import { describe, expect, it } from "vitest";
 import request from "supertest";
 import { createApp } from "../../src/http/app.js";
+import { stubSuwayomi } from "../support/stub-suwayomi.js";
 
 describe("GET /some/route", () => {
   it("returns the expected status and body", async () => {
-    // Build the app. Later tickets will pass mocked ports/services into
-    // createApp() here so the route is tested in isolation.
-    const app = createApp();
+    // Build the app with mocked ports injected so the route is tested in
+    // isolation. stubSuwayomi() is a no-op client for routes that don't touch
+    // it; pass a controllable mock when the route does.
+    const app = createApp({ suwayomi: stubSuwayomi() });
 
     const res = await request(app).get("/some/route");
 
