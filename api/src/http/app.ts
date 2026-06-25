@@ -1,5 +1,7 @@
 import express from "express";
 import type { SuwayomiClient } from "../services/ports/suwayomi-client.js";
+import type { ImageProcessor } from "../services/ports/image-processor.js";
+import type { SessionCache } from "../services/ports/session-cache.js";
 import { SourceService } from "../services/source-service.js";
 import { SearchService } from "../services/search-service.js";
 import { MangaService } from "../services/manga-service.js";
@@ -14,6 +16,10 @@ import { errorHandler, notFoundHandler } from "./error-handler.js";
 // to services here, so the app never constructs its own external dependencies.
 export interface AppDependencies {
   readonly suwayomi: SuwayomiClient;
+  // Wired into the single-page endpoint (`GET /api/page/:id`) by API-408. Optional
+  // here so endpoints that don't serve images keep their existing call sites.
+  readonly imageProcessor?: ImageProcessor;
+  readonly sessionCache?: SessionCache;
 }
 
 export function createApp(deps: AppDependencies): express.Express {

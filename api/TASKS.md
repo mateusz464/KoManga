@@ -207,7 +207,7 @@
 **Estimate:** M
 **Notes (2026-06-25):** Implemented `InMemorySessionCache` (`src/adapters/cache/in-memory-session-cache.ts`) behind the API-405 `SessionCache` port. Backed by a single `Map` keyed by `"<pageId> <profile>"` so `raw`/`eink` of one page are distinct entries; the `Map`'s insertion order gives oldest-first eviction for free. TTL is lazy: `get()` checks `clock() - storedAt >= ttlMs` against the injected clock and drops expired entries on read (never serves them). `set()` overwrites by removing the old entry first, so re-insertion both moves the key to the newest position and refreshes its TTL; a running `totalBytes` tally drives `evictToFit()`, which evicts from the oldest end until the total is within `maxBytes`. Bounds + clock are injected by construction (DI from `Config.cache` at the composition root), nothing read from env in the adapter. All 13 API-405 tests green; full suite 82 passing, lint + build clean.
 
-### API-407 — [TEST] Single-page endpoint with profile negotiation
+### API-407 — [TEST] Single-page endpoint with profile negotiation — **Done**
 **Description:** Tests for `GET /api/page/:id?profile=` integrating Suwayomi fetch → processing → cache. Mocks Suwayomi client + processing; asserts cache-miss fetches and processes, cache-hit skips fetch.
 **Acceptance criteria:**
 - `profile` defaults to `raw`; `eink` triggers the eink transform.
@@ -215,6 +215,7 @@
 - Invalid profile → 400; unknown page → 404.
 **Blocked by:** API-402, API-404, API-406.
 **Estimate:** M
+**Notes (2026-06-25):** `test/http/page.test.ts` drives the contract through Express with **all three** ports mocked at their boundaries and injected via `createApp` (CLAUDE.md §4): the `SuwayomiClient` (`fetchPage`), the `ImageProcessor` (`process`), and the `SessionCache` (`get`/`set`). This is the first endpoint to wire image processing + caching into the app, so `AppDependencies` gained **optional** `imageProcessor`/`sessionCache` (kept optional so the metadata endpoints' existing `createApp({ suwayomi })` call sites stay valid; API-408 reads them). Unlike the JSON metadata endpoints, a page response is the **image bytes** with the processed content-type — tests use a small `binaryParser` to buffer the body for byte-level assertions. Page ids are `<chapterId>:<index>`, so the route must split `"77:0"` back into a `PageRef { chapterId: "77", pageIndex: 0 }` (asserted on the `fetchPage` call). Coverage: default profile is `raw` + cache **miss** → `get`→`fetchPage`→`process(source,"raw")`→`set`, serving the *processor's* output (distinct bytes/type from the raw source so passthrough can't masquerade as the served body); `profile=eink` runs the eink transform and keys cache by `eink`; cache **hit** serves the stored bytes and **skips** `fetchPage`/`process`/`set` entirely; unsupported `profile=sepia` → 400 rejected at the edge (nothing downstream touched); unknown page → `fetchPage` rejects `NotFoundError` → 404 (asserts the fetch was reached so the generic 404 fallback can't make it pass green); upstream `SuwayomiError` → 502 envelope. All 6 fail red (404, route unimplemented) pending API-408; existing 82 tests pass (suite 88), lint + typecheck clean.
 
 ### API-408 — Single-page endpoint (impl)
 **Description:** Implement `GET /api/page/:id?profile=`.
