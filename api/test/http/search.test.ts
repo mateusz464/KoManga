@@ -30,6 +30,7 @@ function clientSearching(result: SearchResult): {
     search,
     getMangaDetails: unexpected,
     listChapters: unexpected,
+    getChapterPageCount: unexpected,
     fetchPage: unexpected,
   };
   return { suwayomi, search };
@@ -46,6 +47,7 @@ function clientFailing(error: unknown): SuwayomiClient {
     }),
     getMangaDetails: unexpected,
     listChapters: unexpected,
+    getChapterPageCount: unexpected,
     fetchPage: unexpected,
   };
 }

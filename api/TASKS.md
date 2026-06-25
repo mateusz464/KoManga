@@ -156,13 +156,14 @@
 
 > The critical path. Page metadata, profile-based image processing, on-demand single-page serving, session cache, prefetch.
 
-### API-401 — [TEST] Chapter page-list endpoint
+### API-401 — [TEST] Chapter page-list endpoint — **Done**
 **Description:** Tests for `GET /api/chapter/:id/pages` returning page count + page IDs only (no image data).
 **Acceptance criteria:**
 - Tests assert metadata-only response (no binary payloads).
 - Unknown chapter id → 404.
 **Blocked by:** API-202.
 **Estimate:** S
+**Notes (2026-06-25):** `test/http/chapter.test.ts` drives the contract with the `SuwayomiClient` mocked at the port boundary and injected via `createApp({ suwayomi })`, mirroring API-301/303/305. Success envelope chosen as `{ data: { pageCount, pages } }`; `pages` is a list of plain **string** page ids of the form `"<chapterId>:<index>"` (0-based, ordered) — usable directly against the future `GET /api/page/:id` (API-407) and carrying no image bytes/urls. Contract gap filled: the page count needs a per-chapter lookup the port lacked (API-201 only had list/search/details/chapters/fetch-page), so added `getChapterPageCount(chapterId): Promise<number>` to the `SuwayomiClient` port and implemented it in the API-202 adapter (both it and `fetchPage` now share a private `fetchPageUrls()` over the one `fetchChapterPages` mutation, so the GraphQL coupling stays in one place per CLAUDE.md §13); 3 new adapter `client.test.ts` cases cover the count mapping, empty-pages → 0, and transport failure → `SuwayomiError`. Endpoint tests cover: page count + one id per page, string ids scoped to the chapter, metadata-only (JSON, no `bytes`/`base64`/`http`, no object page entries), empty chapter → `[]`, unknown chapter → port rejects `NotFoundError` → 404 envelope (asserts the port was reached so the generic 404 fallback can't make it pass green), and upstream `SuwayomiError` → 502. All 6 endpoint assertions fail red (404, route unimplemented) pending API-402; full suite 56 (50 passing + 6 red), lint + build clean.
 
 ### API-402 — Chapter page-list endpoint (impl)
 **Description:** Implement `GET /api/chapter/:id/pages`.

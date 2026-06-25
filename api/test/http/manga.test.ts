@@ -44,6 +44,7 @@ function clientReturning(options: {
     search: unexpected,
     getMangaDetails,
     listChapters,
+    getChapterPageCount: unexpected,
     fetchPage: unexpected,
   };
   return { suwayomi, getMangaDetails, listChapters };

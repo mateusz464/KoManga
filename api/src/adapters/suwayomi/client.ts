@@ -178,18 +178,30 @@ export class SuwayomiGraphQLClient implements SuwayomiClient {
     return (data.manga?.chapters?.nodes ?? []).map(mapChapter);
   }
 
+  async getChapterPageCount(chapterId: string): Promise<number> {
+    const pages = await this.fetchPageUrls(chapterId);
+    return pages.length;
+  }
+
   async fetchPage(ref: PageRef): Promise<RawPage> {
-    const data = await this.run<{
-      fetchChapterPages?: { pages?: unknown };
-    }>(FETCH_CHAPTER_PAGES, { chapterId: toIntId(ref.chapterId) });
-    const pages = Array.isArray(data.fetchChapterPages?.pages)
-      ? (data.fetchChapterPages.pages as unknown[])
-      : [];
+    const pages = await this.fetchPageUrls(ref.chapterId);
     const url = pages[ref.pageIndex];
     if (typeof url !== "string") {
       throw new SuwayomiError();
     }
     return this.fetchBytes(this.resolveUrl(url));
+  }
+
+  // The `fetchChapterPages` mutation is the single source of a chapter's pages;
+  // both the page count and individual page fetches derive from its `pages`
+  // array, so the GraphQL coupling lives in one place (CLAUDE.md §13).
+  private async fetchPageUrls(chapterId: string): Promise<unknown[]> {
+    const data = await this.run<{
+      fetchChapterPages?: { pages?: unknown };
+    }>(FETCH_CHAPTER_PAGES, { chapterId: toIntId(chapterId) });
+    return Array.isArray(data.fetchChapterPages?.pages)
+      ? (data.fetchChapterPages.pages as unknown[])
+      : [];
   }
 
   private async run<T>(

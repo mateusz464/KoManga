@@ -132,6 +132,31 @@ describe("SuwayomiGraphQLClient (port contract)", () => {
       expect(chapters.map((c) => c.id)).toEqual(["100", "101"]);
       expect(chapters[0]).toMatchObject({ name: "Ch. 1", chapterNumber: 1 });
     });
+
+    it("getChapterPageCount returns the number of pages, not their data", async () => {
+      const { transport, request } = transportReturning({
+        fetchChapterPages: {
+          pages: ["/p/0.png", "/p/1.png", "/p/2.png"],
+        },
+      });
+      const client = new SuwayomiGraphQLClient(transport);
+
+      await expect(client.getChapterPageCount("100")).resolves.toBe(3);
+      // The chapter id is forwarded to the transport coerced to an Int.
+      expect(request).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ chapterId: 100 }),
+      );
+    });
+
+    it("getChapterPageCount is 0 when the chapter has no pages", async () => {
+      const { transport } = transportReturning({
+        fetchChapterPages: { pages: [] },
+      });
+      const client = new SuwayomiGraphQLClient(transport);
+
+      await expect(client.getChapterPageCount("100")).resolves.toBe(0);
+    });
   });
 
   describe("GraphQL error", () => {
@@ -205,6 +230,17 @@ describe("SuwayomiGraphQLClient (port contract)", () => {
       await expect(
         client.search({ sourceId: "1", query: "x" }),
       ).rejects.toBeInstanceOf(SuwayomiError);
+    });
+
+    it("getChapterPageCount surfaces a transport failure as a SuwayomiError", async () => {
+      const transport = transportFailing(
+        Object.assign(new Error("fetch failed"), { code: "ECONNREFUSED" }),
+      );
+      const client = new SuwayomiGraphQLClient(transport);
+
+      await expect(client.getChapterPageCount("100")).rejects.toBeInstanceOf(
+        SuwayomiError,
+      );
     });
   });
 });

@@ -67,6 +67,12 @@ export interface SuwayomiClient {
   search(params: SearchParams): Promise<SearchResult>;
   getMangaDetails(mangaId: string): Promise<MangaDetails>;
   listChapters(mangaId: string): Promise<Chapter[]>;
+  /**
+   * Number of pages in a chapter. Rejects with {@link NotFoundError} when the
+   * chapter id is unknown. Carries no image data — the page list endpoint is
+   * metadata only (RFC §6; pages are fetched individually via {@link fetchPage}).
+   */
+  getChapterPageCount(chapterId: string): Promise<number>;
   fetchPage(ref: PageRef): Promise<RawPage>;
 }
 
