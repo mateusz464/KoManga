@@ -5,6 +5,7 @@ import type { SessionCache } from "../services/ports/session-cache.js";
 import type { CbzBuilder } from "../services/ports/cbz-builder.js";
 import type { DownloadStore } from "../services/ports/download-store.js";
 import type { DownloadsRepository } from "../services/ports/downloads-repository.js";
+import type { ReadingProgressRepository } from "../services/ports/reading-progress-repository.js";
 import { SourceService } from "../services/source-service.js";
 import { SearchService } from "../services/search-service.js";
 import { MangaService } from "../services/manga-service.js";
@@ -37,6 +38,10 @@ export interface AppDependencies {
   readonly cbzBuilder?: CbzBuilder;
   readonly downloadStore?: DownloadStore;
   readonly downloadsRepository?: DownloadsRepository;
+  // Wired into the reading-progress endpoints (`GET`/`PUT /api/progress/:mangaId`)
+  // by API-602. Optional here so endpoints that don't deal with progress keep
+  // their existing call sites; the progress router is only mounted when present.
+  readonly readingProgressRepository?: ReadingProgressRepository;
 }
 
 export function createApp(deps: AppDependencies): express.Express {

@@ -306,7 +306,7 @@
 
 > Device-agnostic, server-side, last-write-wins. Keyed by manga/chapter/page.
 
-### API-601 — [TEST] Progress endpoints
+### API-601 — [TEST] Progress endpoints — **Done**
 **Description:** Tests for `GET /api/progress/:mangaId` and `PUT /api/progress/:mangaId` (manga/chapter/page + updated_at), last-write-wins semantics.
 **Acceptance criteria:**
 - PUT then GET returns the stored position.
@@ -314,6 +314,7 @@
 - Progress is not tied to any device identifier.
 **Blocked by:** API-502.
 **Estimate:** M
+**Notes (2026-06-26):** `test/http/progress.test.ts` drives the contract through Express with the `ReadingProgressRepository` mocked at the port boundary (CLAUDE.md §4) and injected via `createApp`, mirroring the API-505 stateful-fake pattern (real route + service, ports mocked). The `ReadingProgress` port already existed (API-501), so no new port — `AppDependencies` gained **optional** `readingProgressRepository` (kept optional so existing `createApp` call sites stay valid; API-602 mounts the router + reads it). Contract decisions pinned (RFC §7/§8): `mangaId` comes from the **URL**, the PUT body carries only `chapterId`/`page`/`updatedAt` (device-agnostic — a `deviceId` in the body is ignored, never persisted); **last-write-wins lives in the repository** (the faithful in-memory fake implements it: `updatedAt >=` overwrites, stale write is a no-op), so the endpoints just forward to `save`/`get`; PUT returns the **resolved** current position (save then get) so a stale write visibly returns the newer stored value; success is the standard `{ data: ... }` envelope; a manga with no stored progress yet → 404. Coverage: PUT stores keyed by URL manga id + returns it; PUT→GET round-trip; newer `updatedAt` overwrites older; older does **not** clobber newer (and the stale PUT itself resolves to the newer position); device-agnostic (saved record has exactly the four fields, no `deviceId` leaks into store or response); edge validation → 400 (missing `chapterId`, non-numeric `page`, missing `updatedAt`, all before `save` is touched); GET returns the stored position; unknown manga → `repo.get` reached → 404 (asserts the port was reached so the generic 404 fallback can't make it pass green). All 10 fail red (404, route unmounted) pending API-602; existing 138 tests pass (suite 148: 138 passing + 10 red), lint + typecheck clean.
 
 ### API-602 — Progress endpoints (impl)
 **Description:** Implement the progress endpoints satisfying API-601.
