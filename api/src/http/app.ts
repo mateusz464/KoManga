@@ -2,6 +2,9 @@ import express from "express";
 import type { SuwayomiClient } from "../services/ports/suwayomi-client.js";
 import type { ImageProcessor } from "../services/ports/image-processor.js";
 import type { SessionCache } from "../services/ports/session-cache.js";
+import type { CbzBuilder } from "../services/ports/cbz-builder.js";
+import type { DownloadStore } from "../services/ports/download-store.js";
+import type { DownloadsRepository } from "../services/ports/downloads-repository.js";
 import { SourceService } from "../services/source-service.js";
 import { SearchService } from "../services/search-service.js";
 import { MangaService } from "../services/manga-service.js";
@@ -25,6 +28,13 @@ export interface AppDependencies {
   // Background-prefetch window for the single-page endpoint (API-410). Configured
   // via Config.prefetch.window at the composition root; defaults to no prefetch.
   readonly prefetchWindow?: number;
+  // Wired into the download endpoints (`POST /api/chapter/:id/download`,
+  // `GET /api/downloads`, `GET /api/downloads/:chapterId`) by API-506. Optional
+  // here so endpoints that don't deal with downloads keep their existing call
+  // sites; the download router is only mounted when all three are present.
+  readonly cbzBuilder?: CbzBuilder;
+  readonly downloadStore?: DownloadStore;
+  readonly downloadsRepository?: DownloadsRepository;
 }
 
 export function createApp(deps: AppDependencies): express.Express {
