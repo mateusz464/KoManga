@@ -6,6 +6,7 @@ import type { CbzBuilder } from "../services/ports/cbz-builder.js";
 import type { DownloadStore } from "../services/ports/download-store.js";
 import type { DownloadsRepository } from "../services/ports/downloads-repository.js";
 import type { ReadingProgressRepository } from "../services/ports/reading-progress-repository.js";
+import type { LibraryRepository } from "../services/ports/library-repository.js";
 import { SourceService } from "../services/source-service.js";
 import { SearchService } from "../services/search-service.js";
 import { MangaService } from "../services/manga-service.js";
@@ -33,6 +34,7 @@ export interface AppDependencies {
   readonly downloadStore?: DownloadStore;
   readonly downloadsRepository?: DownloadsRepository;
   readonly readingProgressRepository?: ReadingProgressRepository;
+  readonly libraryRepository?: LibraryRepository;
 }
 
 export function createApp(deps: AppDependencies): express.Express {
