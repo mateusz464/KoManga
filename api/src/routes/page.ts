@@ -28,5 +28,7 @@ function parseProfile(value: unknown): ImageProfile {
   if (value === "raw" || value === "eink") {
     return value;
   }
-  throw new BadRequestError("Query parameter 'profile' must be 'raw' or 'eink'");
+  throw new BadRequestError(
+    "Query parameter 'profile' must be 'raw' or 'eink'",
+  );
 }

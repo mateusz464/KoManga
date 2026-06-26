@@ -139,7 +139,11 @@ describe("PageService background prefetch", () => {
 
     for (const index of [1, 2, 3]) {
       expect(fetchPage).toHaveBeenCalledWith(ref(CHAPTER, index));
-      expect(cache.set).toHaveBeenCalledWith(`${CHAPTER}:${index}`, "raw", PROCESSED);
+      expect(cache.set).toHaveBeenCalledWith(
+        `${CHAPTER}:${index}`,
+        "raw",
+        PROCESSED,
+      );
     }
     expect(processor.process).toHaveBeenCalledWith(SOURCE, "raw");
     // Did not overshoot the window.

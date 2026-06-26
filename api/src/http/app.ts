@@ -10,11 +10,13 @@ import { SearchService } from "../services/search-service.js";
 import { MangaService } from "../services/manga-service.js";
 import { ChapterService } from "../services/chapter-service.js";
 import { PageService } from "../services/page-service.js";
+import { DownloadService } from "../services/download-service.js";
 import { sourcesRouter } from "../routes/sources.js";
 import { searchRouter } from "../routes/search.js";
 import { mangaRouter } from "../routes/manga.js";
 import { chapterRouter } from "../routes/chapter.js";
 import { pageRouter } from "../routes/page.js";
+import { downloadsRouter } from "../routes/downloads.js";
 import { errorHandler, notFoundHandler } from "./error-handler.js";
 
 // Composition happens at the edge: concrete adapters are injected in and wired
@@ -61,6 +63,30 @@ export function createApp(deps: AppDependencies): express.Express {
           deps.imageProcessor,
           deps.sessionCache,
           deps.prefetchWindow,
+        ),
+      ),
+    );
+  }
+
+  // The download endpoints need the CBZ builder, the persistent store and the
+  // downloads repository (in addition to the image processor already used for
+  // page processing), so they are only mounted when all are wired in. The
+  // composition root always does; metadata-only test call sites skip them.
+  if (
+    deps.imageProcessor &&
+    deps.cbzBuilder &&
+    deps.downloadStore &&
+    deps.downloadsRepository
+  ) {
+    app.use(
+      "/api",
+      downloadsRouter(
+        new DownloadService(
+          deps.suwayomi,
+          deps.imageProcessor,
+          deps.cbzBuilder,
+          deps.downloadStore,
+          deps.downloadsRepository,
         ),
       ),
     );

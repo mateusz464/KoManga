@@ -25,9 +25,10 @@ function page(sizeBytes: number, contentType = "image/png"): CachedPage {
 }
 
 /** A cache with an injected, manually-advanced clock so TTL is deterministic. */
-function cacheWithClock(
-  options: Omit<InMemorySessionCacheOptions, "clock">,
-): { cache: InMemorySessionCache; advance: (ms: number) => void } {
+function cacheWithClock(options: Omit<InMemorySessionCacheOptions, "clock">): {
+  cache: InMemorySessionCache;
+  advance: (ms: number) => void;
+} {
   let now = 0;
   const cache = new InMemorySessionCache({ ...options, clock: () => now });
   return {
@@ -105,7 +106,10 @@ describe("InMemorySessionCache (SessionCache port contract)", () => {
 
   describe("TTL expiry", () => {
     it("serves an entry before its TTL elapses", () => {
-      const { cache, advance } = cacheWithClock({ maxBytes: 10_000, ttlMs: 1_000 });
+      const { cache, advance } = cacheWithClock({
+        maxBytes: 10_000,
+        ttlMs: 1_000,
+      });
 
       cache.set("1:0", "raw", page(100));
       advance(999);
@@ -114,7 +118,10 @@ describe("InMemorySessionCache (SessionCache port contract)", () => {
     });
 
     it("does not serve an entry once its TTL has elapsed", () => {
-      const { cache, advance } = cacheWithClock({ maxBytes: 10_000, ttlMs: 1_000 });
+      const { cache, advance } = cacheWithClock({
+        maxBytes: 10_000,
+        ttlMs: 1_000,
+      });
 
       cache.set("1:0", "raw", page(100));
       advance(1_001);
@@ -123,7 +130,10 @@ describe("InMemorySessionCache (SessionCache port contract)", () => {
     });
 
     it("re-setting a key refreshes its TTL", () => {
-      const { cache, advance } = cacheWithClock({ maxBytes: 10_000, ttlMs: 1_000 });
+      const { cache, advance } = cacheWithClock({
+        maxBytes: 10_000,
+        ttlMs: 1_000,
+      });
 
       cache.set("1:0", "raw", page(100));
       advance(800);

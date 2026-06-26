@@ -30,3 +30,8 @@ networks:
 
 volumes:
   suwayomi-data:
+  # Persistent CBZ download store (RFC §5.2/§7) — explicit downloads the user
+  # chose to keep, physically separate from the ephemeral session cache and
+  # never auto-pruned. The `api` service mounts this at CBZ_STORE_PATH when it
+  # joins the stack (API-801).
+  cbz-store:

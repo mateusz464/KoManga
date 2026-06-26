@@ -17,9 +17,7 @@ interface Row {
   updated_at: number;
 }
 
-export class SqliteReadingProgressRepository
-  implements ReadingProgressRepository
-{
+export class SqliteReadingProgressRepository implements ReadingProgressRepository {
   constructor(private readonly db: AppDatabase) {}
 
   get(mangaId: string): ReadingProgress | undefined {

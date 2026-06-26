@@ -148,7 +148,12 @@ describe("SQLite data layer (API-501)", () => {
       // A later write for the same manga replaces the position rather than
       // adding a second row — there is no device dimension to distinguish them.
       progress.save(PROGRESS);
-      progress.save({ ...PROGRESS, chapterId: "chapter-2", page: 0, updatedAt: 2_000 });
+      progress.save({
+        ...PROGRESS,
+        chapterId: "chapter-2",
+        page: 0,
+        updatedAt: 2_000,
+      });
 
       const got = progress.get(PROGRESS.mangaId);
       expect(got).toEqual({
@@ -219,7 +224,11 @@ describe("SQLite data layer (API-501)", () => {
       const { downloads } = repos();
 
       downloads.create(DOWNLOAD);
-      downloads.create({ ...DOWNLOAD, cbzPath: "/somewhere/else.cbz", createdAt: 9_999 });
+      downloads.create({
+        ...DOWNLOAD,
+        cbzPath: "/somewhere/else.cbz",
+        createdAt: 9_999,
+      });
 
       expect(downloads.list()).toHaveLength(1);
       expect(downloads.get(DOWNLOAD.chapterId)).toEqual(DOWNLOAD);
@@ -261,7 +270,11 @@ describe("SQLite data layer (API-501)", () => {
       const { cacheIndex } = repos();
 
       cacheIndex.upsert(CACHE_ENTRY);
-      cacheIndex.upsert({ ...CACHE_ENTRY, sizeBytes: 4_096, expiresAt: 99_000 });
+      cacheIndex.upsert({
+        ...CACHE_ENTRY,
+        sizeBytes: 4_096,
+        expiresAt: 99_000,
+      });
 
       expect(cacheIndex.list()).toHaveLength(1);
       expect(cacheIndex.get(CACHE_ENTRY.key)?.sizeBytes).toBe(4_096);

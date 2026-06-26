@@ -39,9 +39,7 @@ export class SqliteDownloadsRepository implements DownloadsRepository {
   }
 
   list(): DownloadRecord[] {
-    const rows = this.db
-      .prepare("SELECT * FROM downloads")
-      .all() as Row[];
+    const rows = this.db.prepare("SELECT * FROM downloads").all() as Row[];
     return rows.map(toRecord);
   }
 

@@ -47,10 +47,7 @@ async function colourImage(
     .toBuffer();
 }
 
-async function source(
-  width: number,
-  height: number,
-): Promise<SourceImage> {
+async function source(width: number, height: number): Promise<SourceImage> {
   return { bytes: await colourImage(width, height), contentType: "image/png" };
 }
 

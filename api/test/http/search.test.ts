@@ -104,7 +104,9 @@ describe("GET /api/search", () => {
   it("returns 400 when q is missing", async () => {
     const { suwayomi, search } = clientSearching(sampleResult);
 
-    const res = await request(createApp({ suwayomi })).get("/api/search?source=1");
+    const res = await request(createApp({ suwayomi })).get(
+      "/api/search?source=1",
+    );
 
     expect(res.status).toBe(400);
     expect(res.body).toEqual({

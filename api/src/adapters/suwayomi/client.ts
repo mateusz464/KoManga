@@ -269,8 +269,12 @@ export function createSuwayomiClient(
   const baseUrl = options.baseUrl.replace(/\/+$/, "");
   const transport = new GraphQLRequestTransport({
     endpoint: `${baseUrl}${GRAPHQL_PATH}`,
-    ...(options.authToken !== undefined ? { authToken: options.authToken } : {}),
-    ...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}),
+    ...(options.authToken !== undefined
+      ? { authToken: options.authToken }
+      : {}),
+    ...(options.timeoutMs !== undefined
+      ? { timeoutMs: options.timeoutMs }
+      : {}),
     ...(options.retries !== undefined ? { retries: options.retries } : {}),
   });
   return new SuwayomiGraphQLClient(transport, { baseUrl });

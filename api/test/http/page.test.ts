@@ -110,12 +110,22 @@ function buildDeps(options: {
   };
 
   const process = vi.fn(
-    async (_source: SourceImage, _profile: ImageProfile): Promise<ProcessedImage> =>
-      options.processed ?? PROCESSED,
+    async (
+      _source: SourceImage,
+      _profile: ImageProfile,
+    ): Promise<ProcessedImage> => options.processed ?? PROCESSED,
   );
   const imageProcessor: ImageProcessor = { process };
 
-  return { suwayomi, imageProcessor, sessionCache, fetchPage, process, get, set };
+  return {
+    suwayomi,
+    imageProcessor,
+    sessionCache,
+    fetchPage,
+    process,
+    get,
+    set,
+  };
 }
 
 function appFrom(deps: PageDeps) {

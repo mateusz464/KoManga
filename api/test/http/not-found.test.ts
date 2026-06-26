@@ -8,9 +8,9 @@ import { stubSuwayomi } from "../support/stub-suwayomi.js";
 // Express's default HTML 404.
 describe("unmatched routes on the API", () => {
   it("fall through to the standard 404 envelope", async () => {
-    const res = await request(
-      createApp({ suwayomi: stubSuwayomi() }),
-    ).get("/api/definitely-not-a-route");
+    const res = await request(createApp({ suwayomi: stubSuwayomi() })).get(
+      "/api/definitely-not-a-route",
+    );
 
     expect(res.status).toBe(404);
     expect(res.body).toEqual({

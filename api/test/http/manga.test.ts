@@ -89,9 +89,9 @@ describe("GET /api/manga/:id", () => {
     );
     // Chapters are presented in ascending chapter-number order regardless of
     // the order the upstream returned them in.
-    expect(res.body.data.chapters.map((c: Chapter) => c.chapterNumber)).toEqual([
-      1, 2, 3,
-    ]);
+    expect(res.body.data.chapters.map((c: Chapter) => c.chapterNumber)).toEqual(
+      [1, 2, 3],
+    );
     expect(res.body.data.chapters).toEqual([
       { id: "101", name: "Chapter 1", chapterNumber: 1, pageCount: 18 },
       { id: "102", name: "Chapter 2", chapterNumber: 2, pageCount: 22 },
