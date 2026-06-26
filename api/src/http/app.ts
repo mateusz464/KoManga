@@ -14,6 +14,7 @@ import { ChapterService } from "../services/chapter-service.js";
 import { PageService } from "../services/page-service.js";
 import { DownloadService } from "../services/download-service.js";
 import { ProgressService } from "../services/progress-service.js";
+import { LibraryService } from "../services/library-service.js";
 import { sourcesRouter } from "../routes/sources.js";
 import { searchRouter } from "../routes/search.js";
 import { mangaRouter } from "../routes/manga.js";
@@ -21,6 +22,7 @@ import { chapterRouter } from "../routes/chapter.js";
 import { pageRouter } from "../routes/page.js";
 import { downloadsRouter } from "../routes/downloads.js";
 import { progressRouter } from "../routes/progress.js";
+import { libraryRouter } from "../routes/library.js";
 import { errorHandler, notFoundHandler } from "./error-handler.js";
 
 // Adapters are injected here, not constructed by the app. The optional deps gate
@@ -88,6 +90,10 @@ export function createApp(deps: AppDependencies): express.Express {
       "/api",
       progressRouter(new ProgressService(deps.readingProgressRepository)),
     );
+  }
+
+  if (deps.libraryRepository) {
+    app.use("/api", libraryRouter(new LibraryService(deps.libraryRepository)));
   }
 
   // 404 fallback for unmatched routes, then the centralised error handler.

@@ -7,6 +7,7 @@ import { FilesystemDownloadStore } from "./adapters/store/filesystem-download-st
 import { openDatabase } from "./adapters/db/database.js";
 import { SqliteDownloadsRepository } from "./adapters/db/downloads-repository.js";
 import { SqliteReadingProgressRepository } from "./adapters/db/reading-progress-repository.js";
+import { SqliteLibraryRepository } from "./adapters/db/library-repository.js";
 import { createApp } from "./http/app.js";
 
 // Composition root: load config, construct concrete adapters, inject them.
@@ -33,6 +34,7 @@ const cbzBuilder = new ZipCbzBuilder();
 const downloadStore = new FilesystemDownloadStore(config.paths.cbzStore);
 const downloadsRepository = new SqliteDownloadsRepository(db);
 const readingProgressRepository = new SqliteReadingProgressRepository(db);
+const libraryRepository = new SqliteLibraryRepository(db);
 
 const app = createApp({
   suwayomi,
@@ -43,6 +45,7 @@ const app = createApp({
   downloadStore,
   downloadsRepository,
   readingProgressRepository,
+  libraryRepository,
 });
 
 app.listen(config.port, () => {

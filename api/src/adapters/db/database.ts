@@ -29,6 +29,11 @@ const MIGRATIONS = `
     stored_at  INTEGER NOT NULL,
     expires_at INTEGER NOT NULL
   );
+
+  CREATE TABLE IF NOT EXISTS library (
+    manga_id TEXT    PRIMARY KEY,
+    added_at INTEGER NOT NULL
+  );
 `;
 
 export function openDatabase(file: string): AppDatabase {
