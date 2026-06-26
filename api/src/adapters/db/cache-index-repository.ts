@@ -1,7 +1,7 @@
 // SQLite implementation of the CacheIndexRepository port (RFC §7).
 //
-// Stub for API-501 (the [TEST] ticket); the real CRUD lands in API-502.
-// Methods throw so the contract tests run and fail red.
+// Bookkeeping ONLY for the ephemeral session cache (keys, sizes, TTLs) — never
+// the page bytes, and nothing to do with the persistent CBZ download store.
 
 import type {
   CacheIndexEntry,
@@ -9,26 +9,58 @@ import type {
 } from "../../services/ports/cache-index-repository.js";
 import type { AppDatabase } from "./database.js";
 
+interface Row {
+  key: string;
+  size_bytes: number;
+  stored_at: number;
+  expires_at: number;
+}
+
+function toEntry(row: Row): CacheIndexEntry {
+  return {
+    key: row.key,
+    sizeBytes: row.size_bytes,
+    storedAt: row.stored_at,
+    expiresAt: row.expires_at,
+  };
+}
+
 export class SqliteCacheIndexRepository implements CacheIndexRepository {
   constructor(private readonly db: AppDatabase) {}
 
-  get(_key: string): CacheIndexEntry | undefined {
-    throw new Error("CacheIndexRepository.get not implemented (API-502)");
+  get(key: string): CacheIndexEntry | undefined {
+    const row = this.db
+      .prepare("SELECT * FROM cache_index WHERE key = ?")
+      .get(key) as Row | undefined;
+    return row === undefined ? undefined : toEntry(row);
   }
 
-  upsert(_entry: CacheIndexEntry): void {
-    throw new Error("CacheIndexRepository.upsert not implemented (API-502)");
+  upsert(entry: CacheIndexEntry): void {
+    this.db
+      .prepare(
+        `INSERT INTO cache_index (key, size_bytes, stored_at, expires_at)
+         VALUES (@key, @sizeBytes, @storedAt, @expiresAt)
+         ON CONFLICT(key) DO UPDATE SET
+           size_bytes = excluded.size_bytes,
+           stored_at  = excluded.stored_at,
+           expires_at = excluded.expires_at`,
+      )
+      .run(entry);
   }
 
-  delete(_key: string): void {
-    throw new Error("CacheIndexRepository.delete not implemented (API-502)");
+  delete(key: string): void {
+    this.db.prepare("DELETE FROM cache_index WHERE key = ?").run(key);
   }
 
   list(): CacheIndexEntry[] {
-    throw new Error("CacheIndexRepository.list not implemented (API-502)");
+    const rows = this.db.prepare("SELECT * FROM cache_index").all() as Row[];
+    return rows.map(toEntry);
   }
 
   totalBytes(): number {
-    throw new Error("CacheIndexRepository.totalBytes not implemented (API-502)");
+    const row = this.db
+      .prepare("SELECT COALESCE(SUM(size_bytes), 0) AS total FROM cache_index")
+      .get() as { total: number };
+    return row.total;
   }
 }
