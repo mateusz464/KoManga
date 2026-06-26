@@ -249,7 +249,7 @@
 
 > Explicit, persistent downloads — separate from the ephemeral session cache.
 
-### API-501 — [TEST] SQLite layer & migrations
+### API-501 — [TEST] SQLite layer & migrations — **Done**
 **Description:** Tests for the data layer: schema/migrations for `downloads`, `reading_progress`, `cache_index`; basic CRUD behind a repository interface.
 **Acceptance criteria:**
 - Migrations create the schema on a fresh DB.
@@ -257,6 +257,7 @@
 - DB access is behind interfaces (mockable for upstream tests).
 **Blocked by:** API-105, API-103.
 **Estimate:** M
+**Notes (2026-06-26):** Defined three repository ports in `src/services/ports/` (one per RFC §7 table): `ReadingProgressRepository` (device-agnostic — keyed by manga only, no device id; `save` is **last-write-wins** by `updatedAt`), `DownloadsRepository` (keyed by chapter; `create` **idempotent** per chapter for re-download; `get`/`list`/`updateStatus`), and `CacheIndexRepository` (session-cache bookkeeping — `get`/`upsert`/`delete`/`list`/`totalBytes`). The `better-sqlite3` `Database` type stays inside the adapter and never crosses a port boundary (CLAUDE.md §11); domain types live in the port files. Added `better-sqlite3` + `@types/better-sqlite3` to deps (verified the native ARM build imports/runs). `test/adapters/db/sqlite.test.ts` exercises the **real `better-sqlite3` library on a temp on-disk DB** (CLAUDE.md §4.4, adapter-level) via stub adapters (`src/adapters/db/`: an `openDatabase` that throws + repository classes whose methods throw) so all behavioural assertions execute and fail red pending API-502. Coverage: **migrations** create the `reading_progress`/`downloads`/`cache_index` tables on a fresh DB and re-running on an already-migrated file is safe + preserves data (run-on-startup); **reading_progress** get/save round-trip, one-row-per-manga (device-agnostic), and last-write-wins both directions (newer overwrites, stale write does not clobber); **downloads** get/list/empty, create + list-all, idempotent create (no duplicate, original kept), updateStatus; **cache_index** get/miss, empty list + zero total, upsert + replace, delete (incl. no-op on absent key), totalBytes sum. Plus a **mockability** test per port (these 3 pass green, proving the interfaces are mockable for upstream tests — API-505/601). 19 behavioural assertions fail red + 3 mockability pass; existing 98 tests still pass (suite 120: 101 passing + 19 red), lint + typecheck clean.
 
 ### API-502 — SQLite layer & migrations (impl)
 **Description:** Implement the data layer satisfying API-501.
