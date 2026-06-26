@@ -1,8 +1,3 @@
-// SQLite implementation of the CacheIndexRepository port (RFC §7).
-//
-// Bookkeeping ONLY for the ephemeral session cache (keys, sizes, TTLs) — never
-// the page bytes, and nothing to do with the persistent CBZ download store.
-
 import type {
   CacheIndexEntry,
   CacheIndexRepository,

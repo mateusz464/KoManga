@@ -1,13 +1,5 @@
-// Port (interface) for the persistent download records (RFC §7, CLAUDE.md §8).
-//
-// Tracks chapters the user explicitly chose to download as CBZ. This is only
-// the bookkeeping row in OUR SQLite — the CBZ bytes live on a separate Docker
-// volume (the persistent store), never in the ephemeral session cache, and are
-// never auto-pruned by cache logic.
-//
-// Services depend on this interface, never a concrete adapter, so it can be
-// mocked in upstream tests (API-505) and the storage swapped without changing
-// callers.
+// Bookkeeping rows in OUR SQLite for chapters downloaded as CBZ (RFC §7); the
+// CBZ bytes themselves live in the separate DownloadStore.
 
 /** Lifecycle of a download: queued, finished on disk, or failed to build. */
 export type DownloadStatus = "pending" | "completed" | "failed";

@@ -1,15 +1,6 @@
-// Port (interface) for page image processing (RFC §6, CLAUDE.md §6).
-//
-// Page serving is profile-negotiated, never e-ink-only:
-//   - "raw"  : source bytes / lossless passthrough — for future full-colour
-//              clients that process client-side.
-//   - "eink" : greyscale, resized-to-fit the configured Kobo resolution,
-//              contrast-tuned, encoded in the configured compact format.
-//
-// The transform parameters (target resolution + output format) are supplied to
-// the concrete adapter at construction from config — never hardcoded — so the
-// processor stays reusable by future server-side clients.
-
+// Page serving is profile-negotiated, never e-ink-only (RFC §6):
+//   - "raw"  : lossless passthrough — for clients that process client-side.
+//   - "eink" : greyscale, fitted to the Kobo resolution, contrast-tuned, compact.
 export type ImageProfile = "raw" | "eink";
 
 /** An undecoded source image, e.g. the bytes returned by SuwayomiClient.fetchPage. */
@@ -24,11 +15,8 @@ export interface ProcessedImage {
   readonly contentType: string;
 }
 
-/**
- * The e-ink transform's tunable parameters. Concrete adapters receive these by
- * construction (DI) from {@link Config.image} — they are never read from the
- * environment inside the adapter.
- */
+// Injected from Config.image so the eink transform is never hardcoded, keeping
+// the processor reusable by future server-side clients (CLAUDE.md §6/§10).
 export interface EinkProfileOptions {
   readonly targetWidth: number;
   readonly targetHeight: number;

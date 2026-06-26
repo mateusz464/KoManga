@@ -2,41 +2,30 @@ import type { ImageProcessor, ImageProfile } from "./ports/image-processor.js";
 import type { SessionCache } from "./ports/session-cache.js";
 import type { PageRef, SuwayomiClient } from "./ports/suwayomi-client.js";
 
-/** A page ready to serve: the processed bytes plus how to type the response. */
 export interface ServedPage {
   readonly bytes: Buffer;
   readonly contentType: string;
 }
 
-// Business logic for the single-page endpoint — the reading critical path
-// (RFC §5/§6). It integrates the three ports: look the page up in the session
-// cache (keyed by id + profile); on a miss, fetch the source from Suwayomi,
-// process it under the requested profile, store the result, and serve it. On a
-// hit the upstream is short-circuited entirely. After serving, it warms the next
-// window of pages in the background (prefetch). Knows nothing about Express.
+// The reading critical path (RFC §5/§6): session cache → on miss fetch + process
+// + store; after serving, warm the next window of pages in the background.
 export class PageService {
   constructor(
     private readonly suwayomi: SuwayomiClient,
     private readonly imageProcessor: ImageProcessor,
     private readonly sessionCache: SessionCache,
-    // Background-prefetch window (RFC §5): after serving a page, warm the next
-    // `prefetchWindow` pages of the same chapter into the cache without blocking
-    // the response. 0 disables prefetch. The window is configurable, wired from
-    // Config.prefetch.window at the composition root.
+    // 0 disables prefetch; wired from Config.prefetch.window.
     private readonly prefetchWindow = 0,
   ) {}
 
   async getPage(pageId: string, profile: ImageProfile): Promise<ServedPage> {
     const served = await this.serve(pageId, profile);
-    // Fire-and-forget: the reader's response must never wait on prefetch (RFC
-    // §5). Errors are swallowed inside prefetch(); guard here too so a synchronous
-    // throw can't surface as an unhandled rejection.
+    // Fire-and-forget: the reader's response must never wait on prefetch (RFC §5).
+    // The .catch guards against a synchronous throw becoming an unhandled rejection.
     void this.prefetch(pageId, profile).catch(() => {});
     return served;
   }
 
-  // Serve a single page: cache hit short-circuits the upstream; a miss fetches,
-  // processes, and stores before returning.
   private async serve(
     pageId: string,
     profile: ImageProfile,
@@ -52,11 +41,8 @@ export class PageService {
     return processed;
   }
 
-  // Warm the next `prefetchWindow` pages of the same chapter into the cache,
-  // under the same profile, bounded by the chapter's page count so we never
-  // request past the last page. Already-cached pages are skipped. Runs in the
-  // background; any upstream/processing failure for a prefetched page is
-  // swallowed — prefetch is best-effort and must not affect the served page.
+  // Warm the next `prefetchWindow` pages of the same chapter, bounded by the
+  // page count so we never request past the last page. Best-effort.
   private async prefetch(pageId: string, profile: ImageProfile): Promise<void> {
     if (this.prefetchWindow <= 0) {
       return;
@@ -76,8 +62,6 @@ export class PageService {
     }
   }
 
-  // Fetch → process → store one page, unless it is already cached. Errors are
-  // swallowed: a failed prefetch must not surface.
   private async warm(pageId: string, profile: ImageProfile): Promise<void> {
     if (this.sessionCache.get(pageId, profile) !== undefined) {
       return;
@@ -92,10 +76,8 @@ export class PageService {
   }
 }
 
-// Page ids are "<chapterId>:<index>" (0-based) as minted by the chapter
-// page-list endpoint (API-402); split them back into the PageRef the Suwayomi
-// client expects. The chapter id may itself be numeric, so split on the last
-// colon.
+// Page ids are "<chapterId>:<index>"; split on the LAST colon, as the chapter id
+// may itself contain colons.
 function parsePageId(pageId: string): PageRef {
   const sep = pageId.lastIndexOf(":");
   return {

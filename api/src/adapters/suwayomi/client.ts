@@ -13,9 +13,7 @@ import {
 } from "../../services/ports/suwayomi-client.js";
 import { GraphQLRequestTransport, type GraphQLTransport } from "./transport.js";
 
-// Suwayomi serves GraphQL under this fixed path; the base URL from config points
-// at the server root. Keeping the path here (CLAUDE.md §13) means a Suwayomi
-// endpoint change touches only this adapter.
+// Suwayomi serves GraphQL here; config's base URL points at the server root.
 const GRAPHQL_PATH = "/api/graphql";
 
 const LIST_SOURCES = /* GraphQL */ `
@@ -192,11 +190,9 @@ export class SuwayomiGraphQLClient implements SuwayomiClient {
     return this.fetchBytes(this.resolveUrl(url));
   }
 
-  // The `fetchChapterPages` mutation is the single source of a chapter's pages;
-  // both the page count and individual page fetches derive from its `pages`
-  // array, so the GraphQL coupling lives in one place (CLAUDE.md §13). An unknown
-  // chapter id surfaces as a GraphQL "Collection is empty." error, which we map
-  // to a 404 rather than the generic 502 (verified against live Suwayomi, API-402).
+  // Single source of a chapter's pages — both the count and individual fetches
+  // derive from its `pages` array (CLAUDE.md §13). An unknown chapter comes back
+  // as a "Collection is empty." error, mapped to 404 not 502 (live, API-402).
   private async fetchPageUrls(chapterId: string): Promise<unknown[]> {
     let data: { fetchChapterPages?: { pages?: unknown } };
     try {
@@ -226,8 +222,7 @@ export class SuwayomiGraphQLClient implements SuwayomiClient {
   }
 
   // Queries rooted at the non-null `manga(id:)` field: an unknown id surfaces as
-  // a GraphQL non-null violation on the `manga` path, which we map to a 404
-  // rather than the generic 502 (verified against live Suwayomi, API-306).
+  // a non-null violation on the `manga` path, mapped to 404 not 502 (live, API-306).
   private async runManga<T>(document: string, mangaId: string): Promise<T> {
     try {
       return (await this.transport.request(document, {
@@ -257,12 +252,8 @@ export interface SuwayomiConnectionOptions {
   readonly retries?: number;
 }
 
-/**
- * Builds a ready-to-use client from a single base URL: the GraphQL transport
- * targets `${baseUrl}/api/graphql`, while the client keeps `baseUrl` to resolve
- * relative page/image URLs Suwayomi returns. This is the only place that knows
- * how a Suwayomi base URL maps to its endpoints.
- */
+// Transport targets `${baseUrl}/api/graphql`; the client keeps `baseUrl` to
+// resolve the relative page/image URLs Suwayomi returns.
 export function createSuwayomiClient(
   options: SuwayomiConnectionOptions,
 ): SuwayomiGraphQLClient {
@@ -290,9 +281,8 @@ interface RawGraphQLError {
   path?: unknown;
 }
 
-// `graphql-request` attaches the GraphQL response (with its `errors`) to the
-// thrown error. A missing manga is signalled as a non-null violation on the
-// `manga` path — the only "not found" channel Suwayomi gives us for `manga(id:)`.
+// A missing manga is signalled as a non-null violation on the `manga` path —
+// the only "not found" channel Suwayomi gives for `manga(id:)`.
 function isMangaNotFound(cause: unknown): boolean {
   if (typeof cause !== "object" || cause === null || !("response" in cause)) {
     return false;
@@ -313,9 +303,8 @@ function isMangaNotFound(cause: unknown): boolean {
   });
 }
 
-// An unknown chapter on the `fetchChapterPages` mutation comes back as a GraphQL
-// "Collection is empty." error (rather than a typed not-found channel) — the only
-// signal Suwayomi gives for a missing chapter here. Confirmed live (API-402).
+// An unknown chapter on `fetchChapterPages` comes back as a "Collection is
+// empty." error — the only signal Suwayomi gives for a missing chapter here.
 function isChapterNotFound(cause: unknown): boolean {
   if (typeof cause !== "object" || cause === null || !("response" in cause)) {
     return false;

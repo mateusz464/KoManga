@@ -3,10 +3,8 @@ import { BadRequestError } from "../http/errors.js";
 import type { PageService } from "../services/page-service.js";
 import type { ImageProfile } from "../services/ports/image-processor.js";
 
-// HTTP edge for single-page serving: negotiates the image profile and streams
-// the processed bytes with their content-type. No business logic here
-// (CLAUDE.md §3) — the fetch → process → cache flow lives in the service. Unlike
-// the metadata endpoints, the response body is the image itself, not an envelope.
+// Unlike the metadata endpoints, the response body is the image bytes, not the
+// JSON envelope.
 export function pageRouter(service: PageService): Router {
   const router = Router();
 
@@ -19,8 +17,7 @@ export function pageRouter(service: PageService): Router {
   return router;
 }
 
-// `profile` defaults to `raw`; only `raw`/`eink` are supported (RFC §6). Anything
-// else is rejected at the edge with a 400 before any port is touched.
+// `profile` defaults to `raw`; only `raw`/`eink` are supported (RFC §6).
 function parseProfile(value: unknown): ImageProfile {
   if (value === undefined) {
     return "raw";

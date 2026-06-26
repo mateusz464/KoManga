@@ -6,6 +6,7 @@ import { ZipCbzBuilder } from "./adapters/cbz/zip-cbz-builder.js";
 import { FilesystemDownloadStore } from "./adapters/store/filesystem-download-store.js";
 import { openDatabase } from "./adapters/db/database.js";
 import { SqliteDownloadsRepository } from "./adapters/db/downloads-repository.js";
+import { SqliteReadingProgressRepository } from "./adapters/db/reading-progress-repository.js";
 import { createApp } from "./http/app.js";
 
 // Composition root: load config, construct concrete adapters, inject them.
@@ -27,13 +28,11 @@ const sessionCache = new InMemorySessionCache({
   ttlMs: config.cache.ttlSeconds * 1000,
 });
 
-// Persistent download path: CBZs built here, stored on their own volume
-// (config.paths.cbzStore), recorded in our SQLite — kept separate from the
-// ephemeral session cache (RFC §5.2/§7).
 const db = openDatabase(config.paths.sqliteFile);
 const cbzBuilder = new ZipCbzBuilder();
 const downloadStore = new FilesystemDownloadStore(config.paths.cbzStore);
 const downloadsRepository = new SqliteDownloadsRepository(db);
+const readingProgressRepository = new SqliteReadingProgressRepository(db);
 
 const app = createApp({
   suwayomi,
@@ -43,6 +42,7 @@ const app = createApp({
   cbzBuilder,
   downloadStore,
   downloadsRepository,
+  readingProgressRepository,
 });
 
 app.listen(config.port, () => {

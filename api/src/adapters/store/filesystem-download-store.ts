@@ -1,10 +1,5 @@
-// Filesystem implementation of the DownloadStore port (RFC §5.2/§7).
-//
-// CBZs the user explicitly chose to keep are written under a base directory
-// mounted on its own Docker volume (CLAUDE.md §7), one file per chapter. This
-// store is physically separate from the ephemeral session cache and is never
-// auto-pruned by cache logic. The base directory is supplied by construction
-// (DI from Config.paths.cbzStore at the composition root).
+// DownloadStore on the CBZ Docker volume (RFC §5.2/§7): one file per chapter,
+// separate from the session cache and never auto-pruned by it.
 
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
@@ -32,7 +27,6 @@ export class FilesystemDownloadStore implements DownloadStore {
   }
 
   private pathFor(chapterId: string): string {
-    // Chapter ids are numeric (from Suwayomi), so a flat "<id>.cbz" name is safe.
     return join(this.baseDir, `${chapterId}.cbz`);
   }
 }

@@ -1,12 +1,5 @@
-// Port (interface) for session-cache bookkeeping (RFC §7, CLAUDE.md §8).
-//
-// `cache_index` records the keys, sizes and TTLs of entries in the ephemeral
-// session cache so pruning can be driven from durable bookkeeping. It owns
-// bookkeeping ONLY — never the page bytes, and never anything to do with the
-// persistent CBZ download store.
-//
-// Services depend on this interface, never a concrete adapter, so it can be
-// mocked in upstream tests and the storage swapped without changing callers.
+// Durable bookkeeping for the session cache (RFC §7): keys, sizes and TTLs only,
+// never the page bytes — so pruning can be driven from a persistent index.
 
 /**
  * One bookkeeping row for a cached page. `key` is the session cache's composite

@@ -7,12 +7,6 @@ import type {
   SourceImage,
 } from "../../services/ports/image-processor.js";
 
-// `sharp` implementation of the ImageProcessor port (CLAUDE.md §6, §11).
-//
-// The eink transform's parameters (target resolution + output format) are
-// injected at construction from `Config.image` — never hardcoded — so the
-// processor stays reusable by future server-side clients (CLAUDE.md §6/§10).
-
 const CONTENT_TYPES: Record<EinkProfileOptions["format"], string> = {
   png: "image/png",
   jpeg: "image/jpeg",
@@ -26,8 +20,7 @@ export class SharpImageProcessor implements ImageProcessor {
     source: SourceImage,
     profile: ImageProfile,
   ): Promise<ProcessedImage> {
-    // `raw` is a lossless passthrough — source bytes are served untouched for
-    // future full-colour clients that process client-side (RFC §6).
+    // `raw` is a lossless passthrough — source bytes served untouched (RFC §6).
     if (profile === "raw") {
       return source;
     }

@@ -3,9 +3,6 @@ import { BadRequestError } from "../http/errors.js";
 import type { SearchService } from "../services/search-service.js";
 import type { SearchParams } from "../services/ports/suwayomi-client.js";
 
-// HTTP edge for source search: validates the query string, maps it to the
-// service's SearchParams, and wraps the result in the standard success envelope.
-// No business logic here (CLAUDE.md §3); validation/coercion stays at the edge.
 export function searchRouter(service: SearchService): Router {
   const router = Router();
 
@@ -32,8 +29,7 @@ export function searchRouter(service: SearchService): Router {
   return router;
 }
 
-// Express query values can be string | string[] | ParsedQs; we only accept a
-// single non-empty scalar string and ignore anything else.
+// Express query values may be arrays/objects; accept only a non-empty scalar.
 function firstParam(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }

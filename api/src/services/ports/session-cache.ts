@@ -1,13 +1,6 @@
-// Port (interface) for the ephemeral session cache (RFC §5, CLAUDE.md §7).
-//
-// Holds processed pages for the current reading session, keyed by page id +
-// profile — so the `raw` and `eink` renderings of the same page are distinct
-// entries. Bounded by total size and per-entry TTL, and pruned aggressively;
-// it must never touch the persistent CBZ download store.
-//
-// Services depend on this interface, never a concrete adapter, so it can be
-// mocked in upstream tests (API-407) and swapped (e.g. for an out-of-process
-// cache) without changing callers.
+// Ephemeral cache of processed pages, keyed by page id + profile so `raw` and
+// `eink` of one page are distinct entries (RFC §5, CLAUDE.md §7). Never touches
+// the persistent CBZ store.
 
 import type { ImageProfile } from "./image-processor.js";
 

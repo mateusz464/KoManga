@@ -1,12 +1,8 @@
-// Concrete CbzBuilder adapter (API-504): assembles already-processed pages into
-// a CBZ — a plain ZIP whose entries are the page images. A reader displays
-// entries in lexicographic filename order, so entries are named with
-// zero-padded sequential numbers to make that order match chapter order.
-//
-// Pages have already been through the ImageProcessor, so they are stored with
-// the ZIP STORE method (no compression): the archived bytes are the source
-// bytes verbatim, exactly as the API-503 contract requires, and recompressing
-// already-compressed images would only waste CPU.
+// Builds a CBZ (a plain ZIP of page images) by hand — no ZIP library in the
+// stack. Entries use the STORE method (no compression): pages are already
+// processed, so the archived bytes are verbatim and recompressing would only
+// waste CPU. Entry names are zero-padded so lexicographic order — the order a
+// reader displays them in — matches chapter order.
 
 import type { CbzBuilder, CbzPage } from "../../services/ports/cbz-builder.js";
 
@@ -46,8 +42,6 @@ function extensionFor(contentType: string): string {
 
 export class ZipCbzBuilder implements CbzBuilder {
   build(pages: readonly CbzPage[]): Promise<Buffer> {
-    // Zero-pad to the width of the largest index so the lexicographic order of
-    // the names matches chapter order even past the 9→10 boundary.
     const width = String(pages.length).length;
 
     const parts: Buffer[] = [];

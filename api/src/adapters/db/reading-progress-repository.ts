@@ -1,9 +1,3 @@
-// SQLite implementation of the ReadingProgressRepository port (RFC §7).
-//
-// One row per manga (device-agnostic — keyed by manga only, never by device).
-// `save` is last-write-wins: an incoming write only replaces the stored row
-// when its `updatedAt` is newer than or equal to the stored one.
-
 import type {
   ReadingProgress,
   ReadingProgressRepository,

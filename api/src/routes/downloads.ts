@@ -5,18 +5,12 @@ import type { ImageProfile } from "../services/ports/image-processor.js";
 
 const CBZ_CONTENT_TYPE = "application/vnd.comicbook+zip";
 
-// HTTP edge for the download endpoints (RFC §5.2). Validates input and shapes
-// responses; the build → store → record flow lives in the service (CLAUDE.md §3).
-//   POST /api/chapter/:id/download — build + persist + record a chapter download.
-//   GET  /api/downloads            — list download records.
-//   GET  /api/downloads/:chapterId — serve a stored CBZ from the persistent store.
 export function downloadsRouter(service: DownloadService): Router {
   const router = Router();
 
   router.post("/chapter/:id/download", async (req, res) => {
-    // The client is browsing the manga when it triggers the download, so it
-    // supplies the chapter's mangaId; the SuwayomiClient port has no
-    // chapter→manga lookup. Validate at the edge before touching any port.
+    // mangaId is a required query param: the SuwayomiClient port has no
+    // chapter→manga lookup, and the client already knows it from browsing.
     const mangaId = req.query.mangaId;
     if (typeof mangaId !== "string" || mangaId.trim() === "") {
       throw new BadRequestError("Query parameter 'mangaId' is required");
@@ -39,8 +33,7 @@ export function downloadsRouter(service: DownloadService): Router {
   return router;
 }
 
-// `profile` defaults to `raw`; only `raw`/`eink` are supported (RFC §6). Anything
-// else is rejected at the edge with a 400 before any port is touched.
+// `profile` defaults to `raw`; only `raw`/`eink` are supported (RFC §6).
 function parseProfile(value: unknown): ImageProfile {
   if (value === undefined) {
     return "raw";

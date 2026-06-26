@@ -4,8 +4,7 @@ import type {
   SuwayomiClient,
 } from "./ports/suwayomi-client.js";
 
-// Reading direction is metadata the API owns (RFC §6), not something Suwayomi
-// supplies. Manga is right-to-left by default.
+// Reading direction is metadata the API owns (RFC §6), not Suwayomi's.
 export type ReadingDirection = "rtl" | "ltr";
 
 export interface MangaView {
@@ -14,9 +13,6 @@ export interface MangaView {
   readonly readingDirection: ReadingDirection;
 }
 
-// Business logic for the manga detail view. Knows nothing about Express; it
-// combines the two SuwayomiClient port calls (details + chapters), imposes
-// chapter ordering, and attaches the API-owned reading direction.
 export class MangaService {
   constructor(private readonly suwayomi: SuwayomiClient) {}
 

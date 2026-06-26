@@ -1,9 +1,5 @@
-// In-memory implementation of the SessionCache port (RFC §5, CLAUDE.md §7).
-//
-// Ephemeral, single-process store for processed pages of the current reading
-// session. Keyed by page id + profile so `raw` and `eink` of one page are
-// distinct entries. Bounded by total byte size with a per-entry TTL; pruned
-// aggressively. It never touches the persistent CBZ download store.
+// In-memory SessionCache (RFC §5, CLAUDE.md §7): bounded by total bytes with a
+// per-entry TTL.
 
 import type {
   CachedPage,
@@ -11,15 +7,10 @@ import type {
 } from "../../services/ports/session-cache.js";
 import type { ImageProfile } from "../../services/ports/image-processor.js";
 
-/**
- * Tunable bounds + clock, supplied by construction (DI from {@link Config.cache}
- * at the composition root). The clock is injectable so TTL expiry is testable
- * without real time.
- */
 export interface InMemorySessionCacheOptions {
   readonly maxBytes: number;
   readonly ttlMs: number;
-  /** Returns the current time in ms. Defaults to `Date.now`. */
+  /** Injectable so TTL expiry is testable without real time. Defaults to `Date.now`. */
   readonly clock?: () => number;
 }
 
@@ -83,7 +74,5 @@ export class InMemorySessionCache implements SessionCache {
 }
 
 function keyFor(pageId: string, profile: ImageProfile): string {
-  // Page ids are "<chapterId>:<index>" (digits + colon), so a space cleanly
-  // separates id from profile with no risk of one key colliding with another.
   return `${pageId} ${profile}`;
 }

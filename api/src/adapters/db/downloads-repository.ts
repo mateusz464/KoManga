@@ -1,8 +1,3 @@
-// SQLite implementation of the DownloadsRepository port (RFC §7).
-//
-// One row per chapter. `create` is idempotent (`INSERT OR IGNORE`): a
-// re-download of an existing chapter keeps the original row unchanged.
-
 import type {
   DownloadRecord,
   DownloadStatus,
