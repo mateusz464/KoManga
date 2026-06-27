@@ -148,12 +148,19 @@
 - **Next:** unblocks KWC-303/304 (auth flow), KWC-401/403/501/603 (logic suites that mock at this boundary).
 
 ### KWC-303 — [TEST] Auth flow (single credential)
+**Status:** Done
 **Description:** Tests for entering/storing the single-user credential and attaching it to every request; handling 401 by returning to the credential prompt.
 **Acceptance criteria:**
 - Credential persists across reloads (storage mechanism confirmed available on-device).
 - 401 from any call routes back to the credential entry view.
 **Blocked by:** KWC-301.
 **Estimate:** S
+**Outcome:** Red-phase contract suite for the auth flow in place (`web-client/test/state/auth.test.ts`, 13 tests), with the surface it pins down stubbed so the suite compiles and runs but fails until KWC-304:
+- **Module surface (KWC-304 implements):** `src/state/auth.ts` — `AuthController` (one credential for the whole client) with `AuthControllerOptions { storage?, onRequireLogin? }`, methods `getToken()` / `isAuthenticated()` / `login(token)` / `logout()` / `handleApiError(error): boolean`, plus the exported `CREDENTIAL_STORAGE_KEY` and an injectable `CredentialStorage` interface. Every method throws "not implemented yet — see KWC-304" (the constructor is a no-op so tests fail on their real assertions, not at setup). Lives in `state/` (framework-free, testable) — not `api/`, since the ApiClient already takes `getToken` as a callback (KWC-302) and only `api/` touches XHR.
+- **Storage = localStorage, the only persistence the spike confirmed on-device (KWC-102).** Injectable via the `CredentialStorage` boundary (the `getItem`/`setItem`/`removeItem` slice of Web Storage) so persistence is asserted deterministically with an in-memory double; one test checks the real default is the browser's `localStorage` (jsdom supplies it). **Persistence across reloads** is modelled as a fresh `AuthController` over the same storage reading the credential back. Namespaced key `komanga.credential` so it never collides in the same-origin store (KWC-202).
+- **Coverage (acceptance):** *persistence* — empty storage → unauthenticated/null token; `login` exposes the token + writes under the key; survives a "reload"; reads a pre-existing credential at construction; `logout` clears storage; default-localStorage path. *getToken for the ApiClient* — the `() => auth.getToken()` callback the shell wires is read per request, so a later `login` is picked up (matches KWC-302's per-request auth read). *401 routing* — `handleApiError(UnauthorizedError)` clears the credential, fires `onRequireLogin` once, returns `true`; a non-401 `ApiClientError` (502) and a transport `NetworkError` both leave the credential intact, don't fire `onRequireLogin`, return `false` (offline ≠ unauthorised); a non-error value is ignored without throwing. *End-to-end* — a real `ApiClient.listSources()` driven to 401 via a `FakeXhr` rejects with the actual `UnauthorizedError`, which `handleApiError` then routes back — proving the "from ANY call" criterion against the real transport error, not a hand-built one.
+- **Red verified:** all 13 fail solely on the missing KWC-304 impl ("not implemented yet — see KWC-304"); the prior 28 (KWC-301 client + KWC-203 smoke) still pass. `typecheck` / `lint` / `format:check` / `build` all clean.
+- **Next:** KWC-304 implements `AuthController` (localStorage read/write, token exposure, 401→logout+route) to turn this suite green, then verified on-device.
 
 ### KWC-304 — Auth flow (impl)
 **Description:** Implement credential entry/storage satisfying KWC-303.
