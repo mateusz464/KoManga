@@ -189,4 +189,101 @@ The API's `eink` profile output format **must** be one the panel decodes.
 
 ## KWC-103 — E-ink rendering & refresh behaviour
 
-> Not yet done. To be filled by the on-device refresh probe (full vs partial refresh, ghosting, paged vs scroll, tap responsiveness, image draw latency, recommended image format + per-page size budget).
+> **Done — measured on the real Kobo Clara BW** (probe run 2026-06-27, results in
+> `web-client/spike/kwc-103-results.{json,txt}`). This is a `[DEVICE]` ticket; the
+> guidance below is from the on-device pass, not a desktop assumption.
+
+### How it is measured
+
+`web-client/spike/kwc-103-refresh-probe.html` — a single self-contained,
+hand-written ES3/ES5-safe page (no build, no deps, XHR only — same constraints as
+the confirmed runtime, see KWC-102). It is **part measured, part observational**,
+because an e-ink panel's refresh quality can only be judged by eye:
+
+- **A. Image draw latency & size budget** — loads real **panel-sized (1072×1448)
+  grayscale PNG** pages at four byte weights and times each `src → onload`
+  (network + decode); the reader rates how each actually appeared on the panel.
+- **B. Ghosting / full vs partial refresh** — swaps a high-contrast screen via a
+  plain DOM update vs via a forced full-flash (paint viewport black → white →
+  clear) and asks whether A ghosted through each.
+- **C. Paged vs scroll** — a scrollable block vs an instant page-swap, reader
+  picks which reads cleaner on the panel.
+- **D. Tap responsiveness & target size** — 32/44/60/88 px targets; times
+  `touchstart → handler` and records which sizes registered + the smallest
+  comfortable one.
+- **E. Animation policy** — a JS-stepped moving box to confirm motion smears.
+
+`web-client/spike/serve_refresh_probe.py` serves the page over the LAN, **generates
+recognizable panel-sized mock pages with the stdlib only** (no Pillow required —
+each page has a frame, a large page number, count squares, two solid bars, a
+noise "art" band whose height drives the byte weight, and a checkerboard footer,
+so ghosting/draw quality is judgeable by eye). Measured tiers on this run:
+**~60 KB / ~401 KB / ~730 KB / ~845 KB**. Results POSTed to
+`kwc-103-results.{json,txt}`. A JPEG comparison is added only if Pillow is
+installed (it was not; PNG is the API `eink` default anyway). Throwaway artifacts.
+
+**To re-run it:** from `web-client/spike/`, `python3 serve_refresh_probe.py`, then
+open `http://<this-mac-lan-ip>:8000/` on the Kobo, work top to bottom, tap
+**SAVE RESULTS TO LAPTOP**.
+
+### Findings — guidance (the ticket's required outputs)
+
+**Image draw latency & size budget (section A — measured):**
+
+| Page | Size | `src → onload` (LAN fetch + decode) | On panel |
+|---|---|---|---|
+| light | 60 KB | 182 ms | instant |
+| medium | 401 KB | 251 ms | instant |
+| dense | 730 KB | 317 ms | instant |
+| heavy | 845 KB | 302 ms | instant |
+
+- **Recommended image format — PNG.** Confirmed drawing fast and clean; matches
+  KWC-102 (panel decodes PNG/JPEG/GIF, **not** WebP/AVIF) and the API `eink`
+  default. Never `webp` for this client.
+- **Per-page size budget — comfortable up to ~0.85 MB** at ~300 ms decode, which
+  the reader rated *instant* across the whole range. Set a **soft budget of ~1 MB
+  per `eink` page**; weight is not the bottleneck on this device. (Latency here is
+  LAN + decode; over the Cloudflare tunnel network transfer dominates, so the
+  client **prefetch** (KWC-503) still matters even though decode is cheap.)
+
+- **Paged vs scroll — PAGED, decisively.** Not from the radio button (left blank)
+  but from a **real rendering failure observed during the run:** scrolling the long
+  probe page down to section C left the text **unpainted** — content only appeared
+  after scrolling further (to D) forced a repaint. **This Nickel/WebKit build does
+  not reliably paint content below the fold on scroll.** Long-scroll views are
+  therefore unsafe; every view must fit the 732×762 viewport (or page) and advance
+  by **explicit content swaps**, never long smooth scroll. (Confirms RFC §6 / CLAUDE
+  §7, now with a concrete on-device reason.)
+
+- **When to force a full refresh — on every view change and page turn.** The same
+  deferred-paint behaviour shows the panel needs an **explicit repaint trigger**; a
+  forced full refresh (paint viewport black → white → clear, prototyped in section
+  B) on each navigation both guarantees the new content actually paints *and* clears
+  any residue. Do it centrally in `render/` (KWC-307/505). Note: in-place
+  high-contrast DOM swaps near the top of the page were rated **clean (no visible
+  ghost)** — the Carta 1300 panel / Nickel repaint is good — but given the
+  paint-reliability quirk, **force the full refresh on navigation regardless**; it
+  is cheap insurance, not just ghost control.
+
+- **Animation policy — none.** The probe's short JS slide was rated "smooth", but
+  motion has no upside on e-ink and the deferred-paint behaviour makes it
+  unreliable. Keep the **no-animation / no-transition** rule (RFC §6 / CLAUDE §7).
+
+- **Safe tap-target sizing.** All four sizes (**32 / 44 / 60 / 88 px**) registered
+  touches reliably and the tester found even 32 px comfortable. ⚠️ The timer
+  measured tap **hold duration** (~310–345 ms finger-down→up), **not** input
+  latency — so this run gives *no* latency figure, only that targets register
+  cleanly. Recommendation: small targets work, but for the reader keep **large tap
+  zones** (full-height left/right thirds for page turns; **≥ 44 px** for discrete
+  buttons, larger preferred) for eyes-down reliability.
+
+### API / client cross-references
+
+- **Size budget** feeds the API `eink` encoding and the client **prefetch window**
+  (CLAUDE §8 / KWC-503): ~1 MB/page is fine; decode is cheap, so the prefetch
+  window is bounded by tunnel bandwidth and memory, not draw cost. Format stays
+  **PNG** (never `webp`).
+- **Full-refresh policy** lives once, centrally, in `render/` (KWC-307/505) — the
+  black→white flash from section B, fired on every view change and page turn.
+- **Scroll is unsafe on this device** — a hard constraint for the app shell and
+  every view (KWC-307 onward), not a preference. See CLAUDE §12.

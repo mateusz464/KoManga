@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KWC-103 — E-ink Refresh &amp; Rendering Probe</title>
+<!--
+  THROWAWAY device spike (KWC-103). Self-contained: no build, no deps.
+  Load on the target Kobo (Clara BW, WebKit 538.1) served by
+  serve_refresh_probe.py. This probe is PART measured (image draw timings, tap
+  latency, which tap sizes register) and PART observational (ghosting, scroll vs
+  paged, animation smear) — the panel itself can only be judged by eye, so each
+  visual test asks YOU to tap an answer. When done, "SAVE RESULTS TO LAPTOP"
+  POSTs everything back (results land in kwc-103-results.json on the Mac).
+
+  Every line of script is hand-written ES3/ES5-safe (no fetch, no Promise, no
+  arrow fns, XHR only) so it runs on WebKit 538.1 exactly like the real client
+  will. See docs/device.md KWC-102 for why.
+-->
+<style>
+  html, body { margin: 0; padding: 0; background: #fff; color: #000; }
+  body {
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 20px; line-height: 1.4; padding: 16px;
+    -webkit-text-size-adjust: 100%;
+  }
+  h1 { font-size: 26px; margin: 0 0 4px 0; }
+  h2 { font-size: 22px; margin: 28px 0 8px 0; border-bottom: 2px solid #000; padding-bottom: 4px; }
+  p.note { font-size: 16px; color: #333; margin: 4px 0 8px 0; }
+  .step { font-weight: bold; }
+  .qrow { margin: 10px 0; }
+  .q { display: block; margin-bottom: 6px; }
+  /* answer buttons: big tap targets, clear selected state on greyscale */
+  button {
+    font-family: inherit; font-size: 18px; background: #fff; color: #000;
+    border: 2px solid #000; padding: 12px 16px; margin: 4px 6px 4px 0;
+    min-height: 44px; -webkit-appearance: none; border-radius: 0;
+  }
+  button.sel { background: #000; color: #fff; }
+  button.action { font-size: 20px; font-weight: bold; }
+  /* measured-value readouts */
+  .val { font-family: "Courier New", monospace; font-size: 16px; }
+  table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+  td { padding: 6px 4px; border-bottom: 1px solid #ccc; vertical-align: top; }
+  td.k { width: 60%; } td.v { width: 40%; font-weight: bold; text-align: right; font-family: "Courier New", monospace; }
+  /* image stage — fit a full panel page the way the real reader will */
+  #imgstage { width: 100%; text-align: center; border: 1px solid #999; min-height: 200px; }
+  #imgstage img { max-width: 100%; height: auto; display: block; margin: 0 auto; }
+  /* ghosting test panels: deliberately high-contrast to expose smear */
+  .gpanel { border: 2px solid #000; padding: 12px; min-height: 220px; }
+  .gpanel .bar { background: #000; color: #fff; padding: 6px; margin: 6px 0; font-weight: bold; }
+  /* scroll test block */
+  #scrollbox { height: 300px; overflow: auto; border: 2px solid #000; padding: 8px; -webkit-overflow-scrolling: touch; }
+  /* tap-target sizes under test */
+  .tt { display: inline-block; background: #000; color: #fff; text-align: center; vertical-align: middle; margin: 6px; line-height: 1; overflow: hidden; }
+  /* animation test */
+  #animbox { position: relative; height: 70px; border: 2px solid #000; }
+  #animdot { position: absolute; top: 10px; left: 0; width: 48px; height: 48px; background: #000; }
+  #fullflash { position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 9999; display: none; }
+  #savebar { position: -webkit-sticky; position: sticky; bottom: 0; background: #fff; border-top: 3px solid #000; padding: 10px 0; margin-top: 16px; }
+  #savestatus { font-size: 16px; font-weight: bold; border: 2px solid #000; padding: 10px 12px; margin-top: 8px; }
+  #savestatus.ok { background: #000; color: #fff; } #savestatus.fail { background: #fff; color: #000; }
+  #summary { white-space: pre-wrap; font-family: "Courier New", monospace; font-size: 14px; line-height: 1.35; border: 2px solid #000; padding: 12px; margin-top: 8px; word-break: break-word; }
+</style>
+</head>
+<body>
+<div id="fullflash"></div>
+<h1>KWC-103 — E-ink Refresh Probe</h1>
+<p class="note">Work top to bottom. Watch the <b>panel</b>, not the numbers — tap the
+answer that matches what you SEE. Numbers are captured automatically. At the
+bottom, tap <b>SAVE RESULTS TO LAPTOP</b>.</p>
+
+<!-- ============ A. IMAGE DRAW LATENCY & SIZE BUDGET ============ -->
+<h2>A. Image draw latency &amp; size budget</h2>
+<p class="note"><span class="step">Tap "Load next image".</span> Each is a real
+panel-sized page of a different byte weight. Watch how long it takes to actually
+appear, then rate it. JS load time (network+decode) is timed for you.</p>
+<div id="imgstage"><span class="val">no image yet</span></div>
+<div class="qrow">
+  <button id="btn-next-img" class="action">Load next image</button>
+  <span id="img-progress" class="val"></span>
+</div>
+<table id="t-img"></table>
+<div class="qrow" id="img-rate" style="display:none">
+  <span class="q">How did THIS page appear on the panel?</span>
+  <span class="choice" data-group="imgRate"></span>
+</div>
+
+<!-- ============ B. GHOSTING / FULL vs PARTIAL REFRESH ============ -->
+<h2>B. Ghosting — partial vs forced full refresh</h2>
+<p class="note">Step 1: tap <b>Show screen A</b> (dense black-on-white).
+Step 2: tap <b>Swap to B (partial)</b> — a plain DOM swap, no refresh trick.
+Look hard for faint remnants of A bleeding through B.
+Step 3: tap <b>Swap to B (forced full refresh)</b> — flashes the panel
+black→white first. Compare the cleanliness of the two swaps.</p>
+<div id="gstage" class="gpanel"><span class="val">tap "Show screen A"</span></div>
+<div class="qrow">
+  <button id="g-a" class="action">Show screen A</button>
+  <button id="g-b-partial" class="action">Swap to B (partial)</button>
+  <button id="g-b-full" class="action">Swap to B (forced full refresh)</button>
+</div>
+<div class="qrow">
+  <span class="q">After the PARTIAL swap, did A ghost through?</span>
+  <span class="choice" data-group="ghostPartial"></span>
+</div>
+<div class="qrow">
+  <span class="q">After the FORCED FULL refresh, was it clean?</span>
+  <span class="choice" data-group="ghostFull"></span>
+</div>
+
+<!-- ============ C. PAGED vs SCROLL ============ -->
+<h2>C. Paged vs scroll navigation</h2>
+<p class="note">Scroll the box below with your finger and watch for smear/lag.
+Then tap <b>Next page</b> a few times (instant content swap) and compare.</p>
+<div id="scrollbox"></div>
+<div class="qrow"><button id="paged-next" class="action">Next page (paged swap)</button>
+  <span id="paged-count" class="val"></span></div>
+<div class="qrow">
+  <span class="q">Which felt cleaner / more readable on the panel?</span>
+  <span class="choice" data-group="pagedVsScroll"></span>
+</div>
+
+<!-- ============ D. TAP RESPONSIVENESS & TARGET SIZE ============ -->
+<h2>D. Tap responsiveness &amp; target size</h2>
+<p class="note">Tap each black square once. Squares that registered turn into a
+check; the touchstart→handler latency is timed. Then tap the smallest size you
+could hit <i>comfortably and reliably</i>.</p>
+<div id="ttzone"></div>
+<table id="t-tap"></table>
+<div class="qrow">
+  <span class="q">Smallest tap target that was comfortable &amp; reliable:</span>
+  <span class="choice" data-group="tapSize"></span>
+</div>
+
+<!-- ============ E. ANIMATION POLICY ============ -->
+<h2>E. Animation policy (expected: none)</h2>
+<p class="note">Tap <b>Run animation</b>. A box slides across via JS steps. Watch
+for strobing / trails / smear.</p>
+<div id="animbox"><div id="animdot"></div></div>
+<div class="qrow"><button id="anim-run" class="action">Run animation</button></div>
+<div class="qrow">
+  <span class="q">How did the moving box look?</span>
+  <span class="choice" data-group="animLook"></span>
+</div>
+
+<!-- ============ SAVE ============ -->
+<h2>Save</h2>
+<div id="savebar">
+  <button id="save" class="action">SAVE RESULTS TO LAPTOP</button>
+  <div id="savestatus">not saved yet</div>
+</div>
+<div id="summary">running&hellip;</div>
+
+<script>
+/* global document, window, navigator, screen, XMLHttpRequest, Image */
+(function () {
+  "use strict";
+
+  /* ---- tiny helpers (ES5-safe) ---- */
+  function now() {
+    if (window.performance && typeof window.performance.now === "function") {
+      return window.performance.now();
+    }
+    return (new Date()).getTime();
+  }
+  function byId(id) { return document.getElementById(id); }
+  function setText(el, s) {
+    if ("textContent" in el) { el.textContent = s; } else { el.innerText = s; }
+  }
+  function ms(v) { return (Math.round(v * 10) / 10) + " ms"; }
+
+  /* central results object — everything POSTed back lives here */
+  var results = {
+    section: "KWC-103 e-ink refresh & rendering probe",
+    images: [],          /* {key,label,bytes,loadMs,rating} */
+    ghostPartial: null,
+    ghostFull: null,
+    pagedVsScroll: null,
+    tap: { latencies: [], sizesRegistered: {}, comfortable: null },
+    animLook: null,
+    imgRate: null
+  };
+
+  /* ---- choice button groups (observational answers) ---- */
+  var CHOICES = {
+    imgRate: ["instant", "slight delay", "slow / visible redraw"],
+    ghostPartial: ["clean (no ghost)", "faint ghost", "strong ghost"],
+    ghostFull: ["clean", "still some ghost"],
+    pagedVsScroll: ["paged cleaner", "scroll cleaner", "about equal"],
+    tapSize: ["32px", "44px", "60px", "88px"],
+    animLook: ["smooth", "strobes / trails", "bad smear"]
+  };
+  /* map a choice answer onto results */
+  function applyChoice(group, value) {
+    if (group === "imgRate") {
+      /* attach to the most recently loaded image */
+      results.imgRate = value;
+      if (results.images.length) { results.images[results.images.length - 1].rating = value; }
+    } else if (group === "tapSize") {
+      results.tap.comfortable = value;
+    } else {
+      results[group] = value;
+    }
+    renderSummary();
+  }
+  function buildChoices() {
+    var spans = document.getElementsByClassName("choice");
+    var i, j;
+    for (i = 0; i < spans.length; i++) {
+      (function (span) {
+        var group = span.getAttribute("data-group");
+        var opts = CHOICES[group];
+        var btns = [];
+        for (j = 0; j < opts.length; j++) {
+          (function (opt) {
+            var b = document.createElement("button");
+            setText(b, opt);
+            b.onclick = function () {
+              var k;
+              for (k = 0; k < btns.length; k++) { btns[k].className = ""; }
+              b.className = "sel";
+              applyChoice(group, opt);
+            };
+            btns.push(b);
+            span.appendChild(b);
+          })(opts[j]);
+        }
+      })(spans[i]);
+    }
+  }
+
+  /* ======================= A. IMAGE LATENCY ======================= */
+  var imgMeta = [];      /* from /imgmeta */
+  var imgIndex = -1;
+  function loadImgMeta() {
+    var xhr = new XMLHttpRequest();
+    xhr.open("GET", "/imgmeta", true);
+    xhr.onreadystatechange = function () {
+      if (xhr.readyState !== 4) { return; }
+      try {
+        var data = JSON.parse(xhr.responseText);
+        imgMeta = data.images || [];
+        setText(byId("img-progress"), "0 / " + imgMeta.length);
+      } catch (e) {
+        setText(byId("img-progress"), "imgmeta failed: " + e);
+      }
+    };
+    xhr.send(null);
+  }
+  function loadNextImage() {
+    if (!imgMeta.length) { return; }
+    imgIndex += 1;
+    if (imgIndex >= imgMeta.length) { imgIndex = 0; } /* wrap to allow re-tests */
+    var meta = imgMeta[imgIndex];
+    var stage = byId("imgstage");
+    stage.innerHTML = "";
+    setText(byId("img-progress"), (imgIndex + 1) + " / " + imgMeta.length + " — loading…");
+    var img = new Image();
+    var t0 = now();
+    img.onload = function () {
+      var loadMs = now() - t0;
+      stage.appendChild(img);
+      var rec = { key: meta.key, label: meta.label, bytes: meta.bytes, loadMs: loadMs, rating: null };
+      results.images.push(rec);
+      addImgRow(rec);
+      setText(byId("img-progress"), (imgIndex + 1) + " / " + imgMeta.length + " — " + meta.label);
+      byId("img-rate").style.display = "block";
+      renderSummary();
+    };
+    img.onerror = function () {
+      setText(byId("img-progress"), "ERROR loading " + meta.key);
+    };
+    /* bust the cache so each load is a true fetch+decode like a fresh page */
+    img.src = "/img/" + meta.key + "?bust=" + now();
+  }
+  function addImgRow(rec) {
+    var tr = document.createElement("tr");
+    var tdk = document.createElement("td"); tdk.className = "k";
+    setText(tdk, rec.label + "  (" + Math.round(rec.bytes / 1024) + " KB)");
+    var tdv = document.createElement("td"); tdv.className = "v";
+    setText(tdv, ms(rec.loadMs));
+    tr.appendChild(tdk); tr.appendChild(tdv);
+    byId("t-img").appendChild(tr);
+  }
+
+  /* ======================= B. GHOSTING ======================= */
+  function screenA() {
+    var g = byId("gstage");
+    g.innerHTML =
+      '<div class="bar">SCREEN A — high contrast</div>' +
+      '<div class="bar">██████████</div>' +
+      '<p>The quick brown fox jumps over the lazy dog. 0123456789. ' +
+      'Dense black text on white to leave a ghost if the panel does not fully clear.</p>' +
+      '<div class="bar">██████████</div>';
+  }
+  function screenBContent() {
+    return '<p style="font-size:18px">screen B — mostly white, sparse text. ' +
+           'Look in the empty areas for faint grey remnants of A’s black bars.</p>' +
+           '<p style="font-size:18px">. . . . . . . . . . . . . . . . . . . .</p>';
+  }
+  function swapBPartial() { byId("gstage").innerHTML = screenBContent(); }
+  function forceFullRefresh(cb) {
+    /* the classic e-ink clear: paint the whole viewport black, force a reflow,
+       then white, then continue. Centralised render/ will own this for real. */
+    var f = byId("fullflash");
+    f.style.display = "block";
+    f.style.background = "#000";
+    /* force layout/paint between the two fills */
+    /* eslint-disable no-unused-expressions */
+    f.offsetHeight;
+    window.setTimeout(function () {
+      f.style.background = "#fff";
+      f.offsetHeight;
+      window.setTimeout(function () {
+        f.style.display = "none";
+        cb();
+      }, 120);
+    }, 120);
+  }
+  function swapBFull() { forceFullRefresh(function () { byId("gstage").innerHTML = screenBContent(); }); }
+
+  /* ======================= C. PAGED vs SCROLL ======================= */
+  var pageNo = 0;
+  function fillScroll() {
+    var s = "", i;
+    for (i = 1; i <= 40; i++) {
+      s += '<p>Line ' + i + ' — scroll me with a finger and watch for smear, ' +
+           'lag, or trails as the panel repaints.</p>';
+    }
+    byId("scrollbox").innerHTML = s;
+  }
+  function nextPage() {
+    pageNo += 1;
+    var s = '<h3 style="margin-top:0">Paged view — page ' + pageNo + '</h3>';
+    var i;
+    for (i = 1; i <= 6; i++) {
+      s += '<p>Page ' + pageNo + ', paragraph ' + i +
+           '. Content is swapped instantly (no scroll). Compare the clarity vs scrolling.</p>';
+    }
+    byId("scrollbox").innerHTML = s;
+    setText(byId("paged-count"), "page " + pageNo);
+  }
+
+  /* ======================= D. TAP TARGETS ======================= */
+  var TAP_SIZES = [32, 44, 60, 88];
+  function buildTapTargets() {
+    var zone = byId("ttzone");
+    var i;
+    for (i = 0; i < TAP_SIZES.length; i++) {
+      (function (size) {
+        var d = document.createElement("div");
+        d.className = "tt";
+        d.style.width = size + "px";
+        d.style.height = size + "px";
+        d.style.lineHeight = size + "px";
+        d.style.fontSize = Math.max(11, Math.round(size / 3)) + "px";
+        setText(d, size);
+        var tStart = 0;
+        function start() { tStart = now(); }
+        function end() {
+          var lat = tStart ? (now() - tStart) : 0;
+          results.tap.latencies.push({ size: size, ms: lat });
+          results.tap.sizesRegistered[size] = (results.tap.sizesRegistered[size] || 0) + 1;
+          d.style.background = "#444";
+          setText(d, "✓");
+          addTapRow(size, lat);
+          renderSummary();
+        }
+        /* touch first (the confirmed event model), click as fallback */
+        d.addEventListener("touchstart", start, false);
+        d.addEventListener("touchend", end, false);
+        d.onclick = function () { if (!tStart) { start(); } end(); };
+        zone.appendChild(d);
+      })(TAP_SIZES[i]);
+    }
+  }
+  function addTapRow(size, lat) {
+    var tr = document.createElement("tr");
+    var tdk = document.createElement("td"); tdk.className = "k";
+    setText(tdk, size + "px target registered");
+    var tdv = document.createElement("td"); tdv.className = "v";
+    setText(tdv, lat ? ms(lat) : "(click)");
+    tr.appendChild(tdk); tr.appendChild(tdv);
+    byId("t-tap").appendChild(tr);
+  }
+
+  /* ======================= E. ANIMATION ======================= */
+  function runAnim() {
+    var dot = byId("animdot");
+    var box = byId("animbox");
+    var maxX = box.offsetWidth - dot.offsetWidth;
+    var x = 0, step = Math.max(8, Math.round(maxX / 24));
+    function tick() {
+      x += step;
+      if (x > maxX) { x = 0; }
+      dot.style.left = x + "px";
+      if (x !== 0) { window.setTimeout(tick, 40); }
+    }
+    dot.style.left = "0px";
+    window.setTimeout(tick, 40);
+  }
+
+  /* ======================= SUMMARY + SAVE ======================= */
+  function renderSummary() {
+    var lines = ["=== KWC-103 results (draft) ===", ""];
+    lines.push("-- A. image draw latency --");
+    var i;
+    for (i = 0; i < results.images.length; i++) {
+      var im = results.images[i];
+      lines.push("  " + im.label + " (" + Math.round(im.bytes / 1024) + " KB): " +
+                 ms(im.loadMs) + (im.rating ? "  [panel: " + im.rating + "]" : ""));
+    }
+    lines.push("");
+    lines.push("-- B. ghosting --");
+    lines.push("  partial swap : " + (results.ghostPartial || "(unanswered)"));
+    lines.push("  forced full  : " + (results.ghostFull || "(unanswered)"));
+    lines.push("");
+    lines.push("-- C. paged vs scroll --");
+    lines.push("  " + (results.pagedVsScroll || "(unanswered)"));
+    lines.push("");
+    lines.push("-- D. tap --");
+    var avg = {}, cnt = {};
+    for (i = 0; i < results.tap.latencies.length; i++) {
+      var t = results.tap.latencies[i];
+      avg[t.size] = (avg[t.size] || 0) + t.ms; cnt[t.size] = (cnt[t.size] || 0) + 1;
+    }
+    var sz;
+    for (sz in cnt) { if (cnt.hasOwnProperty(sz)) {
+      lines.push("  " + sz + "px: registered " + cnt[sz] + "x, avg " + ms(avg[sz] / cnt[sz]));
+    } }
+    lines.push("  comfortable smallest: " + (results.tap.comfortable || "(unanswered)"));
+    lines.push("");
+    lines.push("-- E. animation --");
+    lines.push("  " + (results.animLook || "(unanswered)"));
+    lines.push("");
+    lines.push("=== end (tap SAVE to send) ===");
+    setText(byId("summary"), lines.join("\n"));
+  }
+
+  function setStatus(msg, ok) {
+    var el = byId("savestatus");
+    el.className = ok ? "ok" : "fail";
+    setText(el, msg);
+  }
+  function save() {
+    setStatus("sending to laptop…", true);
+    try {
+      var payload = JSON.stringify({
+        userAgent: navigator.userAgent,
+        when: (new Date()).toString(),
+        screen: { width: screen.width, height: screen.height,
+                  innerWidth: window.innerWidth, innerHeight: window.innerHeight,
+                  devicePixelRatio: window.devicePixelRatio || null },
+        results: results,
+        summary: byId("summary").textContent || byId("summary").innerText
+      });
+      var xhr = new XMLHttpRequest();
+      xhr.open("POST", "/report", true);
+      xhr.setRequestHeader("Content-Type", "application/json");
+      xhr.onreadystatechange = function () {
+        if (xhr.readyState !== 4) { return; }
+        if (xhr.status >= 200 && xhr.status < 300) {
+          setStatus("SAVED to the laptop ✓  You can close this page.", true);
+        } else {
+          setStatus("FAILED (HTTP " + xhr.status + "). Results still shown below.", false);
+        }
+      };
+      xhr.onerror = function () {
+        setStatus("FAILED (no connection). Open the served URL, not a file.", false);
+      };
+      xhr.send(payload);
+    } catch (e) {
+      setStatus("FAILED (" + e + ").", false);
+    }
+  }
+
+  /* ---- wire everything ---- */
+  buildChoices();
+  loadImgMeta();
+  fillScroll();
+  buildTapTargets();
+  byId("btn-next-img").onclick = loadNextImage;
+  byId("g-a").onclick = screenA;
+  byId("g-b-partial").onclick = swapBPartial;
+  byId("g-b-full").onclick = swapBFull;
+  byId("paged-next").onclick = nextPage;
+  byId("anim-run").onclick = runAnim;
+  byId("save").onclick = save;
+  renderSummary();
+})();
+</script>
+</body>
+</html>

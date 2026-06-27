@@ -42,12 +42,14 @@
 **Outcome:** Probe (`web-client/spike/kwc-102-capability-probe.html` + `serve_probe.py`) run on the real Clara BW (WebKit 538.1). Full capability report + the four decisions recorded in `docs/device.md` §KWC-102. Headlines: **pure ES5** (no ES2015 syntax or globals → ES5 target **plus polyfills**); **transport = XHR** (no `fetch`, no `URL`/`URLSearchParams`; `localStorage` ok); **layout = legacy `-webkit-box` flexbox** (no modern flex, no grid, no CSS custom properties; viewport is 732×762, not the 1072 panel); **images = PNG/JPEG/GIF render, WebP/AVIF do not** (API `eink` default `png` is safe — never set it to `webp` for this client); **events = Touch Events**, not Pointer. Unblocks KWC-201 (build target) and KWC-301 (transport).
 
 ### KWC-103 — [DEVICE] E-ink rendering & refresh behaviour probe
+**Status:** Done
 **Description:** Probe how the panel handles repaints: full vs partial refresh, ghosting, scroll vs paged navigation, tap responsiveness, image draw latency.
 **Acceptance criteria:**
 - Documented guidance: paged vs scroll, when to force full refresh, animation policy (almost certainly none), safe tap-target sizing.
 - A recommended image format + size budget per page confirmed on-device.
 **Blocked by:** KWC-101.
 **Estimate:** M
+**Outcome:** Refresh probe (`web-client/spike/kwc-103-refresh-probe.html` + `serve_refresh_probe.py`, recognizable stdlib-generated mock pages) run on the real Clara BW. Full guidance recorded in `docs/device.md` §KWC-103. Headlines: **paged, not scroll** — on-device, long-page scroll left content below the fold *unpainted* until a later scroll forced a repaint, so scroll is unsafe and every view must fit the 732×762 viewport and advance by explicit swaps; **force a full refresh on every view change & page turn** (the panel needs an explicit repaint trigger — centralised in `render/`); **no animation**; **tap targets** 32–88 px all register (≥44 px / large reader zones recommended; the timer caught hold-duration not latency); **image = PNG, soft budget ~1 MB/page** (~300 ms decode, rated instant — weight isn't the bottleneck, tunnel bandwidth is, so prefetch still matters). New device gotcha (scroll doesn't reliably paint) added to `web-client/CLAUDE.md` §12. Unblocks the refresh-policy work in KWC-307/505.
 
 ---
 
