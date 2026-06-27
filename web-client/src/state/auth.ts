@@ -7,9 +7,8 @@
 // Storage is localStorage — the only persistence the spike confirmed on-device
 // (KWC-102). It's injectable here so logic is testable off-device without
 // touching the real panel; the default is the browser's localStorage.
-//
-// RED PHASE (KWC-303): surface only — every method throws "not implemented yet".
-// KWC-304 implements it against these tests.
+
+import { UnauthorizedError } from "../api/errors.js";
 
 // localStorage key the credential is stored under. Namespaced so it never
 // collides with anything else the app keeps in the same origin's storage.
@@ -31,37 +30,43 @@ export interface AuthControllerOptions {
   readonly onRequireLogin?: () => void;
 }
 
-const NOT_IMPLEMENTED = "not implemented yet — see KWC-304";
-
 export class AuthController {
-  constructor(_options: AuthControllerOptions = {}) {
-    // KWC-304 wires storage + onRequireLogin here.
+  private readonly storage: CredentialStorage;
+  private readonly onRequireLogin?: () => void;
+
+  constructor(options: AuthControllerOptions = {}) {
+    this.storage = options.storage ?? localStorage;
+    this.onRequireLogin = options.onRequireLogin;
   }
 
   // The callback handed to `new ApiClient({ getToken })`: the stored credential,
   // or null when none is set. Read per request so a fresh login is picked up.
   getToken(): string | null {
-    throw new Error(NOT_IMPLEMENTED);
+    return this.storage.getItem(CREDENTIAL_STORAGE_KEY);
   }
 
   isAuthenticated(): boolean {
-    throw new Error(NOT_IMPLEMENTED);
+    return this.getToken() !== null;
   }
 
   // Persist the entered credential so it survives a reload.
-  login(_token: string): void {
-    throw new Error(NOT_IMPLEMENTED);
+  login(token: string): void {
+    this.storage.setItem(CREDENTIAL_STORAGE_KEY, token);
   }
 
   // Forget the credential (sign out, or after a rejected one).
   logout(): void {
-    throw new Error(NOT_IMPLEMENTED);
+    this.storage.removeItem(CREDENTIAL_STORAGE_KEY);
   }
 
   // Inspect a rejected ApiClient error. On an UnauthorizedError (401) clear the
   // stored credential and fire `onRequireLogin`, returning true so the caller
-  // knows the auth flow handled it. Any other error returns false untouched.
-  handleApiError(_error: unknown): boolean {
-    throw new Error(NOT_IMPLEMENTED);
+  // knows the auth flow handled it. Any other error returns false untouched —
+  // a non-401 ApiClientError or a transport NetworkError (offline ≠ unauthorised).
+  handleApiError(error: unknown): boolean {
+    if (!(error instanceof UnauthorizedError)) return false;
+    this.logout();
+    if (this.onRequireLogin) this.onRequireLogin();
+    return true;
   }
 }

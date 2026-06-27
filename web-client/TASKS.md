@@ -163,10 +163,16 @@
 - **Next:** KWC-304 implements `AuthController` (localStorage read/write, token exposure, 401→logout+route) to turn this suite green, then verified on-device.
 
 ### KWC-304 — Auth flow (impl)
+**Status:** Done (logic) — all 13 KWC-303 tests green; on-device credential-entry pass deferred to KWC-307 (no UI shell exists yet).
 **Description:** Implement credential entry/storage satisfying KWC-303.
 **Acceptance criteria:** All KWC-303 tests pass; verified on-device.
 **Blocked by:** KWC-303, KWC-302.
 **Estimate:** S
+**Outcome:** `AuthController` implemented in `src/state/auth.ts` — all 13 KWC-303 contract tests pass (41 total with the KWC-301 client + smoke suites); typecheck / lint / format:check / build all clean.
+- **Storage:** the injected `CredentialStorage` (defaulting to the browser's `localStorage`, the only persistence the spike confirmed on-device — KWC-102). All four state methods are thin reads/writes of the namespaced `komanga.credential` key — no in-memory mirror of the token, so the store is the single source of truth and **persistence across reloads is automatic** (a fresh `AuthController` over the same storage reads the credential straight back). `getToken()` is read live each call, so the `() => auth.getToken()` callback the shell wires into `new ApiClient` (KWC-302) picks up a later `login` without rebuilding anything.
+- **401 routing:** `handleApiError` keys off `instanceof UnauthorizedError` (the typed error the transport produces — KWC-302), so it routes back on a 401 from *any* call. On a match it `logout()`s and fires `onRequireLogin` once, returning `true`; everything else — a non-401 `ApiClientError` (e.g. 502), a transport `NetworkError` (offline ≠ unauthorised), or a non-error value — returns `false` and leaves the credential intact. The end-to-end test drives a real `ApiClient.listSources()` to a 401 via a `FakeXhr` and confirms the resulting `UnauthorizedError` flows through `handleApiError` back to the prompt.
+- **On-device:** the storage primitive (`localStorage`) is already spike-verified on the Clara BW (KWC-102); the *credential-entry UX* on-device acceptance is deferred to **KWC-307** (app shell), which builds the entry view, wires `onRequireLogin`, and is itself a `[DEVICE]` ticket. No on-device-renderable surface exists in this ticket to validate independently.
+- **Next:** unblocks KWC-307 (app shell wires `AuthController` + the credential entry view and does the on-device pass).
 
 ### KWC-305 — [TEST] View router
 **Description:** Tests for a minimal router switching between views (library, search, manga details, reader) without a framework — hash or state based.
