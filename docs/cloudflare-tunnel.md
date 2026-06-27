@@ -75,6 +75,10 @@ config file to maintain. The container only needs the connector token.
   published port. `http://<host>:4567` from outside the Docker network fails.
 - The home router has **no** forwarded/inbound ports for this stack.
 
+For a full end-to-end pass over the whole reading path through the tunnel
+hostname (auth → search → page → download → progress), run the smoke test —
+see `smoke-test.md` (`npm run smoke`).
+
 ## Optional: Cloudflare Access (extra auth gate)
 
 The API already enforces single-user auth (API-702), but you can put Cloudflare

@@ -8,6 +8,7 @@
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
+    "smoke": "tsx scripts/smoke-test.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint .",
