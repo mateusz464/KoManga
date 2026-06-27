@@ -287,3 +287,44 @@ open `http://<this-mac-lan-ip>:8000/` on the Kobo, work top to bottom, tap
   black→white flash from section B, fired on every view change and page turn.
 - **Scroll is unsafe on this device** — a hard constraint for the app shell and
   every view (KWC-307 onward), not a preference. See CLAUDE §12.
+
+---
+
+## KWC-201 — Build pipeline (polyfill finding)
+
+> Not a spike ticket, but the build setup produced one hard device fact worth
+> recording here alongside the other capability findings, because it constrains
+> every future polyfill decision.
+
+### core-js's global `Symbol` / `Map` / `Set` polyfills crash this WebKit
+
+On the first on-device load of the built client (real Clara BW, served over LAN),
+the bundle threw at **polyfill install time**, before any app code ran:
+
+```
+TypeError: Incompatible receiver, Symbol required
+```
+
+This comes from core-js's global `Symbol` module (`core-js/stable/symbol`, pulled
+in alongside `map`/`set`): WebKit 538.1 ships a **partial / broken native Symbol**
+that core-js detects as present, then trips over when it patches it. KWC-102
+already classified Symbol / Map / Set as **not supported**; this confirms that the
+*standard polyfill route does not rescue them here* — the polyfill itself is what
+breaks.
+
+**Implications for the client build (KWC-201 onward):**
+- The shipped polyfill set is **Promise, Object.assign, Array.from, Array.includes**
+  only (`web-client/src/polyfills.ts`) — these install and run cleanly on-device.
+- **Do not blanket-import `core-js/stable/symbol` / `map` / `set`.** Removing them
+  fixed the crash and cut the bundle 75 KB → 48 KB.
+- When a future ticket genuinely needs Map/Set/Symbol semantics, prefer a
+  **Symbol-free approach** (plain objects keyed by string; explicit arrays) or a
+  guarded/standalone polyfill that doesn't touch the broken native `Symbol`, and
+  **re-verify on-device** before relying on it.
+- Mirrored as a gotcha in `web-client/CLAUDE.md` §12.
+
+### Verified working on-device
+
+The trivial page renders "KoManga / Build pipeline OK — ES5 + polyfills" with
+Promise ✓, Object.assign ✓, Array.from ✓ — confirming the ES5 transpile and the
+retained polyfills run on WebKit 538.1.

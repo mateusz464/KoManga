@@ -1,0 +1,60 @@
+/*
+ * Legacy-safe styling for WebKit 538.1 (docs/device.md, KWC-102):
+ *   - layout via -webkit-box (no modern flexbox, no grid)
+ *   - no CSS custom properties
+ *   - high contrast / generous type for the greyscale e-ink panel
+ *   - no transitions/animations (they smear on e-ink, KWC-103)
+ * Sized to the 732x762 browser viewport, not the 1072x1448 panel.
+ */
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: #ffffff;
+  color: #000000;
+}
+
+body {
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 20px;
+  line-height: 1.4;
+  -webkit-text-size-adjust: none;
+}
+
+#app {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-box-align: center;
+  -webkit-box-pack: center;
+  width: 732px;
+  height: 762px;
+  padding: 24px;
+  box-sizing: border-box;
+  text-align: center;
+}
+
+h1 {
+  margin: 0 0 16px 0;
+  font-size: 48px;
+  font-weight: bold;
+}
+
+p {
+  margin: 0 0 16px 0;
+}
+
+ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+li {
+  margin: 8px 0;
+  font-size: 24px;
+}
+
+.loading {
+  color: #444444;
+}

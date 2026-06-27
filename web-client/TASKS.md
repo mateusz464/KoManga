@@ -58,6 +58,7 @@
 > Set up the "write modern, ship ancient" pipeline. Output is static assets the API serves.
 
 ### KWC-201 — Project & build setup
+**Status:** Done — all three criteria met, including verified on the real Clara BW.
 **Description:** Initialise the client project: TS, a bundler (esbuild/Vite) configured to target old WebKit (ES5-era), minify, and emit static assets to a dist dir.
 **Acceptance criteria:**
 - `npm run build` emits static HTML/CSS/JS to a dist folder.
@@ -65,6 +66,14 @@
 - A trivial page loads and runs on-device.
 **Blocked by:** KWC-102.
 **Estimate:** M
+**Outcome:** Vanilla-TS client scaffolded (`web-client/`), strict TS, no framework. `npm run build` emits `dist/{index.html,main.js,styles.css}`.
+- **Pipeline ("write modern, ship ancient"):** `scripts/build.mjs` runs **esbuild** (bundle TS + inlined polyfills → IIFE) → **Babel** `@babel/preset-env` (target IE11, an ES5 proxy) → **terser** (`ecma: 5`). esbuild alone was insufficient: its syntax floor is ES2015, so it *cannot* emit the pure ES5 KWC-102 requires — Babel does the actual down-levelling, terser caps the minifier at ES5.
+- **Polyfills:** targeted core-js entry points imported explicitly in `src/polyfills.ts` (never wholesale) and bundled inline — auditable. Currently **Promise, Object.assign, Array.from, Array.includes**. (async/await/generators deliberately avoided for now; they'd need regenerator-runtime — noted in the build script for when first used.)
+- **⚠️ Device finding — core-js global Symbol/Map/Set crash WebKit 538.1.** First on-device load threw `TypeError: Incompatible receiver, Symbol required` at polyfill *install* time: core-js's global `Symbol` module trips over the Kobo's partial/broken native Symbol. KWC-102 already lists Symbol/Map/Set as unsupported; the trivial page needs none of them, so they were dropped (75 KB → 48 KB bundle). **Do not blanket-import `core-js/stable/symbol|map|set` for this client** — recorded in `docs/device.md` §KWC-201 and `web-client/CLAUDE.md` §12. When a future ticket genuinely needs Map/Set/Symbol, use a Symbol-free/guarded approach and re-verify on-device.
+- **ES5 verified two ways:** regex scan of `dist/main.js` finds zero `=>` / `const` / `let` / template-literal / `class` / spread / `await`; and the bundle **parses clean under acorn `ecmaVersion: 5`** (the definitive check).
+- **On-device pass (real Clara BW, served over LAN):** renders "KoManga / Build pipeline OK — ES5 + polyfills (WebKit 538.1)" with Promise ✓, Object.assign ✓, Array.from ✓ — confirming both the ES5 transpile and the polyfills run on the panel. A temporary on-panel error-reporter (no device console) surfaced the Symbol crash and was removed once green.
+- **Conventions:** legacy `-webkit-box` CSS (no grid/flex/custom-props), viewport sized to **732×762** (not the 1072 panel), no animations. Config mirrors the API epic (prettier/eslint/tsconfig house style).
+- **Next:** same-origin serving (the path the device will really use) is **KWC-202** — have the Node API serve `dist/`.
 
 ### KWC-202 — Serve client from the API (same-origin)
 **Description:** Have the Node API serve the built client as static files, same-origin, so the client can call `/api/*` without CORS. (Cross-refs API epic; coordinate the static-serving route.)

@@ -1,0 +1,28 @@
+{
+  "name": "komanga-web-client",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Thin Kobo web client for KoManga, built to run in Nickel's old WebKit (538.1).",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "clean": "rm -rf dist",
+    "typecheck": "tsc -p tsconfig.json",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "devDependencies": {
+    "@babel/core": "^7.26.0",
+    "@babel/preset-env": "^7.26.0",
+    "@eslint/js": "^9.39.4",
+    "core-js": "^3.40.0",
+    "esbuild": "^0.24.2",
+    "eslint": "^9.39.4",
+    "eslint-config-prettier": "^10.1.8",
+    "prettier": "^3.8.4",
+    "terser": "^5.37.0",
+    "typescript": "^5.8.0",
+    "typescript-eslint": "^8.62.0"
+  }
+}
