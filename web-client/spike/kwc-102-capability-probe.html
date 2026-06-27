@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KWC-102 — JS/CSS Capability Probe</title>
+<!--
+  THROWAWAY device spike (KWC-102). Self-contained: no build, no deps.
+  Load this single file on the target Kobo (Clara BW, WebKit 538.1) and read
+  the results off the e-ink panel. Copy the SUMMARY block back into
+  docs/device.md.
+
+  IMPORTANT: every line of script below is hand-written ES3/ES5-safe on
+  purpose. This page probes whether modern syntax/APIs exist; it therefore
+  must not itself use any feature it is testing, or it would fail to parse on
+  the very browser it is meant to measure. Modern-syntax detection is done via
+  eval() inside try/catch so a parse error is caught instead of killing the page.
+-->
+<style>
+  html, body { margin: 0; padding: 0; background: #fff; color: #000; }
+  body {
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 20px;
+    line-height: 1.4;
+    padding: 16px;
+    -webkit-text-size-adjust: 100%;
+  }
+  h1 { font-size: 26px; margin: 0 0 4px 0; }
+  h2 { font-size: 22px; margin: 24px 0 8px 0; border-bottom: 2px solid #000; padding-bottom: 4px; }
+  p.note { font-size: 16px; color: #333; margin: 4px 0 0 0; }
+  table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+  td { padding: 6px 4px; border-bottom: 1px solid #ccc; vertical-align: top; }
+  td.k { width: 60%; }
+  td.v { width: 40%; font-weight: bold; text-align: right; }
+  .yes { /* black on white — high contrast for e-ink */ }
+  .no  { text-decoration: line-through; }
+  .yes:before { content: "YES \2713  "; }
+  .no:before  { content: "no \2717  "; }
+  #summary {
+    white-space: pre-wrap;
+    font-family: "Courier New", monospace;
+    font-size: 15px;
+    line-height: 1.35;
+    border: 2px solid #000;
+    padding: 12px;
+    margin-top: 8px;
+    word-break: break-word;
+  }
+  .imgrow img { width: 24px; height: 24px; vertical-align: middle; border: 1px solid #999; }
+  #savestatus {
+    font-size: 18px;
+    font-weight: bold;
+    border: 2px solid #000;
+    padding: 10px 12px;
+    margin-top: 8px;
+  }
+  #savestatus.ok   { background: #000; color: #fff; }
+  #savestatus.fail { background: #fff; color: #000; }
+</style>
+</head>
+<body>
+<h1>KWC-102 — Capability Probe</h1>
+<p class="note">Load on the Kobo. Read each section. Copy the SUMMARY block into docs/device.md.</p>
+
+<h2>Summary</h2>
+<div id="savestatus">Auto-save: probe running&hellip;</div>
+<div id="summary">running probe&hellip;</div>
+
+<h2>Environment</h2>
+<table id="t-env"></table>
+
+<h2>JavaScript / ES level</h2>
+<table id="t-js"></table>
+
+<h2>Transport &amp; storage</h2>
+<table id="t-net"></table>
+
+<h2>CSS / layout</h2>
+<table id="t-css"></table>
+
+<h2>Touch / event model</h2>
+<table id="t-evt"></table>
+
+<h2>Image formats (rendered = panel can decode it)</h2>
+<table id="t-img"></table>
+
+<script>
+/* global document, window, navigator, screen */
+(function () {
+  "use strict";
+
+  var summaryLines = [];
+  var reportRows = [];
+
+  function row(tableId, key, value, isBool) {
+    var t = document.getElementById(tableId);
+    var tr = document.createElement("tr");
+    var tdk = document.createElement("td");
+    tdk.className = "k";
+    tdk.appendChild(document.createTextNode(key));
+    var tdv = document.createElement("td");
+    tdv.className = "v";
+    if (isBool) {
+      var span = document.createElement("span");
+      span.className = value ? "yes" : "no";
+      tdv.appendChild(span);
+    } else {
+      tdv.appendChild(document.createTextNode(String(value)));
+    }
+    tr.appendChild(tdk);
+    tr.appendChild(tdv);
+    t.appendChild(tr);
+    return tdv;
+  }
+
+  function record(tableId, key, value, isBool) {
+    row(tableId, key, value, isBool);
+    var printed = isBool ? (value ? "yes" : "NO") : String(value);
+    summaryLines.push(pad(key) + ": " + printed);
+    reportRows.push({
+      section: tableId,
+      key: key,
+      value: isBool ? !!value : String(value),
+      bool: !!isBool
+    });
+  }
+
+  function setStatus(msg, ok) {
+    var el = document.getElementById("savestatus");
+    el.className = ok ? "ok" : "fail";
+    if ("textContent" in el) { el.textContent = msg; }
+    else { el.innerText = msg; }
+  }
+
+  /* POST the results back to the laptop using XHR (NOT fetch — fetch is one of
+     the things being probed, so the save path must not depend on it). The page
+     is served same-origin by serve_probe.py, so a relative /report works. */
+  function sendReport() {
+    setStatus("Auto-save: sending to laptop…", true);
+    try {
+      var payload = JSON.stringify({
+        userAgent: navigator.userAgent,
+        when: (new Date()).toString(),
+        screen: { width: screen.width, height: screen.height,
+                  innerWidth: window.innerWidth, innerHeight: window.innerHeight,
+                  devicePixelRatio: window.devicePixelRatio || null },
+        summary: summaryLines.join("\n"),
+        rows: reportRows
+      });
+      var xhr = new XMLHttpRequest();
+      xhr.open("POST", "/report", true);
+      xhr.setRequestHeader("Content-Type", "application/json");
+      xhr.onreadystatechange = function () {
+        if (xhr.readyState !== 4) { return; }
+        if (xhr.status >= 200 && xhr.status < 300) {
+          setStatus("Auto-save: SAVED to the laptop ✓  You can close this page.", true);
+        } else {
+          setStatus("Auto-save: FAILED (HTTP " + xhr.status + "). Results are still shown below.", false);
+        }
+      };
+      xhr.onerror = function () {
+        setStatus("Auto-save: FAILED (no connection to laptop). Make sure you opened the served URL, not a file.", false);
+      };
+      xhr.send(payload);
+    } catch (e) {
+      setStatus("Auto-save: FAILED (" + e + "). Results are still shown below.", false);
+    }
+  }
+
+  function pad(s) {
+    s = String(s);
+    while (s.length < 24) { s += " "; }
+    return s;
+  }
+
+  /* ---- evalSupported: does a snippet parse + run without throwing? ---- */
+  function evalSupported(snippet) {
+    try {
+      /* jshint evil:true */
+      eval(snippet);
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /* ---- Environment ---- */
+  summaryLines.push("=== KWC-102 capability probe ===");
+  record("t-env", "userAgent", navigator.userAgent, false);
+  record("t-env", "screen.width x height", screen.width + " x " + screen.height, false);
+  record("t-env", "innerWidth x innerHeight", window.innerWidth + " x " + window.innerHeight, false);
+  record("t-env", "devicePixelRatio", (window.devicePixelRatio || "(none)"), false);
+  record("t-env", "platform", (navigator.platform || "(none)"), false);
+  summaryLines.push("");
+
+  /* ---- JS / ES level ---- */
+  summaryLines.push("-- JavaScript --");
+  record("t-js", "ES5 strict mode", (function () { return (function () { return !this; })(); })(), true);
+  record("t-js", "Array.prototype.forEach", typeof [].forEach === "function", true);
+  record("t-js", "Array.prototype.map", typeof [].map === "function", true);
+  record("t-js", "Array.prototype.indexOf", typeof [].indexOf === "function", true);
+  record("t-js", "Object.keys", typeof Object.keys === "function", true);
+  record("t-js", "Object.defineProperty", typeof Object.defineProperty === "function", true);
+  record("t-js", "JSON.parse/stringify", typeof JSON === "object" && typeof JSON.parse === "function", true);
+  record("t-js", "Function.prototype.bind", typeof (function () {}).bind === "function", true);
+
+  /* ES2015+ — each snippet is eval'd once by evalSupported(); a SyntaxError
+     from unsupported syntax is caught and reported as "no" instead of
+     aborting the page. */
+  record("t-js", "let / const", evalSupported("let _l = 1; const _c = 2; _l + _c;"), true);
+  record("t-js", "arrow functions", evalSupported("(() => 1)();"), true);
+  record("t-js", "template literals", evalSupported("var x = 1; `v=${x}`;"), true);
+  record("t-js", "default params", evalSupported("(function (a = 1) { return a; })();"), true);
+  record("t-js", "destructuring", evalSupported("var [a, b] = [1, 2]; a + b;"), true);
+  record("t-js", "spread / rest", evalSupported("var a = [1, 2]; [].concat([...a]);"), true);
+  record("t-js", "classes", evalSupported("class C { constructor() { this.x = 1; } } new C().x;"), true);
+  record("t-js", "for...of", evalSupported("for (var _v of [1, 2]) {} true;"), true);
+  record("t-js", "Promise", typeof window.Promise === "function", true);
+  record("t-js", "Map", typeof window.Map === "function", true);
+  record("t-js", "Set", typeof window.Set === "function", true);
+  record("t-js", "Symbol", typeof window.Symbol === "function", true);
+  record("t-js", "Object.assign", typeof Object.assign === "function", true);
+  record("t-js", "Array.from", typeof Array.from === "function", true);
+  record("t-js", "Array.prototype.includes", typeof [].includes === "function", true);
+  record("t-js", "async / await", evalSupported("(async function () { await 0; })();"), true);
+  record("t-js", "generators", evalSupported("(function* () { yield 1; })();"), true);
+  summaryLines.push("");
+
+  /* ---- Transport & storage ---- */
+  summaryLines.push("-- Transport / storage --");
+  record("t-net", "fetch()", typeof window.fetch === "function", true);
+  /* Detect XHR by constructing it, not typeof: on old WebKit the constructor is
+     a host object whose typeof is not "function" even though `new` works. */
+  record("t-net", "XMLHttpRequest", (function () {
+    try { return !!(new XMLHttpRequest()); } catch (e) { return false; }
+  })(), true);
+  record("t-net", "XHR responseType=blob", (function () {
+    try { var x = new XMLHttpRequest(); x.open("GET", "/", true); x.responseType = "blob"; return x.responseType === "blob"; }
+    catch (e) { return false; }
+  })(), true);
+  record("t-net", "URL constructor", (function () {
+    try { return typeof window.URL === "function" && !!(new window.URL("https://a.b/c")).pathname; }
+    catch (e) { return false; }
+  })(), true);
+  record("t-net", "URLSearchParams", typeof window.URLSearchParams === "function", true);
+  record("t-net", "localStorage", (function () {
+    try { window.localStorage.setItem("_p", "1"); window.localStorage.removeItem("_p"); return true; }
+    catch (e) { return false; }
+  })(), true);
+  record("t-net", "sessionStorage", (function () {
+    try { window.sessionStorage.setItem("_p", "1"); window.sessionStorage.removeItem("_p"); return true; }
+    catch (e) { return false; }
+  })(), true);
+  summaryLines.push("");
+
+  /* ---- CSS / layout ---- */
+  summaryLines.push("-- CSS / layout --");
+  function styleSupported(prop, value) {
+    var el = document.createElement("div");
+    try {
+      el.style[prop] = value;
+      return el.style[prop] === value;
+    } catch (e) { return false; }
+  }
+  function displaySupported(value) {
+    var el = document.createElement("div");
+    el.style.display = value;
+    return el.style.display === value;
+  }
+  var cssSupports = (window.CSS && typeof window.CSS.supports === "function") ? window.CSS.supports : null;
+  record("t-css", "CSS.supports() API", cssSupports !== null, true);
+  record("t-css", "flexbox (display:flex)", displaySupported("flex") || styleSupported("WebkitBoxOrient", "vertical"), true);
+  record("t-css", "  modern flex (no -webkit)", displaySupported("flex"), true);
+  record("t-css", "  old flexbox (-webkit-box)", styleSupported("WebkitBoxOrient", "vertical"), true);
+  record("t-css", "grid (display:grid)", displaySupported("grid"), true);
+  record("t-css", "CSS custom properties", cssSupports ? cssSupports("--a", "0") : false, true);
+  record("t-css", "position: sticky", styleSupported("position", "sticky") || styleSupported("position", "-webkit-sticky"), true);
+  record("t-css", "calc()", styleSupported("width", "calc(1px + 1px)"), true);
+  record("t-css", "vw/vh units", styleSupported("width", "50vw"), true);
+  record("t-css", "object-fit", styleSupported("objectFit", "contain"), true);
+  record("t-css", "transform", styleSupported("WebkitTransform", "translateX(1px)") || styleSupported("transform", "translateX(1px)"), true);
+  record("t-css", "transition", styleSupported("WebkitTransition", "all 1s") || styleSupported("transition", "all 1s"), true);
+  record("t-css", "border-radius", styleSupported("borderRadius", "4px"), true);
+  summaryLines.push("");
+
+  /* ---- Touch / event model ---- */
+  summaryLines.push("-- Touch / events --");
+  record("t-evt", "ontouchstart in window", ("ontouchstart" in window), true);
+  record("t-evt", "TouchEvent", typeof window.TouchEvent !== "undefined", true);
+  record("t-evt", "navigator.maxTouchPoints", (typeof navigator.maxTouchPoints === "number" ? navigator.maxTouchPoints : "(none)"), false);
+  record("t-evt", "PointerEvent", typeof window.PointerEvent === "function", true);
+  record("t-evt", "onpointerdown in window", ("onpointerdown" in window), true);
+  record("t-evt", "onclick in window", ("onclick" in window), true);
+  record("t-evt", "addEventListener", typeof window.addEventListener === "function", true);
+  summaryLines.push("");
+
+  /* ---- Image formats (async: load tiny data URIs, check naturalWidth) ---- */
+  summaryLines.push("-- Image formats --");
+  /* Test images are served as real HTTP responses by serve_probe.py at /img/<fmt>
+     — NOT data: URIs, which this engine failed to decode. PNG/GIF/JPEG are the
+     baseline; WebP/AVIF are the real questions for the eink profile format. */
+  var samples = [
+    { name: "PNG",  uri: "/img/png" },
+    { name: "GIF",  uri: "/img/gif" },
+    { name: "JPEG", uri: "/img/jpeg" },
+    { name: "WebP", uri: "/img/webp" },
+    { name: "AVIF", uri: "/img/avif" }
+  ];
+
+  var pending = samples.length;
+  var imgResults = [];
+
+  function finalizeImages() {
+    var t = document.getElementById("t-img");
+    var i;
+    for (i = 0; i < imgResults.length; i++) {
+      var r = imgResults[i];
+      var tr = document.createElement("tr");
+      tr.className = "imgrow";
+      var tdk = document.createElement("td");
+      tdk.className = "k";
+      tdk.appendChild(document.createTextNode(r.name));
+      tdk.appendChild(document.createTextNode("  "));
+      tdk.appendChild(r.img);
+      var tdv = document.createElement("td");
+      tdv.className = "v";
+      var span = document.createElement("span");
+      span.className = r.ok ? "yes" : "no";
+      tdv.appendChild(span);
+      tr.appendChild(tdk);
+      tr.appendChild(tdv);
+      t.appendChild(tr);
+      summaryLines.push(pad("img " + r.name) + ": " + (r.ok ? "renders" : "NOT rendered"));
+    }
+    summaryLines.push("");
+    summaryLines.push("=== end probe ===");
+    renderSummary();
+    sendReport();
+  }
+
+  function makeImageTest(sample) {
+    var img = new Image();
+    var done = false;
+    function decoded() { return (img.naturalWidth || img.width || 0) > 0; }
+    function settle(ok) {
+      if (done) { return; }
+      done = true;
+      imgResults.push({ name: sample.name, ok: ok && decoded(), img: img });
+      pending -= 1;
+      if (pending === 0) { finalizeImages(); }
+    }
+    img.onload = function () { settle(true); };
+    img.onerror = function () { settle(false); };
+    /* guard: some old engines neither fire onload nor onerror for unknown types */
+    window.setTimeout(function () { settle(img.complete && decoded()); }, 2500);
+    img.src = sample.uri;
+  }
+
+  function renderSummary() {
+    var el = document.getElementById("summary");
+    var text = summaryLines.join("\n");
+    if ("textContent" in el) { el.textContent = text; }
+    else { el.innerText = text; }
+  }
+
+  /* draw an interim summary now (text capabilities), images append when ready */
+  renderSummary();
+
+  var s;
+  for (s = 0; s < samples.length; s++) {
+    makeImageTest(samples[s]);
+  }
+})();
+</script>
+</body>
+</html>

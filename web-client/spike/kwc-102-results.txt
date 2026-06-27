@@ -1,0 +1,75 @@
+=== KWC-102 capability probe ===
+userAgent               : Mozilla/5.0 (Unknown; Linux) AppleWebKit/538.1 (KHTML, like Gecko) Kobo eReader Safari/538.1
+screen.width x height   : 1072 x 1448
+innerWidth x innerHeight: 732 x 762
+devicePixelRatio        : 1
+platform                : Linux armv7l
+
+-- JavaScript --
+ES5 strict mode         : yes
+Array.prototype.forEach : yes
+Array.prototype.map     : yes
+Array.prototype.indexOf : yes
+Object.keys             : yes
+Object.defineProperty   : yes
+JSON.parse/stringify    : yes
+Function.prototype.bind : yes
+let / const             : NO
+arrow functions         : NO
+template literals       : NO
+default params          : NO
+destructuring           : NO
+spread / rest           : NO
+classes                 : NO
+for...of                : NO
+Promise                 : NO
+Map                     : NO
+Set                     : NO
+Symbol                  : NO
+Object.assign           : NO
+Array.from              : NO
+Array.prototype.includes: NO
+async / await           : NO
+generators              : NO
+
+-- Transport / storage --
+fetch()                 : NO
+XMLHttpRequest          : yes
+XHR responseType=blob   : yes
+URL constructor         : NO
+URLSearchParams         : NO
+localStorage            : yes
+sessionStorage          : yes
+
+-- CSS / layout --
+CSS.supports() API      : NO
+flexbox (display:flex)  : yes
+  modern flex (no -webkit): NO
+  old flexbox (-webkit-box): yes
+grid (display:grid)     : NO
+CSS custom properties   : NO
+position: sticky        : yes
+calc()                  : yes
+vw/vh units             : yes
+object-fit              : yes
+transform               : yes
+transition              : yes
+border-radius           : yes
+
+-- Touch / events --
+ontouchstart in window  : yes
+TouchEvent              : yes
+navigator.maxTouchPoints: (none)
+PointerEvent            : NO
+onpointerdown in window : NO
+onclick in window       : yes
+addEventListener        : yes
+
+-- Image formats --
+img PNG                 : renders
+img GIF                 : renders
+img WebP                : NOT rendered
+img JPEG                : renders
+img AVIF                : NOT rendered
+
+=== end probe ===

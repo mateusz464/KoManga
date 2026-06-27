@@ -20,9 +20,9 @@ It is also the **first** of several clients (a website and mobile app come later
 |---|---|
 | Language | TypeScript (strict), authored modern |
 | Framework | **None.** Vanilla DOM. No React/Preact/Vue. |
-| Build | esbuild or Vite, targeting **old WebKit (ES5-era)**, minified, assets emitted to `dist/` |
-| Transport | fetch **or** XHR — whichever the device spike (KWC-102) confirms |
-| Layout | CSS method confirmed by the spike (likely flexbox; avoid grid until verified) |
+| Build | esbuild or Vite, targeting **ES5** (WebKit 538.1), minified, assets to `dist/`. KWC-102: pure ES5 — also **polyfill missing globals** (`Promise`, `Object.assign`, `Array.from`, etc.); transpilation alone is not enough |
+| Transport | **XHR** (KWC-102: no `fetch`, no `URL`/`URLSearchParams`; build query strings by hand). `localStorage` available for auth |
+| Layout | **Legacy `-webkit-box` flexbox** (KWC-102: no modern flex, no grid, no CSS custom properties). Size relative to the **732×762** viewport, not the 1072 panel |
 | Serving | Static `dist/` served **same-origin by the Node API** (no CORS) |
 | Tests | Vitest (for logic only — see §4) |
 | Reach | Via the same Cloudflare Tunnel as the API |

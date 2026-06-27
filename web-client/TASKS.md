@@ -32,12 +32,14 @@
 **Outcome:** Kobo Clara BW, fw 4.45.23697, panel 1072×1448 (WebKit 538.1). Recorded in `docs/device.md`. API `eink` target already 1072×1448 — matches, no change needed.
 
 ### KWC-102 — [DEVICE] JS/CSS capability probe
+**Status:** Done
 **Description:** Build a throwaway probe page that reports which JS/CSS features the Kobo browser supports (ES level, fetch vs XHR, flexbox/grid, CSS custom properties, `<img>` formats it renders, touch event model). Load it on-device.
 **Acceptance criteria:**
 - A capability report captured in `docs/device.md`: confirmed-supported vs must-avoid.
 - Decisions recorded: fetch-or-XHR, layout method, supported image format(s), event model.
 **Blocked by:** KWC-101.
 **Estimate:** M
+**Outcome:** Probe (`web-client/spike/kwc-102-capability-probe.html` + `serve_probe.py`) run on the real Clara BW (WebKit 538.1). Full capability report + the four decisions recorded in `docs/device.md` §KWC-102. Headlines: **pure ES5** (no ES2015 syntax or globals → ES5 target **plus polyfills**); **transport = XHR** (no `fetch`, no `URL`/`URLSearchParams`; `localStorage` ok); **layout = legacy `-webkit-box` flexbox** (no modern flex, no grid, no CSS custom properties; viewport is 732×762, not the 1072 panel); **images = PNG/JPEG/GIF render, WebP/AVIF do not** (API `eink` default `png` is safe — never set it to `webp` for this client); **events = Touch Events**, not Pointer. Unblocks KWC-201 (build target) and KWC-301 (transport).
 
 ### KWC-103 — [DEVICE] E-ink rendering & refresh behaviour probe
 **Description:** Probe how the panel handles repaints: full vs partial refresh, ghosting, scroll vs paged navigation, tap responsiveness, image draw latency.

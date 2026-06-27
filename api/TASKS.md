@@ -419,6 +419,36 @@
 
 ---
 
+# Feature: Bug Fixes / Device-spike reconciliation (9xx)
+
+> Defects and contract-drift surfaced after the feature work, chiefly by the
+> web-client **device capability spike** (`docs/device.md`). These reconcile the
+> API with what the real Kobo was measured to do. Same strict-TDD rules apply.
+
+### API-901 — [TEST] Constrain `eink` output format to device-renderable formats
+**Description:** The `eink` image profile must only emit a format the target panel can decode. KWC-102 (`docs/device.md` §KWC-102) confirmed on the real Kobo Clara BW that the panel renders **PNG and JPEG** but **not WebP** (nor AVIF). RFC §6 already scopes the `eink` output to "PNG or low-chroma JPEG", but the config currently accepts `webp` as a valid `IMAGE_EINK_FORMAT` (`src/config/index.ts:4,6`) and the image-processor port's format type allows it (`src/services/ports/image-processor.ts`). Write failing tests that pin the allowed `eink` format set to `png | jpeg`.
+**Acceptance criteria:**
+- `loadConfig` **rejects** `IMAGE_EINK_FORMAT=webp` (and any non-`png`/`jpeg` value) with a clear aggregated error naming the allowed formats.
+- `loadConfig` **accepts** `IMAGE_EINK_FORMAT=png` and `IMAGE_EINK_FORMAT=jpeg`; default stays `png`.
+- Tests covering image processing / content-type that previously exercised `webp` as an `eink` format are updated to use `jpeg` (webp is no longer a valid `eink` output).
+- Tests fail red against current code (which accepts `webp`).
+**Surfaced by:** KWC-102 (web-client device spike).
+**Blocked by:** none (fix to already-Done API-404 / config).
+**Estimate:** S
+
+### API-902 — Constrain `eink` output format (impl)
+**Description:** Make API-901 pass. Remove `webp` from the allowed `eink` formats so a misconfiguration can't silently break the only client that uses the `eink` profile.
+**Acceptance criteria:**
+- All API-901 tests pass.
+- `EinkFormat` / `EINK_FORMATS` (`src/config/index.ts`) and the image-processor port's eink `format` type are narrowed to `png | jpeg`; the `CONTENT_TYPES` map in `sharp-image-processor.ts` drops the `webp` entry.
+- `.env.example` / any config docs mentioning `IMAGE_EINK_FORMAT` list only `png | jpeg`.
+- Full suite, lint, typecheck, format clean.
+- No change to the `raw` profile or to future colour-client paths (RFC §13) — only the `eink` output set is constrained.
+**Blocked by:** API-901.
+**Estimate:** S
+
+---
+
 ## Suggested build order (respecting strict deps)
 
 1. **Bootstrap:** API-101 → 102/103 → 104 → 105
@@ -429,5 +459,7 @@
 6. **Progress:** 601/602, 603/604
 7. **Auth/Security:** 701/702 → 703/704 (can start once 105 done; apply globally before deploy)
 8. **Deploy:** 801 → 802 → 803
+9. **Bug fixes (9xx):** 901 → 902 (independent of the above; can be picked up any time)
 
 > Note: Auth (7xx) only depends on the bootstrap layer, so it can be built early in parallel even though it's listed late. Everything funnels into API-801 for deployment.
+> Note: 9xx are post-hoc fixes/reconciliations (e.g. from the device spike), not part of the original feature build order.
