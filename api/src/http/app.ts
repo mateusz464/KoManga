@@ -41,6 +41,9 @@ export interface AppDependencies {
   readonly downloadsRepository?: DownloadsRepository;
   readonly readingProgressRepository?: ReadingProgressRepository;
   readonly libraryRepository?: LibraryRepository;
+  // Directory of the built Kobo web client (web-client/dist). When set, the API
+  // serves it same-origin so the client calls /api/* without CORS (KWC-202).
+  readonly clientDir?: string;
 }
 
 export function createApp(deps: AppDependencies): express.Express {
@@ -108,6 +111,14 @@ export function createApp(deps: AppDependencies): express.Express {
 
   if (deps.libraryRepository) {
     app.use("/api", libraryRouter(new LibraryService(deps.libraryRepository)));
+  }
+
+  // Serve the built web client same-origin (KWC-202). Mounted after the /api
+  // routers so it can never shadow an API route; static only resolves files that
+  // exist in dist (index.html at "/", main.js, styles.css), otherwise falls
+  // through to the JSON 404 below. This keeps /health and /api/* unchanged.
+  if (deps.clientDir) {
+    app.use(express.static(deps.clientDir));
   }
 
   app.use(notFoundHandler);

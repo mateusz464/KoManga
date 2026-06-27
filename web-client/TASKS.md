@@ -76,6 +76,7 @@
 - **Next:** same-origin serving (the path the device will really use) is **KWC-202** — have the Node API serve `dist/`.
 
 ### KWC-202 — Serve client from the API (same-origin)
+**Status:** Done
 **Description:** Have the Node API serve the built client as static files, same-origin, so the client can call `/api/*` without CORS. (Cross-refs API epic; coordinate the static-serving route.)
 **Acceptance criteria:**
 - Visiting the API's root over the tunnel serves the client.
@@ -83,6 +84,12 @@
 - `/health` and `/api/*` still behave as before.
 **Blocked by:** KWC-201.
 **Estimate:** S
+**Outcome:** The API now serves the built `web-client/dist` same-origin (KWC-202).
+- **Code (API epic):** `createApp` gained an optional `clientDir` dep; when set it mounts `express.static(clientDir)` **after** the `/api` routers (so it can never shadow an API route) and **before** the JSON 404 handler. Config exposes it as the optional `CLIENT_DIST_PATH` env (`src/config/index.ts` → `paths.clientDir`); the composition root passes it through. Unset = no static client (only `/health` + `/api/*`), preserving prior behaviour.
+- **Same-origin = no CORS:** client and `/api/*` share one origin, so no CORS config is needed. The unauthenticated client HTML/JS/CSS load freely; only `/api/*` is auth-gated.
+- **Tests:** `api/test/http/client-static.test.ts` — root serves `index.html`, static assets serve, `/health` unchanged, the static mount doesn't shadow the `/api` 404 envelope, and no-`clientDir` falls through to JSON 404. Full API suite (181) + typecheck + lint clean.
+- **Verified running:** booted the API against the real `../web-client/dist` — `GET /` → 200 `text/html` (the actual Clara BW client HTML), `/main.js` → `text/javascript`, `/styles.css` → `text/css`, `/health` → `{"status":"ok"}`, `/api/*` still 401 without the token.
+- **Deployment:** `docker-compose.yml` bind-mounts `./web-client/dist:/web-client:ro` and sets `CLIENT_DIST_PATH=/web-client` (build the client on the host first); documented in `api/.env.example`.
 
 ### KWC-203 — [TEST] Test setup for client logic
 **Description:** Add a test runner for the non-visual logic (API client, state, helpers) with DOM/fetch mocking.
