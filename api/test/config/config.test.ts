@@ -106,6 +106,39 @@ describe("loadConfig", () => {
 
       expect(() => loadConfig(env)).toThrow(/IMAGE_EINK_FORMAT/);
     });
+
+    // KWC-102 (docs/device.md): the real Kobo Clara BW panel renders PNG and
+    // JPEG but NOT WebP (nor AVIF), so `webp` is no longer a valid `eink`
+    // output even though it is a perfectly good image format (RFC §6).
+    it("rejects webp as an eink format", () => {
+      const env = { ...validEnv(), IMAGE_EINK_FORMAT: "webp" };
+
+      expect(() => loadConfig(env)).toThrow(/IMAGE_EINK_FORMAT/);
+    });
+
+    it("names the allowed eink formats (png, jpeg) when rejecting webp", () => {
+      const env = { ...validEnv(), IMAGE_EINK_FORMAT: "webp" };
+
+      try {
+        loadConfig(env);
+        expect.unreachable("loadConfig should have rejected webp");
+      } catch (err) {
+        const message = (err as Error).message;
+        expect(message).toMatch(/IMAGE_EINK_FORMAT/);
+        expect(message).toMatch(/png/);
+        expect(message).toMatch(/jpeg/);
+      }
+    });
+  });
+
+  it("accepts png and jpeg as eink formats; default stays png", () => {
+    expect(loadConfig(validEnv()).image.einkFormat).toBe("png");
+    expect(
+      loadConfig({ ...validEnv(), IMAGE_EINK_FORMAT: "png" }).image.einkFormat,
+    ).toBe("png");
+    expect(
+      loadConfig({ ...validEnv(), IMAGE_EINK_FORMAT: "jpeg" }).image.einkFormat,
+    ).toBe("jpeg");
   });
 
   it("does not include the secret token in thrown error messages", () => {

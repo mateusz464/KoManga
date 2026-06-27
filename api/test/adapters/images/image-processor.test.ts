@@ -173,19 +173,7 @@ describe("SharpImageProcessor (ImageProcessor port contract)", () => {
       expect(await isGreyscale(result.bytes)).toBe(true);
     });
 
-    it("honours the webp output format", async () => {
-      const src = await source(1000, 1500);
-      const processor = new SharpImageProcessor({
-        targetWidth: 1072,
-        targetHeight: 1448,
-        format: "webp",
-      });
-
-      const result = await processor.process(src, "eink");
-      const meta = await sharp(result.bytes).metadata();
-
-      expect(meta.format).toBe("webp");
-      expect(result.contentType).toBe("image/webp");
-    });
+    // webp is intentionally NOT a valid eink output format (KWC-102: the Kobo
+    // panel can't decode it) — png and jpeg above are the only supported set.
   });
 });

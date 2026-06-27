@@ -425,7 +425,7 @@
 > web-client **device capability spike** (`docs/device.md`). These reconcile the
 > API with what the real Kobo was measured to do. Same strict-TDD rules apply.
 
-### API-901 — [TEST] Constrain `eink` output format to device-renderable formats
+### API-901 — [TEST] Constrain `eink` output format to device-renderable formats — **Done**
 **Description:** The `eink` image profile must only emit a format the target panel can decode. KWC-102 (`docs/device.md` §KWC-102) confirmed on the real Kobo Clara BW that the panel renders **PNG and JPEG** but **not WebP** (nor AVIF). RFC §6 already scopes the `eink` output to "PNG or low-chroma JPEG", but the config currently accepts `webp` as a valid `IMAGE_EINK_FORMAT` (`src/config/index.ts:4,6`) and the image-processor port's format type allows it (`src/services/ports/image-processor.ts`). Write failing tests that pin the allowed `eink` format set to `png | jpeg`.
 **Acceptance criteria:**
 - `loadConfig` **rejects** `IMAGE_EINK_FORMAT=webp` (and any non-`png`/`jpeg` value) with a clear aggregated error naming the allowed formats.
@@ -435,6 +435,7 @@
 **Surfaced by:** KWC-102 (web-client device spike).
 **Blocked by:** none (fix to already-Done API-404 / config).
 **Estimate:** S
+**Notes (2026-06-27):** Pinned the allowed `eink` format set to `png | jpeg` from the test side only (TEST ticket — no `src/` change; the narrowing lands in API-902). `test/config/config.test.ts` gains two **red** assertions against current code (which still accepts `webp`): `loadConfig` must **reject** `IMAGE_EINK_FORMAT=webp` (mirrors the existing `gif` rejection), and the aggregated error must **name the allowed formats** (`png`, `jpeg`) — currently webp is accepted so both fail (no throw / `expect.unreachable`). Added a green test pinning criterion 2 (accepts `png` and `jpeg`; default stays `png`). Updated the image-processor contract test (`test/adapters/images/image-processor.test.ts`): removed the "honours the webp output format" eink case (the only test that drove `webp` as an `eink` output) — the existing jpeg case already proves a non-png configurable format works, so webp is no longer exercised as an eink output. Left the unrelated webp references (CBZ pages, session-cache content-types, the `colourImage` source-fixture helper) untouched — those aren't eink output formats. Suite is **2 red + 174 green** (exactly the two intended API-901 assertions fail), lint + typecheck + format clean. Impl in API-902 narrows `EinkFormat`/`EINK_FORMATS`, the port's eink `format` type, and the `CONTENT_TYPES` map, turning both red.
 
 ### API-902 — Constrain `eink` output format (impl)
 **Description:** Make API-901 pass. Remove `webp` from the allowed `eink` formats so a misconfiguration can't silently break the only client that uses the `eink` profile.
