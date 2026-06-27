@@ -1,5 +1,5 @@
-# KoManga stack. The `api` and `cloudflared` services are added later
-# (API-801 / API-802); for now just `suwayomi`.
+# KoManga stack. The `cloudflared` service is added later (API-802); for now
+# `suwayomi` (internal-only) + `api`.
 
 services:
   suwayomi:
@@ -22,6 +22,46 @@ services:
       retries: 5
       start_period: 90s
 
+  api:
+    build:
+      context: ./api
+    container_name: komanga-api
+    restart: unless-stopped
+    depends_on:
+      suwayomi:
+        # Don't start the API until Suwayomi passes its healthcheck — the
+        # composition root opens a Suwayomi connection at startup.
+        condition: service_healthy
+    networks:
+      - komanga
+    environment:
+      # Suwayomi is reached by its in-network service name, never publicly.
+      SUWAYOMI_URL: http://suwayomi:4567
+      # Single-user secret — supplied from the host environment / `.env`, never
+      # committed (CLAUDE.md §5/§9). Compose fails fast if it is unset.
+      AUTH_TOKEN: ${AUTH_TOKEN:?AUTH_TOKEN must be set (see api/.env.example)}
+      PORT: "3000"
+      # Persistent paths point at the named volumes mounted below.
+      DATABASE_PATH: /data/db/komanga.sqlite
+      CBZ_STORE_PATH: /data/downloads
+    # Published to loopback only so the host can reach it for local checks; the
+    # public entrypoint is the Cloudflare Tunnel (API-802), and loopback opens
+    # no inbound router ports (RFC §9).
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      # Our SQLite DB (reading progress, downloads, library — RFC §7).
+      - api-data:/data/db
+      # Persistent CBZ download store, separate from the ephemeral session cache
+      # and never auto-pruned (RFC §5.2/§7).
+      - cbz-store:/data/downloads
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
 # A plain bridge, not `internal: true`: Suwayomi needs outbound internet to
 # scrape sources; it just has no inbound port mapping to the host.
 networks:
@@ -30,8 +70,9 @@ networks:
 
 volumes:
   suwayomi-data:
+  # Our SQLite database — survives container restarts/rebuilds (RFC §7).
+  api-data:
   # Persistent CBZ download store (RFC §5.2/§7) — explicit downloads the user
   # chose to keep, physically separate from the ephemeral session cache and
-  # never auto-pruned. The `api` service mounts this at CBZ_STORE_PATH when it
-  # joins the stack (API-801).
+  # never auto-pruned. Mounted by the `api` service at CBZ_STORE_PATH.
   cbz-store:

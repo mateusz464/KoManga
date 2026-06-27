@@ -384,7 +384,7 @@
 
 > Full Compose stack + public exposure. Done last; depends on the services existing.
 
-### API-801 — API service in Compose
+### API-801 — API service in Compose — **Done**
 **Description:** Add the Node API to `docker-compose.yml`: build, env/secrets, volumes (SQLite, CBZ store), `depends_on: suwayomi`, joined to the internal network.
 **Acceptance criteria:**
 - `docker compose up` brings up Suwayomi + API healthy.
@@ -392,6 +392,8 @@
 - SQLite + CBZ volumes persist across restarts.
 **Blocked by:** API-203, API-506, API-602, API-702.
 **Estimate:** M
+**Notes (2026-06-27):** Added the `api` service to `docker-compose.yml` plus a multi-stage `api/Dockerfile` (+ `.dockerignore`). The Dockerfile builds for the **container's** arch — the Mac Mini host is ARM (CLAUDE.md §13): a `deps` stage installs all deps with the `python3 make g++` toolchain better-sqlite3's native addon needs (sharp uses its prebuilt arm64 binaries), a `build` stage runs `npm run build`, a `prod-deps` stage does `npm ci --omit=dev` (native modules rebuilt for the runtime), and a slim `node:22-bookworm-slim` runtime copies `node_modules` + `dist` and adds `curl` for the healthcheck. The service: `build: ./api`, `depends_on: suwayomi { condition: service_healthy }` (the composition root opens a Suwayomi connection at startup, so it must wait), joined to the internal `komanga` network reaching Suwayomi by its in-network name (`SUWAYOMI_URL: http://suwayomi:4567`). `AUTH_TOKEN` comes from the host env via `${AUTH_TOKEN:?…}` so Compose **fails fast** if the secret is unset, never committed (CLAUDE.md §5/§9). Two named volumes persist our data, kept separate (RFC §7): `api-data` → `/data/db` (SQLite, `DATABASE_PATH=/data/db/komanga.sqlite`) and `cbz-store` → `/data/downloads` (persistent CBZ store, `CBZ_STORE_PATH`, separate from the ephemeral session cache). Published to **loopback only** (`127.0.0.1:3000:3000`) for local checks — the public entrypoint is the Cloudflare Tunnel (API-802) and loopback opens no inbound router ports (RFC §9). Container healthcheck curls `/health`.
+**E2E verification (2026-06-27): PASS** (full `docker compose up` on the user-space Colima ARM daemon). Image built (better-sqlite3 compiled arm64, sharp prebuilt). **Both services healthy**, and the `depends_on: service_healthy` gate held — the API only started once Suwayomi passed its healthcheck. **Internal Suwayomi reach proven** end-to-end: `GET /api/sources` (Bearer auth) → 200 with live Suwayomi data (`Local source`) over the `komanga` network, while the same Suwayomi has **no host port** and `http://127.0.0.1:4567` is unreachable from the host (RFC §9); `/health` is public (200), `/api/sources` without a credential → 401 (API-702 auth applies). **Volume persistence proven across a container recreate** (`down` → `up`, named volumes): a `PUT /api/progress/99` write survived (`page: 42` read back from `api-data`/SQLite) and a sentinel file in `/data/downloads` survived (`cbz-store`). Lint + format clean; no app source changed (deploy-only ticket).
 
 ### API-802 — Cloudflare Tunnel connector
 **Description:** Add the `cloudflared` service pointing at the API; document tunnel + (optional) Cloudflare Access setup. No inbound router ports.
