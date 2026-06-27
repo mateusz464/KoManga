@@ -114,12 +114,19 @@
 > The skeleton: a typed API client, auth handling, routing between views, and a global e-ink-aware render approach.
 
 ### KWC-301 — [TEST] API client module
+**Status:** Done
 **Description:** Tests for a typed client wrapping the API endpoints (sources, search, manga, pages, page image URL builder with `profile`, downloads, progress, library), including auth header injection and error mapping. Uses the capability-confirmed transport (fetch or XHR).
 **Acceptance criteria:**
 - Tests cover request shaping, auth header, and error/non-200 handling per endpoint.
 - Page-image URL builder always requests `profile=eink`.
 **Blocked by:** KWC-203.
 **Estimate:** M
+**Outcome:** Red-phase contract suite for the typed `ApiClient` in place (`web-client/test/api/client.test.ts`, 25 tests), with the surface it pins down stubbed so the suite compiles and runs but fails until KWC-302:
+- **Module surface (KWC-302 implements):** `src/api/client.ts` (`ApiClient` + `ApiClientOptions { baseUrl?, getToken? }`, every method a red-phase reject/throw "not implemented yet — see KWC-302"), `src/api/types.ts` (client-owned domain types, mapped from the API's `{ data }` envelope — not imported from the API epic), `src/api/errors.ts` (`ApiClientError {status, code}`, `UnauthorizedError` (401), `NetworkError` (status 0) — typed so views/state branch without string-matching).
+- **Transport boundary = XHR, mocked at the `XMLHttpRequest` layer** (per `test/README.md` — the boundary drops one level for this module only). A `FakeXhr` installed on `globalThis.XMLHttpRequest` records `open`/`setRequestHeader`/`send` and drives the response (or a network error) on a microtask, so tests assert the *actual* request the client shapes. Confirms the spike's transport choice: **no `fetch`, no `URL`/`URLSearchParams`** — the suite parses query strings by hand and expects the client to too.
+- **Coverage (acceptance):** per-endpoint request shaping — `GET /sources`, `GET /search?q&source&page`, `GET /manga/:id`, `GET /chapter/:id/pages`, `POST /chapter/:id/download?mangaId&profile=eink`, `GET /downloads`, `GET|PUT /progress/:mangaId`, `GET /library`, `PUT|DELETE /library/:mangaId`; method + hand-built/encoded URL + JSON body/content-type asserted. **Auth header** — `Authorization: Bearer <token>` attached when `getToken()` returns one, omitted when null, **read per request** (a later login is picked up). **Error/non-200 mapping** — 401→`UnauthorizedError`, 404/502→`ApiClientError` carrying envelope `status`+`code`, unparseable error body still maps by status, transport failure→`NetworkError`. **Page-image URL builder always pins `profile=eink`** (never `raw`), id percent-encoded, honours `baseUrl`.
+- **Red verified:** all 25 fail solely on the missing KWC-302 impl (20 throw "not implemented", 5 error-mapping cases catch the stub's generic `Error` and fail the typed `instanceof`); the 3 KWC-203 smoke tests still pass. `typecheck` / `lint` / `format:check` all clean.
+- **Next:** KWC-302 implements the XHR transport, hand-rolled query/path encoding, auth injection and error mapping to turn this suite green.
 
 ### KWC-302 — API client module (impl)
 **Description:** Implement the API client satisfying KWC-301.
