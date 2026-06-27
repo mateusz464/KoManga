@@ -24,6 +24,7 @@ import { downloadsRouter } from "../routes/downloads.js";
 import { progressRouter } from "../routes/progress.js";
 import { libraryRouter } from "../routes/library.js";
 import { errorHandler, notFoundHandler } from "./error-handler.js";
+import { requireAuth } from "./auth.js";
 
 // Adapters are injected here, not constructed by the app. The optional deps gate
 // which routers mount, so a test can pass just the ports an endpoint needs.
@@ -50,6 +51,12 @@ export function createApp(deps: AppDependencies): express.Express {
   app.get("/health", (_req, res) => {
     res.json({ status: "ok" });
   });
+
+  // Auth guards every /api/* route; /health above stays public. Mounted before
+  // the feature routers so an invalid credential short-circuits at the edge.
+  if (deps.authToken) {
+    app.use("/api", requireAuth(deps.authToken));
+  }
 
   app.use("/api", sourcesRouter(new SourceService(deps.suwayomi)));
   app.use("/api", searchRouter(new SearchService(deps.suwayomi)));

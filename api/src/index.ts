@@ -38,6 +38,7 @@ const libraryRepository = new SqliteLibraryRepository(db);
 
 const app = createApp({
   suwayomi,
+  authToken: config.auth.token,
   imageProcessor,
   sessionCache,
   prefetchWindow: config.prefetch.window,
