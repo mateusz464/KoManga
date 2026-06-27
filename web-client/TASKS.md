@@ -92,12 +92,20 @@
 - **Deployment:** `docker-compose.yml` bind-mounts `./web-client/dist:/web-client:ro` and sets `CLIENT_DIST_PATH=/web-client` (build the client on the host first); documented in `api/.env.example`.
 
 ### KWC-203 — [TEST] Test setup for client logic
+**Status:** Done
 **Description:** Add a test runner for the non-visual logic (API client, state, helpers) with DOM/fetch mocking.
 **Acceptance criteria:**
 - `npm test` runs; a trivial logic test passes.
 - A documented pattern exists for testing modules without a real browser.
 **Blocked by:** KWC-201.
 **Estimate:** S
+**Outcome:** **Vitest** wired up for client logic, mirroring the API epic's house style.
+- **Config (`vitest.config.ts`):** `environment: "jsdom"` (gives DOM-touching code and `XMLHttpRequest` a browser-shaped sandbox off-device — visual correctness stays a `[DEVICE]` check, never asserted here), `globals: true`, tests under `test/**/*.test.ts` mirroring `src/`. As in the API epic, tests still import `describe`/`it`/`expect`/`vi` from `"vitest"` explicitly so type-check and lint stay clean.
+- **Scripts:** `npm test` (`vitest run`) + `npm run test:watch`. `tsconfig.json` `include` now covers `test` so test files are type-checked.
+- **Deps:** added `vitest` + `jsdom` (dev).
+- **Trivial test (`test/smoke.test.ts`):** passes — arithmetic, jsdom DOM presence, and a `vi.fn` boundary-mock example. `test/README.md` documents the off-device patterns: **mock the network at the `api/` boundary** (inject a stubbed client; drop to the `XMLHttpRequest` layer only when testing the API client itself in KWC-301), and jsdom for DOM-touching logic.
+- **Verified:** `npm test` green (3 passing), `typecheck` / `lint` / `format:check` all clean; `npm run build` unaffected.
+- **Next:** unblocks the first logic suites — KWC-301 (API client tests) and KWC-305 (router tests).
 
 ---
 
