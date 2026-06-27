@@ -203,12 +203,23 @@
 - **Next:** unblocks KWC-307 (app shell wires the `Router` + `AuthController` + credential-entry view and does the on-device pass).
 
 ### KWC-307 — [DEVICE] App shell & e-ink render policy
+**Status:** Built & verified off-device — **on-device acceptance pending the real Clara BW** (it's a `[DEVICE]` ticket; the two criteria below are on-panel judgements that can't be asserted off-hardware). Everything buildable is done: typecheck / lint / format:check clean, all 59 logic tests still green, `npm run build` emits the ES5 bundle (acorn `ecmaVersion:5` parse clean), and the built bundle drives the full shell flow correctly in jsdom.
 **Description:** Build the base layout (tap-based nav, large targets, no animation) and a central render helper that applies the refresh policy from KWC-103.
 **Acceptance criteria:**
 - Shell renders cleanly on-device with no ghosting on view changes.
 - Tap targets meet the sizing guidance; navigation feels responsive on e-ink.
 **Blocked by:** KWC-306, KWC-304, KWC-103, KWC-202.
 **Estimate:** M
+**Outcome:** App shell + central e-ink render policy built, wiring the framework-free pieces (AuthController, Router, render/) together per CLAUDE.md §5.
+- **`src/render/` — the ONE place the refresh policy lives (CLAUDE.md §5/§7/§12, KWC-103).** `refresh.ts`: `renderView(root, build)` builds a view off the live tree, swaps it in as the container's sole child in one operation (one repaint, not many), then calls `forceFullRefresh()` — a synchronous display-off→reflow→on toggle that gives this Nickel/WebKit build the explicit repaint trigger it needs on a view change (the spike saw content stay unpainted otherwise). No timers/transitions: a stepped black→white flash was deliberately rejected (it needs a frame yield = animation, which the no-animation rule forbids), and the spike rated in-place in-viewport swaps clean. `dom.ts`: `el()` / `tapButton()` / `clearChildren()` — the only DOM-building helpers; `tapButton` binds a `click` (Nickel synthesises it from a tap; keeps the shell usable on desktop too).
+- **Shell (`src/main.ts`):** persistent tap-nav bar (Library / Search, large targets) + a `#content` region the router swaps views into. **Auth-gated render** — until a credential is stored it shows the login view (nav hidden); `AuthController.onRequireLogin` (a 401 from any later call) drops back to it. The **reader route renders full-screen** (nav hidden); every other view keeps the nav. `router.start()` emits the initial route, which paints through `renderView`.
+- **Credential entry (`src/views/login.ts`)** — the on-device credential-entry surface **KWC-304 deferred here**. Enter → `AuthController.login(token)` (localStorage, KWC-304) → re-render the current route, now authenticated.
+- **Placeholders (`src/views/placeholder.ts`)** stand in for library/search/manga/reader so the nav + refresh policy are demonstrable now; each feature ticket (4xx/5xx/6xx) replaces its stub. **ApiClient is not instantiated here** — the consuming view tickets wire it with `getToken: () => auth.getToken()` (KWC-302).
+- **`src/config.ts`** — central client config (`apiBaseUrl: ""` same-origin per KWC-202; `prefetchWindow` for KWC-503).
+- **CSS** — shell is a fixed 732×762 non-scrolling `-webkit-box` column (KWC-103: scroll is unsafe — views fit the viewport and swap in place); 72 px nav tap targets (≥ 44 px guidance), high contrast, no transitions/animations.
+- **Off-device verification:** the built `dist/main.js` run in jsdom drives the whole flow — first launch → login (nav hidden) → submit stores `komanga.credential` → Library renders with nav → tap Search/Library navigate hash-only (no reload) → reader route hides the nav → physical `history.back()` returns to the prior view.
+- **Remaining (the `[DEVICE]` gate):** load on the real Clara BW (via the API serving `dist/` same-origin, KWC-202) and confirm clean render / no ghosting on view changes and responsive tap nav. No new device findings, so `docs/device.md` is unchanged.
+- **Next:** unblocks KWC-402 / 404 / 604 (feature views render into this shell) and the reader chain.
 
 ---
 
