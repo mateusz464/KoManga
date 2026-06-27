@@ -345,7 +345,7 @@
 
 > Single-user but multi-client. Applies across the whole API.
 
-### API-701 — [TEST] Single-user auth middleware
+### API-701 — [TEST] Single-user auth middleware — **Done**
 **Description:** Tests that all `/api/*` routes require a valid token/credential; missing/invalid → 401; valid passes through. Token scheme must not assume a single device.
 **Acceptance criteria:**
 - Protected route without credential → 401.
@@ -353,6 +353,7 @@
 - `/health` remains public.
 **Blocked by:** API-105, API-103.
 **Estimate:** M
+**Notes (2026-06-27):** `test/http/auth.test.ts` drives the contract through Express with the app built by `createApp` (CLAUDE.md §4), mirroring the established endpoint-test pattern. **Scheme pinned:** `Authorization: Bearer <token>`, where the token is the single shared secret from `Config.auth.token` (already required in API-103). A bearer token in a header carries **no device identity** — any client presenting the secret is accepted — so the scheme is single-user but **multi-client** and does not assume one device (RFC §9/§13, CLAUDE.md §9/§10). The credential is injected via a new **optional** `authToken` on `AppDependencies` (kept optional so the existing `createApp` call sites stay valid; **API-702 mounts the middleware and reads it** — same red-test-that-executes pattern as the prior optional-dep tickets). Contract decisions (RFC §8 leaves shapes to impl): missing, wrong, malformed (non-`Bearer` scheme), or bare-token-without-scheme credentials → **401** with the standard `{ error: { code: "UNAUTHORIZED", message } }` envelope (the `UnauthorizedError` 401 type already exists in `http/errors.ts`), **rejected at the edge before any downstream port is touched**. A controllable `SuwayomiClient` (spies on `listSources`/`search`) lets each rejection assert the port was **not** reached, so a passing test genuinely proves auth short-circuits rather than the handler erroring. Coverage hits the three acceptance criteria — no credential → 401, valid Bearer → handler runs (200), `/health` public (200, no credential) — plus wrong/malformed/bare-token → 401, that **all** `/api/*` routes are guarded (a valid-param `/api/search` is 401 without a credential, so it's auth not validation), and the multi-client property (the same token accepted across two independent requests with no device id anywhere). **5 enforcement assertions fail red** (middleware unmounted — requests currently reach handlers) + **3 pass green** (valid token / multi-client / `/health`, which hold both before and after impl) pending API-702; existing 158 tests still pass (suite 166: 161 passing + 5 red), lint + typecheck + format clean.
 
 ### API-702 — Single-user auth middleware (impl)
 **Description:** Implement auth middleware satisfying API-701, applied globally to `/api/*`.

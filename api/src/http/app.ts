@@ -29,6 +29,11 @@ import { errorHandler, notFoundHandler } from "./error-handler.js";
 // which routers mount, so a test can pass just the ports an endpoint needs.
 export interface AppDependencies {
   readonly suwayomi: SuwayomiClient;
+  // Single-user shared secret required on every /api/* route (CLAUDE.md §9).
+  // A Bearer token carries no device identity, so the scheme is multi-client.
+  // Optional so existing call sites stay valid; API-702 mounts the middleware
+  // that reads it. When absent, no auth is applied.
+  readonly authToken?: string;
   readonly imageProcessor?: ImageProcessor;
   readonly sessionCache?: SessionCache;
   readonly prefetchWindow?: number;
