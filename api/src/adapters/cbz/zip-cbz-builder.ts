@@ -32,7 +32,6 @@ function crc32(buf: Buffer): number {
   return (crc ^ 0xffffffff) >>> 0;
 }
 
-/** Maps a content type to a conventional file extension for the entry name. */
 function extensionFor(contentType: string): string {
   const subtype =
     contentType.split(";")[0].trim().split("/")[1]?.toLowerCase() ?? "";

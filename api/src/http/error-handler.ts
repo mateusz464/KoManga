@@ -1,10 +1,6 @@
 import type { ErrorRequestHandler, RequestHandler } from "express";
 import { ApiError } from "./errors.js";
 
-// Centralised error mapping + 404 fallback (CLAUDE.md §6). Typed ApiErrors map
-// to their status + the standard envelope; anything else becomes a generic 500
-// that never leaks the underlying message or stack.
-
 interface ErrorBody {
   error: { code: string; message: string };
 }
@@ -19,7 +15,7 @@ export const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
     return;
   }
 
-  // Unknown/unexpected error: log server-side, return a safe generic 500.
+  // Log unexpected errors server-side; return a safe 500 that leaks nothing.
   console.error(err);
   res.status(500).json(envelope("INTERNAL", "Internal Server Error"));
 };

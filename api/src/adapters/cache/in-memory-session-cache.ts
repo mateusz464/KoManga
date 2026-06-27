@@ -1,6 +1,3 @@
-// In-memory SessionCache (RFC §5, CLAUDE.md §7): bounded by total bytes with a
-// per-entry TTL.
-
 import type {
   CachedPage,
   SessionCache,
@@ -10,7 +7,6 @@ import type { ImageProfile } from "../../services/ports/image-processor.js";
 export interface InMemorySessionCacheOptions {
   readonly maxBytes: number;
   readonly ttlMs: number;
-  /** Injectable so TTL expiry is testable without real time. Defaults to `Date.now`. */
   readonly clock?: () => number;
 }
 
@@ -59,7 +55,7 @@ export class InMemorySessionCache implements SessionCache {
     return this.clock() - entry.storedAt >= this.options.ttlMs;
   }
 
-  /** Evict oldest entries until the total byte size is within the bound. */
+  // Evict oldest-first until the total byte size is within the bound.
   private evictToFit(): void {
     for (const [key, entry] of this.entries) {
       if (this.totalBytes <= this.options.maxBytes) break;

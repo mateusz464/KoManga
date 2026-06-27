@@ -3,13 +3,11 @@
 //   - "eink" : greyscale, fitted to the Kobo resolution, contrast-tuned, compact.
 export type ImageProfile = "raw" | "eink";
 
-/** An undecoded source image, e.g. the bytes returned by SuwayomiClient.fetchPage. */
 export interface SourceImage {
   readonly bytes: Buffer;
   readonly contentType: string;
 }
 
-/** The result of processing — ready to serve to a client. */
 export interface ProcessedImage {
   readonly bytes: Buffer;
   readonly contentType: string;
@@ -24,10 +22,5 @@ export interface EinkProfileOptions {
 }
 
 export interface ImageProcessor {
-  /**
-   * Process a source image under the requested profile. `raw` returns the
-   * source unchanged (lossless passthrough); `eink` returns a greyscale image
-   * fitted within the configured target dimensions in the configured format.
-   */
   process(source: SourceImage, profile: ImageProfile): Promise<ProcessedImage>;
 }

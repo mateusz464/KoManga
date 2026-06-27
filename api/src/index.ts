@@ -10,7 +10,6 @@ import { SqliteReadingProgressRepository } from "./adapters/db/reading-progress-
 import { SqliteLibraryRepository } from "./adapters/db/library-repository.js";
 import { createApp } from "./http/app.js";
 
-// Composition root: load config, construct concrete adapters, inject them.
 const config = loadConfig();
 
 const suwayomi = createSuwayomiClient({
@@ -39,6 +38,10 @@ const libraryRepository = new SqliteLibraryRepository(db);
 const app = createApp({
   suwayomi,
   authToken: config.auth.token,
+  rateLimit: {
+    limit: config.rateLimit.limit,
+    windowMs: config.rateLimit.windowMs,
+  },
   imageProcessor,
   sessionCache,
   prefetchWindow: config.prefetch.window,

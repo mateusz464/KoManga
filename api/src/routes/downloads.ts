@@ -33,7 +33,6 @@ export function downloadsRouter(service: DownloadService): Router {
   return router;
 }
 
-// `profile` defaults to `raw`; only `raw`/`eink` are supported (RFC §6).
 function parseProfile(value: unknown): ImageProfile {
   if (value === undefined) {
     return "raw";

@@ -2,7 +2,7 @@ import type { SuwayomiClient } from "./ports/suwayomi-client.js";
 
 export interface ChapterPages {
   readonly pageCount: number;
-  /** One id per page, `<chapterId>:<index>` (0-based) — the handle for `GET /api/page/:id`. */
+  // One id per page, `<chapterId>:<index>` (0-based) — the handle for GET /api/page/:id.
   readonly pages: readonly string[];
 }
 

@@ -1,9 +1,8 @@
-// SQLite connection + migrations for OUR data only (RFC §7): reading_progress,
-// downloads, cache_index. Suwayomi's catalogue is never duplicated here.
+// SQLite holds only our data (RFC §7); Suwayomi's catalogue is never duplicated.
 
 import Database from "better-sqlite3";
 
-/** The opened handle. Only the db adapter sees this concrete type (CLAUDE.md §11). */
+// Only the db adapter sees this concrete type (CLAUDE.md §11).
 export type AppDatabase = Database.Database;
 
 // Plain SQL, run on every open; `IF NOT EXISTS` makes re-running safe.

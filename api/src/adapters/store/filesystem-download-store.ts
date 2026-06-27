@@ -1,5 +1,5 @@
-// DownloadStore on the CBZ Docker volume (RFC §5.2/§7): one file per chapter,
-// separate from the session cache and never auto-pruned by it.
+// One CBZ file per chapter on the persistent download volume — kept separate
+// from the session cache and never auto-pruned by it (RFC §5.2/§7).
 
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";

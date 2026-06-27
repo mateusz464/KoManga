@@ -20,6 +20,10 @@ export interface Config {
   readonly prefetch: {
     readonly window: number;
   };
+  readonly rateLimit: {
+    readonly limit: number;
+    readonly windowMs: number;
+  };
   readonly image: {
     readonly targetWidth: number;
     readonly targetHeight: number;
@@ -43,6 +47,8 @@ const DEFAULTS = {
   CACHE_MAX_BYTES: 256 * 1024 * 1024,
   CACHE_TTL_SECONDS: 60 * 60,
   PREFETCH_WINDOW: 3,
+  RATE_LIMIT: 100,
+  RATE_LIMIT_WINDOW_MS: 60 * 1000,
   IMAGE_TARGET_WIDTH: 1072,
   IMAGE_TARGET_HEIGHT: 1448,
   IMAGE_EINK_FORMAT: "png" as EinkFormat,
@@ -109,6 +115,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     },
     prefetch: {
       window: positiveInt("PREFETCH_WINDOW", DEFAULTS.PREFETCH_WINDOW),
+    },
+    rateLimit: {
+      limit: positiveInt("RATE_LIMIT", DEFAULTS.RATE_LIMIT),
+      windowMs: positiveInt(
+        "RATE_LIMIT_WINDOW_MS",
+        DEFAULTS.RATE_LIMIT_WINDOW_MS,
+      ),
     },
     image: {
       targetWidth: positiveInt(

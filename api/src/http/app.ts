@@ -25,20 +25,13 @@ import { progressRouter } from "../routes/progress.js";
 import { libraryRouter } from "../routes/library.js";
 import { errorHandler, notFoundHandler } from "./error-handler.js";
 import { requireAuth } from "./auth.js";
-import type { RateLimitOptions } from "./rate-limit.js";
+import { rateLimit, type RateLimitOptions } from "./rate-limit.js";
 
-// Adapters are injected here, not constructed by the app. The optional deps gate
-// which routers mount, so a test can pass just the ports an endpoint needs.
+// The optional deps gate which routers mount, so a test can pass just the ports
+// an endpoint needs.
 export interface AppDependencies {
   readonly suwayomi: SuwayomiClient;
-  // Single-user shared secret required on every /api/* route (CLAUDE.md §9).
-  // A Bearer token carries no device identity, so the scheme is multi-client.
-  // Optional so existing call sites stay valid; API-702 mounts the middleware
-  // that reads it. When absent, no auth is applied.
   readonly authToken?: string;
-  // Per-client rate limiting on /api/* (CLAUDE.md §9). Optional so existing call
-  // sites stay valid; API-704 mounts the middleware that reads it. When absent,
-  // no limiting is applied.
   readonly rateLimit?: RateLimitOptions;
   readonly imageProcessor?: ImageProcessor;
   readonly sessionCache?: SessionCache;
@@ -57,8 +50,12 @@ export function createApp(deps: AppDependencies): express.Express {
     res.json({ status: "ok" });
   });
 
-  // Auth guards every /api/* route; /health above stays public. Mounted before
-  // the feature routers so an invalid credential short-circuits at the edge.
+  // Rate limiting and auth mount before the feature routers so over-limit /
+  // invalid-credential requests are rejected at the edge; /health stays public.
+  if (deps.rateLimit) {
+    app.use("/api", rateLimit(deps.rateLimit));
+  }
+
   if (deps.authToken) {
     app.use("/api", requireAuth(deps.authToken));
   }
@@ -113,7 +110,6 @@ export function createApp(deps: AppDependencies): express.Express {
     app.use("/api", libraryRouter(new LibraryService(deps.libraryRepository)));
   }
 
-  // 404 fallback for unmatched routes, then the centralised error handler.
   app.use(notFoundHandler);
   app.use(errorHandler);
 

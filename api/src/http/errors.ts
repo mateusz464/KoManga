@@ -1,7 +1,3 @@
-// Typed domain errors (CLAUDE.md §6). Services throw these; the error
-// middleware (error-handler.ts) is the single place that maps them to an HTTP
-// status + the standard error envelope.
-
 export class ApiError extends Error {
   readonly status: number;
   readonly code: string;
@@ -29,5 +25,11 @@ export class UnauthorizedError extends ApiError {
 export class NotFoundError extends ApiError {
   constructor(message: string) {
     super(message, 404, "NOT_FOUND");
+  }
+}
+
+export class RateLimitedError extends ApiError {
+  constructor(message: string) {
+    super(message, 429, "RATE_LIMITED");
   }
 }
