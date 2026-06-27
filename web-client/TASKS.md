@@ -22,12 +22,14 @@
 > Must come first. Everything else is designed around what this finds. Throwaway code is fine — the deliverable is knowledge, captured in a doc.
 
 ### KWC-101 — [DEVICE] Identify target device & resolution
+**Status:** Done
 **Description:** Confirm the exact Kobo model, screen resolution, and Nickel browser version. Record the WebKit/user-agent string.
 **Acceptance criteria:**
 - Model, panel resolution, and UA string documented in `docs/device.md`.
 - API image `eink` profile target resolution updated to match (cross-refs API config).
 **Dependencies:** none.
 **Estimate:** S
+**Outcome:** Kobo Clara BW, fw 4.45.23697, panel 1072×1448 (WebKit 538.1). Recorded in `docs/device.md`. API `eink` target already 1072×1448 — matches, no change needed.
 
 ### KWC-102 — [DEVICE] JS/CSS capability probe
 **Description:** Build a throwaway probe page that reports which JS/CSS features the Kobo browser supports (ES level, fetch vs XHR, flexbox/grid, CSS custom properties, `<img>` formats it renders, touch event model). Load it on-device.
