@@ -1,13 +1,8 @@
-// Red-phase stub for the typed KoManga API client (KWC-301). It pins the public
-// surface so the contract tests in `test/api/client.test.ts` compile and run,
-// but every method rejects/throws — the real XHR transport, query-string
-// building, auth-header injection and error mapping land in KWC-302, which is
-// what turns these tests green.
-//
-// Transport is XHR, not fetch (CLAUDE.md §2 / device spike KWC-102): no `fetch`,
-// no `URL`/`URLSearchParams` — query strings are built by hand. All network
-// access for the whole client lives behind this module (CLAUDE.md §5).
+// The client's single entry point for network access (CLAUDE.md §5): one typed
+// method per REST endpoint, mapped from the API's `{ data }` envelope.
 
+import { HttpClient } from "./http.js";
+import { encodeToken } from "./url.js";
 import type {
   ChapterPages,
   DownloadRecord,
@@ -20,82 +15,103 @@ import type {
 } from "./types.js";
 
 export interface ApiClientOptions {
-  // Origin/prefix for the API. Defaults to "" — the client is served
-  // same-origin by the API (KWC-202), so relative `/api/*` paths suffice.
   readonly baseUrl?: string;
-  // Per-request credential provider. Returning a token attaches
-  // `Authorization: Bearer <token>`; returning null sends no auth header. Kept
-  // as a callback so credential storage (localStorage) stays in the auth flow
-  // (KWC-303/304), not baked in here.
   readonly getToken?: () => string | null;
 }
 
-const NOT_IMPLEMENTED = "ApiClient is not implemented yet — see KWC-302";
-
 export class ApiClient {
-  constructor(private readonly options: ApiClientOptions = {}) {}
+  private readonly http: HttpClient;
+
+  constructor(options: ApiClientOptions = {}) {
+    this.http = new HttpClient(options);
+  }
 
   listSources(): Promise<Source[]> {
-    return this.notImplemented();
+    return this.http.request<Source[]>("GET", "/api/sources");
   }
 
-  search(_query: SearchQuery): Promise<SearchResult> {
-    return this.notImplemented();
+  search(query: SearchQuery): Promise<SearchResult> {
+    return this.http.request<SearchResult>("GET", "/api/search", {
+      q: query.query,
+      source: query.sourceId,
+      page: query.page,
+    });
   }
 
-  getManga(_mangaId: string): Promise<MangaView> {
-    return this.notImplemented();
+  getManga(mangaId: string): Promise<MangaView> {
+    return this.http.request<MangaView>(
+      "GET",
+      "/api/manga/" + encodeToken(mangaId),
+    );
   }
 
-  getChapterPages(_chapterId: string): Promise<ChapterPages> {
-    return this.notImplemented();
+  getChapterPages(chapterId: string): Promise<ChapterPages> {
+    return this.http.request<ChapterPages>(
+      "GET",
+      "/api/chapter/" + encodeToken(chapterId) + "/pages",
+    );
   }
 
-  // Pure URL builder — always pins `profile=eink`; this client never wants
-  // `raw` (CLAUDE.md §6). Used as an <img> src, so it carries no auth header.
-  pageImageUrl(_pageId: string): string {
-    throw new Error(NOT_IMPLEMENTED);
+  // Always `profile=eink`, never `raw` (CLAUDE.md §6). It's an <img> src: no auth.
+  pageImageUrl(pageId: string): string {
+    return this.http.url("/api/page/" + encodeToken(pageId), {
+      profile: "eink",
+    });
   }
 
-  // Pure URL builder for the stored CBZ of a downloaded chapter.
-  downloadCbzUrl(_chapterId: string): string {
-    throw new Error(NOT_IMPLEMENTED);
+  downloadCbzUrl(chapterId: string): string {
+    return this.http.url("/api/downloads/" + encodeToken(chapterId));
   }
 
-  downloadChapter(
-    _chapterId: string,
-    _mangaId: string,
-  ): Promise<DownloadRecord> {
-    return this.notImplemented();
+  downloadChapter(chapterId: string, mangaId: string): Promise<DownloadRecord> {
+    return this.http.request<DownloadRecord>(
+      "POST",
+      "/api/chapter/" + encodeToken(chapterId) + "/download",
+      { mangaId: mangaId, profile: "eink" },
+    );
   }
 
   listDownloads(): Promise<DownloadRecord[]> {
-    return this.notImplemented();
+    return this.http.request<DownloadRecord[]>("GET", "/api/downloads");
   }
 
-  getProgress(_mangaId: string): Promise<ReadingProgress> {
-    return this.notImplemented();
+  getProgress(mangaId: string): Promise<ReadingProgress> {
+    return this.http.request<ReadingProgress>(
+      "GET",
+      "/api/progress/" + encodeToken(mangaId),
+    );
   }
 
-  saveProgress(_progress: ReadingProgress): Promise<ReadingProgress> {
-    return this.notImplemented();
+  saveProgress(progress: ReadingProgress): Promise<ReadingProgress> {
+    return this.http.request<ReadingProgress>(
+      "PUT",
+      "/api/progress/" + encodeToken(progress.mangaId),
+      undefined,
+      {
+        chapterId: progress.chapterId,
+        page: progress.page,
+        updatedAt: progress.updatedAt,
+      },
+    );
   }
 
   listLibrary(): Promise<LibraryEntry[]> {
-    return this.notImplemented();
+    return this.http.request<LibraryEntry[]>("GET", "/api/library");
   }
 
-  follow(_mangaId: string, _addedAt: number): Promise<LibraryEntry> {
-    return this.notImplemented();
+  follow(mangaId: string, addedAt: number): Promise<LibraryEntry> {
+    return this.http.request<LibraryEntry>(
+      "PUT",
+      "/api/library/" + encodeToken(mangaId),
+      undefined,
+      { addedAt: addedAt },
+    );
   }
 
-  unfollow(_mangaId: string): Promise<void> {
-    return this.notImplemented();
-  }
-
-  private notImplemented<T>(): Promise<T> {
-    // Touch options so the wiring is exercised; real usage lands in KWC-302.
-    void this.options;
-    return Promise.reject(new Error(NOT_IMPLEMENTED));
+  unfollow(mangaId: string): Promise<void> {
+    return this.http.request<void>(
+      "DELETE",
+      "/api/library/" + encodeToken(mangaId),
+    );
   }
 }

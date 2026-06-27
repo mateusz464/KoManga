@@ -129,10 +129,23 @@
 - **Next:** KWC-302 implements the XHR transport, hand-rolled query/path encoding, auth injection and error mapping to turn this suite green.
 
 ### KWC-302 — API client module (impl)
+**Status:** Done
 **Description:** Implement the API client satisfying KWC-301.
 **Acceptance criteria:** All KWC-301 tests pass.
 **Blocked by:** KWC-301.
 **Estimate:** M
+**Outcome:** `ApiClient` implemented — all 25 KWC-301 contract tests green (28 total with the smoke suite); typecheck / lint / format:check / build all clean. Split into single-purpose modules under `src/api/` (CLAUDE.md §5/§9) rather than one file — the build bundles all of `src/` into a single `main.js` anyway, so source-level modularity is free on-device:
+  - `url.ts` — hand-rolled URL/query construction (`encodeToken`, `buildQuery`, `buildUrl`); the "no `URL`/`URLSearchParams`" detail (KWC-102) lives here. Pure.
+  - `envelope.ts` — `unwrap` (`{ data }`) + `mapError` (`{ error }`). Pure.
+  - `http.ts` — `HttpClient`: the ONLY place XHR lives; XHR mechanics + per-request auth injection, delegating to url.ts + envelope.ts.
+  - `client.ts` — `ApiClient`: just the typed endpoint surface, delegating to `HttpClient`.
+- **Transport = hand-rolled XHR** (no `fetch`): `HttpClient.request<T>()` opens an `XMLHttpRequest`, resolves on `onload` for 2xx and rejects via `onerror` for transport failure.
+- **Hand-built query strings** (`buildQuery`): keys + values `encodeURIComponent`-encoded, `undefined` values dropped so optional params (search `page`) vanish on the first page. Path segments encoded via `encodeToken()` (`m/1`→`m%2F1`, `c1:5`→`c1%3A5`).
+- **Auth read per request:** `getToken()` is called inside `request()` each time, so a later login is picked up; `Authorization: Bearer <token>` attached only when a token is returned, omitted on null.
+- **Envelope handling:** success unwraps `{ data }`; non-2xx maps via `mapError` — `401`→`UnauthorizedError`, other statuses→`ApiClientError` carrying the envelope `status`+`code`, an unparseable error body still maps by status (code `UNKNOWN`), transport failure→`NetworkError` (status 0).
+- **URL builders are pure:** `pageImageUrl` always pins `profile=eink` (never `raw`, carries no auth — it's an `<img>` src); `downloadCbzUrl` builds the stored-CBZ path. Both honour `baseUrl` (default `""` for same-origin, KWC-202) via `HttpClient.url()`.
+- **Note:** ES5/on-device verification rides the KWC-201 pipeline (esbuild→Babel→terser); `ApiClient` is wired into `main.ts` by the view/state tickets that consume it — `npm run build` already succeeds.
+- **Next:** unblocks KWC-303/304 (auth flow), KWC-401/403/501/603 (logic suites that mock at this boundary).
 
 ### KWC-303 — [TEST] Auth flow (single credential)
 **Description:** Tests for entering/storing the single-user credential and attaching it to every request; handling 401 by returning to the credential prompt.
