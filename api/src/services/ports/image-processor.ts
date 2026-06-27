@@ -18,7 +18,7 @@ export interface ProcessedImage {
 export interface EinkProfileOptions {
   readonly targetWidth: number;
   readonly targetHeight: number;
-  readonly format: "png" | "jpeg" | "webp";
+  readonly format: "png" | "jpeg";
 }
 
 export interface ImageProcessor {

@@ -437,7 +437,7 @@
 **Estimate:** S
 **Notes (2026-06-27):** Pinned the allowed `eink` format set to `png | jpeg` from the test side only (TEST ticket — no `src/` change; the narrowing lands in API-902). `test/config/config.test.ts` gains two **red** assertions against current code (which still accepts `webp`): `loadConfig` must **reject** `IMAGE_EINK_FORMAT=webp` (mirrors the existing `gif` rejection), and the aggregated error must **name the allowed formats** (`png`, `jpeg`) — currently webp is accepted so both fail (no throw / `expect.unreachable`). Added a green test pinning criterion 2 (accepts `png` and `jpeg`; default stays `png`). Updated the image-processor contract test (`test/adapters/images/image-processor.test.ts`): removed the "honours the webp output format" eink case (the only test that drove `webp` as an `eink` output) — the existing jpeg case already proves a non-png configurable format works, so webp is no longer exercised as an eink output. Left the unrelated webp references (CBZ pages, session-cache content-types, the `colourImage` source-fixture helper) untouched — those aren't eink output formats. Suite is **2 red + 174 green** (exactly the two intended API-901 assertions fail), lint + typecheck + format clean. Impl in API-902 narrows `EinkFormat`/`EINK_FORMATS`, the port's eink `format` type, and the `CONTENT_TYPES` map, turning both red.
 
-### API-902 — Constrain `eink` output format (impl)
+### API-902 — Constrain `eink` output format (impl) — **Done**
 **Description:** Make API-901 pass. Remove `webp` from the allowed `eink` formats so a misconfiguration can't silently break the only client that uses the `eink` profile.
 **Acceptance criteria:**
 - All API-901 tests pass.
@@ -447,6 +447,7 @@
 - No change to the `raw` profile or to future colour-client paths (RFC §13) — only the `eink` output set is constrained.
 **Blocked by:** API-901.
 **Estimate:** S
+**Notes (2026-06-27):** Narrowed the `eink` output set to `png | jpeg` across the three places API-901 pinned (TDD impl — no test changes; the two API-901 red assertions now pass). `src/config/index.ts`: `EinkFormat` type + `EINK_FORMATS` array drop `webp` (so `loadConfig` now rejects `IMAGE_EINK_FORMAT=webp` like any other non-`png`/`jpeg` value, via the existing aggregated-error path that names the allowed formats; default stays `png`). The image-processor port's `EinkProfileOptions.format` (`src/services/ports/image-processor.ts`) narrows to `png | jpeg`, and the `CONTENT_TYPES` map in `sharp-image-processor.ts` drops the `webp` entry — both follow the config type so a removed format can't reach `sharp.toFormat`. `.env.example` comment now lists only `png, jpeg`. **`raw` profile and the colour-client paths are untouched** (RFC §13) — only the eink output set is constrained; unrelated `webp` references (CBZ pages, session-cache content-types, the colour source-fixture helper) left as-is since those aren't eink output formats. Full suite **176 passing** (the 2 previously-red API-901 tests green), lint + typecheck + format clean.
 
 ---
 

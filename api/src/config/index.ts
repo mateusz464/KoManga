@@ -1,9 +1,12 @@
 // The only module that reads process.env (CLAUDE.md §5). Loading is fail-fast:
 // it aggregates every problem and throws once, before the server listens.
 
-export type EinkFormat = "png" | "jpeg" | "webp";
+// The eink panel (Kobo Clara BW) renders PNG and JPEG but not WebP/AVIF
+// (KWC-102, docs/device.md). Constrain the eink output set so a misconfiguration
+// can't silently emit a format the only eink client can't decode.
+export type EinkFormat = "png" | "jpeg";
 
-const EINK_FORMATS: readonly EinkFormat[] = ["png", "jpeg", "webp"];
+const EINK_FORMATS: readonly EinkFormat[] = ["png", "jpeg"];
 
 export interface Config {
   readonly port: number;

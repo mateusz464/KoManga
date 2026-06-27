@@ -10,7 +10,6 @@ import type {
 const CONTENT_TYPES: Record<EinkProfileOptions["format"], string> = {
   png: "image/png",
   jpeg: "image/jpeg",
-  webp: "image/webp",
 };
 
 export class SharpImageProcessor implements ImageProcessor {
