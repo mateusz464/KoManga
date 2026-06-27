@@ -25,6 +25,7 @@ import { progressRouter } from "../routes/progress.js";
 import { libraryRouter } from "../routes/library.js";
 import { errorHandler, notFoundHandler } from "./error-handler.js";
 import { requireAuth } from "./auth.js";
+import type { RateLimitOptions } from "./rate-limit.js";
 
 // Adapters are injected here, not constructed by the app. The optional deps gate
 // which routers mount, so a test can pass just the ports an endpoint needs.
@@ -35,6 +36,10 @@ export interface AppDependencies {
   // Optional so existing call sites stay valid; API-702 mounts the middleware
   // that reads it. When absent, no auth is applied.
   readonly authToken?: string;
+  // Per-client rate limiting on /api/* (CLAUDE.md §9). Optional so existing call
+  // sites stay valid; API-704 mounts the middleware that reads it. When absent,
+  // no limiting is applied.
+  readonly rateLimit?: RateLimitOptions;
   readonly imageProcessor?: ImageProcessor;
   readonly sessionCache?: SessionCache;
   readonly prefetchWindow?: number;
