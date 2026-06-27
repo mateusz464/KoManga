@@ -175,12 +175,19 @@
 - **Next:** unblocks KWC-307 (app shell wires `AuthController` + the credential entry view and does the on-device pass).
 
 ### KWC-305 — [TEST] View router
+**Status:** Done
 **Description:** Tests for a minimal router switching between views (library, search, manga details, reader) without a framework — hash or state based.
 **Acceptance criteria:**
 - Navigating between views updates state correctly; back navigation works.
 - No full reloads between views.
 **Blocked by:** KWC-203.
 **Estimate:** S
+**Outcome:** Red-phase contract suite for the view router in place (`web-client/test/router/router.test.ts`, 18 tests), with the surface it pins down stubbed so the suite compiles and runs but fails until KWC-306:
+- **Module surface (KWC-306 implements):** split like `api/` is — `src/router/routes.ts` holds the **pure** fragment↔`Route` serialization (`Route` union for the four views — `library` / `search{query?,source?}` / `manga{mangaId}` / `reader{mangaId,chapterId}` — plus `routeToHash` / `parseHash`, both throwing "not implemented yet — see KWC-306"); `src/router/router.ts` holds the stateful `Router` (`start` / `stop` / `current` / `navigate` / `replace` / `back` / `subscribe`, all throwing the same), taking the window/history/hashchange surface as an injected `RouterEnvironment` (`getHash` / `pushHash` / `replaceHash` / `back` / `subscribe`). DI mirrors `auth.ts`'s `CredentialStorage` so the logic is testable off-device.
+- **Transport choice honoured (KWC-102):** routes serialize by hand — **no `URL`/`URLSearchParams`** — so the suite asserts the literal hand-built query (`#/search?q=one%20piece&source=mangadex`, absent params omitted) and percent-encoded Suwayomi-style ids carrying `/` and `:` (`#/manga/src1%2Fmanga%3A42`), with a round-trip property test.
+- **Coverage (acceptance):** *navigation updates state* — `current()` tracks each `navigate()` across all four views; subscribers + the `onChange` option fire (once per change). *Back works* — a `FakeEnvironment` with a real back-stack drives `router.back()` to the previous view, and a **physical** browser back (an outside fragment change) is picked up too, proving the router reacts to the history surface, not only its own calls. *No full reloads* — every `routeToHash` is `#`-prefixed and `navigate` only mutates the fragment (asserted via the env's hash). Plus `replace()` adds no history entry (`back()` skips it), `parseHash` falls back to `library` for empty/unknown fragments, and `subscribe` unsubscribe / `stop()` detach the listeners.
+- **Red verified:** all 18 fail solely on the missing KWC-306 impl ("not implemented yet — see KWC-306"); the prior 41 (KWC-301 client + KWC-303 auth + KWC-203 smoke) still pass. `typecheck` / `lint` / `format:check` all clean.
+- **Next:** KWC-306 implements `routes.ts` (hand-rolled serialization) + `Router` (a `RouterEnvironment` over `window`, fragment as single source of truth, dedupe of the echo from its own `pushHash`) to turn this suite green.
 
 ### KWC-306 — View router (impl)
 **Description:** Implement the router satisfying KWC-305.
