@@ -190,10 +190,17 @@
 - **Next:** KWC-306 implements `routes.ts` (hand-rolled serialization) + `Router` (a `RouterEnvironment` over `window`, fragment as single source of truth, dedupe of the echo from its own `pushHash`) to turn this suite green.
 
 ### KWC-306 — View router (impl)
+**Status:** Done — all 18 KWC-305 tests green (59 total); typecheck / lint / format:check / build all clean.
 **Description:** Implement the router satisfying KWC-305.
 **Acceptance criteria:** All KWC-305 tests pass.
 **Blocked by:** KWC-305.
 **Estimate:** S
+**Outcome:** Router implemented across the two stubbed modules, split exactly as KWC-305 pinned down:
+- **`src/router/routes.ts` (pure serialization):** `routeToHash` switches over the four-view discriminated union — `#/library`, `#/search` + hand-built query, `#/manga/<enc>`, `#/reader/<enc>/<enc>` — with ids/values `encodeURIComponent`-encoded. `parseHash` peels the leading `#`, splits the query at `?`, strips the leading `/`, then dispatches on the first path segment; empty/unknown/`#`/`#/` all fall back to `library` so the app always lands somewhere valid. Query string is hand-rolled both ways (`buildSearchQuery` / `parseQuery`) — **no `URL`/`URLSearchParams`** (KWC-102) — omitting absent params and round-tripping `/` and `:` in Suwayomi-style ids.
+- **`src/router/router.ts` (stateful):** the fragment is the single source of truth. `navigate()` only pushes a new hash; the environment's change event drives `syncFromFragment()`, which re-reads the hash, updates `current()`, and notifies — so programmatic navigation and physical browser back/forward share one path. `replace()` calls `replaceHash` (no history entry, fires no event, mirroring `history.replaceState`) and syncs directly. `start()` is idempotent, subscribes to the environment, and emits the initial route once (covering the `onChange` option, wired as a subscriber at construction); `stop()` detaches. `back()` delegates to the environment.
+- **DI mirrors `auth.ts`:** the window/history/hashchange surface is the injected `RouterEnvironment`; the default `createWindowEnvironment()` wraps `window.location`/`history`/`hashchange` (never hit by the off-device tests, which drive a deterministic back-stack fake).
+- **ES5 / on-device safety (CLAUDE.md §12):** subscribers are a **plain array** (not a `Set`) iterated with an index loop over a `slice()` copy — no `Set`/`Symbol`/iterator-spread, which this WebKit's broken native `Symbol` + the core-js polyfill crash on. Authored modern (arrow callbacks); the build (esbuild→Babel→terser) down-levels it — `dist/main.js` scans clean of `=>`/`const`/`let`/template-literal/`class`/spread.
+- **Next:** unblocks KWC-307 (app shell wires the `Router` + `AuthController` + credential-entry view and does the on-device pass).
 
 ### KWC-307 — [DEVICE] App shell & e-ink render policy
 **Description:** Build the base layout (tap-based nav, large targets, no animation) and a central render helper that applies the refresh policy from KWC-103.
