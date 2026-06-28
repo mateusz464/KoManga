@@ -449,6 +449,30 @@
 **Estimate:** S
 **Notes (2026-06-27):** Narrowed the `eink` output set to `png | jpeg` across the three places API-901 pinned (TDD impl — no test changes; the two API-901 red assertions now pass). `src/config/index.ts`: `EinkFormat` type + `EINK_FORMATS` array drop `webp` (so `loadConfig` now rejects `IMAGE_EINK_FORMAT=webp` like any other non-`png`/`jpeg` value, via the existing aggregated-error path that names the allowed formats; default stays `png`). The image-processor port's `EinkProfileOptions.format` (`src/services/ports/image-processor.ts`) narrows to `png | jpeg`, and the `CONTENT_TYPES` map in `sharp-image-processor.ts` drops the `webp` entry — both follow the config type so a removed format can't reach `sharp.toFormat`. `.env.example` comment now lists only `png, jpeg`. **`raw` profile and the colour-client paths are untouched** (RFC §13) — only the eink output set is constrained; unrelated `webp` references (CBZ pages, session-cache content-types, the colour source-fixture helper) left as-is since those aren't eink output formats. Full suite **176 passing** (the 2 previously-red API-901 tests green), lint + typecheck + format clean.
 
+### API-903 — [TEST] Fetch chapters from source on manga details
+**Description:** `GET /api/manga/:id` returns an **empty chapter list for any manga whose chapters Suwayomi has not yet scraped**. `MangaService.getManga` → `SuwayomiClient.listChapters` only *reads* `manga.chapters.nodes` (`src/adapters/suwayomi/client.ts`, `LIST_CHAPTERS`) — it never triggers Suwayomi's `fetchChapters` mutation, which is what scrapes the source. Suwayomi populates `chapters` only after that mutation, so a freshly-searched/added manga always comes back as `chapters: []` until something else fetches them. Surfaced on-device by KRP-405 (every newly-opened manga showed "No chapters"); confirmed at the Suwayomi layer (a manual `fetchChapters` for Weeb Central → 1186 chapters, after which `GET /api/manga/:id` returned them). Write failing tests (Suwayomi port mocked) pinning that the endpoint ensures chapters are fetched from the source.
+**Acceptance criteria:**
+- With the mocked client returning no stored chapters until a fetch is invoked, `GET /api/manga/:id` triggers the source chapter-fetch and returns the fetched chapters (still ordered ascending by `chapterNumber`).
+- Result still flows through the existing `{ data: { manga, chapters, readingDirection } }` shape; ordering and reading-direction behaviour unchanged.
+- A source that genuinely has no chapters (Suwayomi answers "No chapters found") maps to an empty list `chapters: []`, **not** a 5xx error.
+- Unknown manga id still → 404.
+- Tests fail red against the current read-only `listChapters`.
+**Surfaced by:** KRP-405 (KOReader plugin device pass).
+**Blocked by:** none (fix to already-Done API-306 / the API-202 adapter).
+**Estimate:** M
+
+### API-904 — Fetch chapters from source on manga details (impl)
+**Description:** Make API-903 pass — trigger Suwayomi's `fetchChapters` mutation so the chapter list is populated from the source, not just read from cache.
+**Acceptance criteria:**
+- All API-903 tests pass.
+- A new port capability fetches/refreshes chapters from the source (e.g. `SuwayomiClient.fetchChapters(mangaId)` mapping to Suwayomi's `fetchChapters` mutation), and `MangaService.getManga` uses it so a first open returns chapters.
+- Suwayomi's "No chapters found" response maps to an empty list, not an error (consistent with API-306's not-found handling).
+- Stays within the existing ports/adapters layering — no GraphQL in the service; the adapter maps the `{ data }`/error envelope.
+- Refresh policy decided & documented: at minimum fetch when no chapters are stored; note whether it always refreshes (picks up new chapters, costs a live scrape per open) or only-when-empty, and the latency trade-off.
+- Full suite, lint, typecheck, format clean.
+**Blocked by:** API-903.
+**Estimate:** M
+
 ---
 
 ## Suggested build order (respecting strict deps)
