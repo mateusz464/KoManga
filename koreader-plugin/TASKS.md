@@ -99,12 +99,14 @@ The web-client epic (`web-client/`) runs in the Kobo's Nickel browser. The devic
 > A typed-ish API client, auth, and non-blocking network handling. The same API contract as the web client (`profile=eink`, single credential, device-agnostic progress).
 
 ### KRP-301 — [TEST] API client (HTTP layer)
+**Status:** Done
 **Description:** Tests for a Lua client wrapping the REST endpoints (sources, search, manga, chapter pages, page-image URL builder with `profile`, chapter download, downloads list, progress, library), including auth-header injection, the `{ data }` envelope unwrap, and error mapping (401 / non-200 / transport failure). Mock at the HTTP boundary.
 **Acceptance criteria:**
 - Per-endpoint request shaping, auth header, and error/non-200 handling covered.
 - Page-image and CBZ URL builders always request `profile=eink` (never `raw`).
 **Blocked by:** KRP-103.
 **Estimate:** M
+**Outcome:** Failing `busted` contract for `api/client.lua` (impl is KRP-302) — `spec/api/client_spec.lua`, **27 assertions**, mocking at the HTTP boundary via an injected `transport` function (`spec/support/fake_transport.lua`), the one spec that drops below the `api/` boundary (KRP-103). Defines the `ApiClient` contract against the shared API surface (RFC §8): `ApiClient.new{ base_url, get_credential, transport }`; methods return `(data, nil)` or `(nil, err)` with `err.kind` ∈ `http`/`transport`/`decode`. Covers per-endpoint request shaping (sources, search w/ `q`+`source`+optional `page` and percent-encoded query, manga, chapter pages, download, downloads, progress get/put, library list/follow/unfollow — correct verb/URL/JSON body); Bearer-auth header read **per request** (not cached) and omitted when no credential; `{ data }` envelope unwrap; eink-only URL builders (`pageImageUrl`/`cbzUrl`/download always `profile=eink`, never `raw`); base-URL trailing-slash join; and error mapping (401→`http`/401/`UNAUTHORIZED`, non-200 w/ code+message, transport failure, undecodable body→`decode`). Fail-first verified: full suite **12 successes / 1 error** (the missing `api.client` module) — and confirmed satisfiable by a throwaway impl (all 27 green) which was then removed. The client decodes with **rapidjson** (the on-device codec), so `run.sh` now wires `common/rapidjson.so` onto `LUA_CPATH` and symlinks `libluajit.dylib` into the busted LuaJIT's empty `staging/bin/libs` rpath (DYLD can't help — `/bin/sh` is SIP-protected and strips `DYLD_*`); details in `docs/koreader.md` (KRP-301). `luacheck` clean (0/0 across 12 files).
 
 ### KRP-302 — API client (impl)
 **Description:** Implement the client satisfying KRP-301 using `socket.http`/`ssl.https` + `ltn12` + `rapidjson`; read the credential per request from settings; map the envelope and typed errors.

@@ -27,13 +27,40 @@ for d in "${EPIC_DIR}"/.emulator/src/base/build/*/spec/rocks; do
     fi
 done
 
+# The api/ client decodes JSON with rapidjson, the same C module the plugin uses
+# on-device (CLAUDE.md §2). KOReader builds it as common/rapidjson.so under the
+# same build dir; expose it on LUA_CPATH so the api-client spec (KRP-301) — which
+# drops to the HTTP boundary, not the api/ boundary — runs against the real codec.
+COMMON=""
+for d in "${EPIC_DIR}"/.emulator/src/base/build/*/common; do
+    if [[ -f "${d}/rapidjson.so" ]]; then
+        COMMON="${d}"
+        break
+    fi
+done
+
+# rapidjson.so is linked against @rpath/libluajit.dylib; the busted luajit's
+# first rpath is staging/bin/libs, which the KOReader build leaves empty (the
+# real dylib sits in <build>/libs). DYLD_LIBRARY_PATH can't help — busted's
+# /bin/sh shebang is SIP-protected, so macOS strips DYLD_* on exec. Symlink the
+# dylib into that rpath dir instead (idempotent; .emulator is regenerable).
+if [[ -n "${COMMON}" ]]; then
+    BUILD_DIR="$(dirname "${COMMON}")"
+    LJ_DYLIB="${BUILD_DIR}/libs/libluajit.dylib"
+    RPATH_DIR="${BUILD_DIR}/staging/bin/libs"
+    if [[ -f "${LJ_DYLIB}" && ! -e "${RPATH_DIR}/libluajit.dylib" ]]; then
+        mkdir -p "${RPATH_DIR}"
+        ln -sf "${LJ_DYLIB}" "${RPATH_DIR}/libluajit.dylib"
+    fi
+fi
+
 cd "${PLUGIN_DIR}"
 
 if [[ -n "${ROCKS}" ]]; then
     # busted's own deps (penlight, luassert, say, …) live in the rocks tree but
     # aren't on the launcher's path; expose them via LUA_PATH/LUA_CPATH.
     export LUA_PATH="${ROCKS}/share/lua/5.1/?.lua;${ROCKS}/share/lua/5.1/?/init.lua;;"
-    export LUA_CPATH="${ROCKS}/lib/lua/5.1/?.so;;"
+    export LUA_CPATH="${COMMON:+${COMMON}/?.so;}${ROCKS}/lib/lua/5.1/?.so;;"
     exec "${ROCKS}/bin/busted" "$@"
 fi
 

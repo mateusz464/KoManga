@@ -204,6 +204,24 @@ The **only** place that drops below this boundary to mock raw HTTP is the
 API-client's own spec (KRP-301), which is what tests transport/auth/envelope
 handling.
 
+### HTTP-boundary specs (KRP-301)
+The API-client spec mocks one level lower: it injects a fake **transport**
+(`spec/support/fake_transport.lua`) — a `function(request) -> (response | nil,
+err)` — into `ApiClient.new`, so the client's request shaping, Bearer-auth
+injection, `{ data }` envelope unwrap, eink-only URL builders, and error mapping
+(401 / non-200 / transport failure) are all asserted without real sockets. The
+client encodes/decodes JSON with **rapidjson** (the same C module the plugin uses
+on-device), so these specs need it loadable under busted:
+
+- `run.sh` adds the build's `common/` (which holds `rapidjson.so`) to `LUA_CPATH`.
+- `rapidjson.so` is linked against `@rpath/libluajit.dylib`, but the busted
+  LuaJIT's first rpath (`staging/bin/libs`) is left empty by the KOReader build,
+  and `DYLD_LIBRARY_PATH` can't patch it — busted's `/bin/sh` shebang is
+  SIP-protected, so macOS strips `DYLD_*` on exec. `run.sh` therefore symlinks
+  the real `<build>/libs/libluajit.dylib` into that rpath dir (idempotent;
+  `.emulator` is regenerable). Logic specs that mock at the `api/` boundary don't
+  touch rapidjson, so this only matters for the API-client spec.
+
 ## KRP-202 — module layout, config & settings
 
 The plugin's internal structure (CLAUDE.md §5), established here so the feature
