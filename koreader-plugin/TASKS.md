@@ -117,12 +117,14 @@ The web-client epic (`web-client/`) runs in the Kobo's Nickel browser. The devic
 **Outcome:** Implemented `api/client.lua` — the typed-ish REST client and the only place HTTP lives (CLAUDE.md §5), satisfying the KRP-301 contract. `ApiClient.new{ base_url, get_credential, transport }` injects collaborators (busted passes a fake transport, the runtime default wires `socket.http`/`ssl.https` + `ltn12`, lazily required so the module imports clean under busted). Per-endpoint shaping for sources/search (percent-encoded `q`+`source`+optional `page`)/manga/chapter-pages/download (POST, `mangaId`+`profile=eink`)/downloads/progress get+put/library list+follow+unfollow, plus pure `pageImageUrl`/`cbzUrl` builders — all **eink, never raw** (§6). Bearer credential read **per request** via `get_credential()` (not cached, omitted when nil); base-URL trailing-slash join; `{ data }` envelope unwrapped to plugin-domain tables; JSON via `rapidjson` (pcall-guarded decode). Typed errors `err.kind` ∈ `http` (`status`+`code`) / `transport` / `decode`. **busted 39 successes / 0 failures** (12 prior + KRP-301's 27); **luacheck clean — 0/0 across 13 files**.
 
 ### KRP-303 — [TEST] Auth flow (single credential)
+**Status:** Done
 **Description:** Tests for entering/storing the single credential (`LuaSettings`), attaching it to every request, and handling a 401 by returning to the credential prompt.
 **Acceptance criteria:**
 - Credential persists across a KOReader restart (settings-backed).
 - A 401 from any call routes back to the credential entry flow.
 **Blocked by:** KRP-301.
 **Estimate:** S
+**Outcome:** Failing `busted` contract for `state/auth.lua` (impl is KRP-304) — `spec/state/auth_spec.lua`, **10 assertions**, mocking at the `api/` boundary (no HTTP, no KOReader loaded — CLAUDE.md §4/§5). Defines the pure auth coordinator `Auth.new{ settings, on_prompt }` (collaborators injected, §9): credential storage delegated to a real `Settings` over a `FakeStore` (`hasCredential`/`getCredential`/`setCredential`); a `credentialGetter()` the API client reads **per request** (a mid-session `setCredential` is reflected, matching KRP-301's per-request Bearer read); and 401 routing — `isUnauthorized(err)` (pure predicate: true only for `{ kind="http", status=401 }`, false for 403/500/transport/decode/nil) and `handleError(err)` which launches `on_prompt` and returns `true` only on a 401. Persistence-across-restart is modelled by rebuilding `Auth`/`Settings` over the same flushed store and asserting the credential reads back. Fail-first verified: full suite **39 successes / 1 error** (the missing `state.auth` module); confirmed satisfiable by a throwaway impl (49/49 green) which was then removed. `luacheck` clean (0/0 across 14 files).
 
 ### KRP-304 — Auth flow (impl)
 **Description:** Implement credential entry (`InputDialog`), `LuaSettings` persistence, and the 401 handler satisfying KRP-303.
