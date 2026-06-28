@@ -152,12 +152,14 @@ The web-client epic (`web-client/`) runs in the Kobo's Nickel browser. The devic
 > Source list, search, manga details + chapter list — built from KOReader's `Menu` widget. Metadata only; no page images yet.
 
 ### KRP-401 — [TEST] Source list & search (logic)
+**Status:** Done
 **Description:** Tests for the logic behind listing sources and running a search (query + source), pagination / "load more", and empty/error states, against the mocked API client.
 **Acceptance criteria:**
 - Search submits query + source; results populate state; empty + error states handled.
 - Pagination / load-more advances correctly.
 **Blocked by:** KRP-302.
 **Estimate:** M
+**Outcome:** Failing `busted` contract for `state/browse.lua` (impl rides with the UI in KRP-402) — `spec/state/browse_spec.lua`, **15 specs**, mocking at the `api/` boundary via `FakeApi` (CLAUDE.md §4/§5 — `state/` is pure, no HTTP, no KOReader loaded). Defines the pure source-list/search coordinator `Browse.new(api)` against the shared API contract (RFC §8): unwrapped `{ data }` shapes `listSources() -> ({ {id,name,lang,iconUrl?},… }, nil)|(nil,err)` and `search{source,query,page} -> ({ mangas={…}, hasNextPage=<bool> }, nil)|(nil,err)`, with typed errors `{ kind, status?, … }` (KRP-301/302). Covers **source list** (`loadSources`/`getSources`; empty list; error surfaced via `getError`, sources left empty); **search** (`search(source,query)` shapes the exact `{source,query,page=1}` request `api/client.lua:search` expects, populates `getResults`, records `getSource`/`getQuery`/`getPage` for pagination; zero results → `isEmpty` true and **not** an error; error surfaced and `isEmpty` false; a later success clears a prior error; a fresh search replaces results and resets to page 1); and **pagination** (`hasMore` from `hasNextPage`; `loadMore` appends the next page **in order** and advances the page number, requesting page N of the same query/source; no-op + no extra request once `hasNextPage=false` or before any search; on a load-more error it keeps results + page so a retry is possible). Result builders hand each call a fresh table so an append-style impl can't corrupt a reused fixture (test isolation). Fail-first verified: full suite **55 successes / 1 error** (the missing `state.browse` module); confirmed satisfiable by a throwaway impl (70/70 green) which was then removed. `luacheck` clean (0/0 across 19 files).
 
 ### KRP-402 — Source list & search (UI)
 **Description:** Build the source list and search UI on KOReader's `Menu` widget (`InputDialog` for the query), wiring in the KRP-401 logic via the KRP-305 network wrapper.
