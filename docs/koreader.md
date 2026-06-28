@@ -152,4 +152,54 @@ The **KoManga** main-menu entry appears and its `InfoMessage` stub shows — no 
 
 ## KRP-103 — busted test harness
 
-_TBD (KRP-103). Will record the spec run command and the network-mocking pattern at the `api/` boundary._
+Pure-Lua logic (`api/`, `state/`, page mapping, progress debounce) is unit-tested
+with **busted**; visual/refresh behaviour is not (that's `[DEVICE]` work — CLAUDE.md §4).
+
+### Test runtime — reuse the emulator's busted
+No separate test toolchain is installed. The emulator build (KRP-102) already
+produced busted plus its dependency rocks (penlight, luassert, say…) under
+`koreader-plugin/.emulator/src/base/build/<triple>/spec/rocks`, running on the
+**same LuaJIT the plugin ships on**. The harness reuses that, so there is nothing
+extra to install and no global state — consistent with the emulator's
+self-contained, deletable footprint.
+
+### Layout (inside `komanga.koplugin/`)
+```
+.busted              # busted config: ROOT=spec, pattern=_spec, lpath=./?.lua (plugin root)
+.luacheckrc          # std=luajit; spec/ adds busted globals
+spec/
+  run.sh             # the test runner (globs the emulator build, wires LUA_PATH, runs busted)
+  smoke_spec.lua     # trivial logic spec — proves the harness runs
+  support/
+    fake_api.lua     # the api-boundary mock (inject into state/ui modules)
+    fake_api_spec.lua# demonstrates the mocking pattern
+```
+Specs are matched by the `_spec` suffix, so `support/fake_api.lua` is a helper,
+not a spec.
+
+### Run command
+```sh
+koreader-plugin/komanga.koplugin/spec/run.sh            # run all specs
+koreader-plugin/komanga.koplugin/spec/run.sh --verbose  # extra args pass through to busted
+```
+Runs from any cwd. If the emulator isn't built it falls back to a `busted` on
+`PATH`. Expected output: `N successes / 0 failures / 0 errors`.
+
+### Mocking the network at the `api/` boundary
+The plugin's only network boundary is `api/` (CLAUDE.md §5): `state/` and `ui/`
+modules receive an `ApiClient` and never call `socket.http` themselves. Logic
+specs therefore **mock at that boundary by injecting a fake client**, not by
+stubbing the HTTP layer. `spec/support/fake_api.lua` builds one: configure
+canned responses (values or functions) per method, inject it into the module
+under test, and assert on `api.calls`:
+
+```lua
+local FakeApi = require("spec.support.fake_api")
+local api = FakeApi.new{ search = { data = { { title = "Berserk" } } } }
+local results = SomeState.new(api):search("berserk")  -- inject the fake
+assert.are.equal("search", api.calls[1].method)       -- inspect recorded calls
+```
+
+The **only** place that drops below this boundary to mock raw HTTP is the
+API-client's own spec (KRP-301), which is what tests transport/auth/envelope
+handling.

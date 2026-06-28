@@ -1,0 +1,14 @@
+-- busted configuration for the KoManga plugin (KRP-103).
+-- Run from this directory (komanga.koplugin/) so `lpath` resolves the plugin's
+-- own modules: cwd-relative `./?.lua` lets a spec `require("state.foo")` find
+-- `state/foo.lua`, and `require("spec.support.fake_api")` find the helper.
+-- The runner is spec/run.sh; it points LUA_PATH/LUA_CPATH at busted's rocks.
+return {
+    _all = {
+        lpath = "./?.lua;./?/init.lua",
+    },
+    default = {
+        ROOT = { "spec" },
+        pattern = "_spec",
+    },
+}
