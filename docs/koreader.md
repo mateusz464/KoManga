@@ -203,3 +203,51 @@ assert.are.equal("search", api.calls[1].method)       -- inspect recorded calls
 The **only** place that drops below this boundary to mock raw HTTP is the
 API-client's own spec (KRP-301), which is what tests transport/auth/envelope
 handling.
+
+## KRP-202 — module layout, config & settings
+
+The plugin's internal structure (CLAUDE.md §5), established here so the feature
+tickets drop modules into a known shape:
+```
+komanga.koplugin/
+  main.lua           # entry: WidgetContainer:extend, menu entry, opens settings
+  _meta.lua          # plugin metadata
+  config.lua         # API base URL + tuning knobs (defaults)
+  settings.lua       # LuaSettings-backed persistence (credential, knob overrides)
+  api/               # the REST client — the ONLY place HTTP lives (KRP-301/302)
+  state/             # framework-free pure logic; busted-testable (KRP-4xx/5xx)
+  ui/                # one module per screen, on KOReader widgets (KRP-402+)
+  spec/              # busted specs (logic only)
+```
+`api/`, `state/`, `ui/` are empty namespaces for now (a `.gitkeep` noting each
+dir's role keeps them in git); `net.lua` (the Trapper + NetworkMgr wrapper) lands
+with KRP-305. Sibling modules load by bare name — KOReader's plugin loader
+prepends the plugin root to `package.path`, so `require("config")` and
+`require("settings")` resolve to the files above, on-device and in the emulator.
+
+### config & settings split
+- **`config.lua`** returns a plain table of defaults: `api_base_url` (the
+  Cloudflare Tunnel origin — absolute, unlike the same-origin web client),
+  `prefetch_window` (KRP-504), `progress_debounce_seconds` (KRP-601).
+- **`settings.lua`** is pure logic over an injected LuaSettings-like store
+  (`Settings.new(store)`), so busted tests it with a fake store and no KOReader.
+  `Settings.open()` is the runtime factory that opens the plugin's own
+  `settings/komanga.lua` via `DataStorage` + `LuaSettings`. Getters fall back to
+  the `config` defaults; setters `flush()` so values (notably the credential)
+  survive a KOReader restart (KRP-303). Verified loading clean in the emulator
+  (`FM loaded plugin komanga`, no traceback).
+
+### Lint pass (luacheck)
+`luacheck` is installed into the emulator build's rocks tree — no global install,
+same self-contained footprint as busted (KRP-102/103):
+```sh
+luarocks --tree=<emulator build>/spec/rocks install luacheck
+```
+Run it via the runner (globs the build dir, falls back to a `luacheck` on `PATH`):
+```sh
+koreader-plugin/komanga.koplugin/spec/lint.sh            # lint the whole plugin
+koreader-plugin/komanga.koplugin/spec/lint.sh main.lua   # ...or specific files
+```
+`.luacheckrc` mirrors KOReader's own (`std=luajit`, `unused_args=false`,
+`self=false`) so widget-callback idioms don't read as warnings; `spec/` adds
+busted globals. Expected output: `0 warnings / 0 errors`.

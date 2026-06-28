@@ -1,0 +1,1 @@
+# api/ — the typed-ish REST client; the ONLY place HTTP lives (KRP-301/302).

@@ -1,8 +1,12 @@
 -- Plugin entry point: registers the KoManga main-menu entry and wires the rest.
--- The internal module layout (api/ state/ ui/, config, settings) lands in KRP-202.
+-- Module layout (CLAUDE.md §5): config.lua (API base + knobs), settings.lua
+-- (LuaSettings-backed credential/prefs), and the api/ state/ ui/ namespaces that
+-- fill in with their feature tickets. Networking (KRP-3xx) and the real screens
+-- (KRP-4xx+) replace the placeholder popup below.
 local WidgetContainer = require("ui/widget/container/widgetcontainer")
 local InfoMessage = require("ui/widget/infomessage")
 local UIManager = require("ui/uimanager")
+local Settings = require("settings")
 local _ = require("gettext")
 
 local Komanga = WidgetContainer:extend{
@@ -11,6 +15,7 @@ local Komanga = WidgetContainer:extend{
 }
 
 function Komanga:init()
+    self.settings = Settings.open()
     self.ui.menu:registerToMainMenu(self)
 end
 
