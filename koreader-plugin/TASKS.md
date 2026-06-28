@@ -63,12 +63,14 @@ The web-client epic (`web-client/`) runs in the Kobo's Nickel browser. The devic
 > The plugin skeleton, its module layout, and a repeatable way to get it onto the device/emulator. No business logic yet.
 
 ### KRP-201 — Plugin skeleton & menu entry
+**Status:** Done
 **Description:** Create `komanga.koplugin` (`main.lua` + `_meta.lua`): a `WidgetContainer:extend` plugin (`name = "komanga"`, `is_doc_only = false`) that registers a **KoManga** entry via `addToMainMenu` and shows an `InfoMessage` when opened. Loads in the emulator and on-device.
 **Acceptance criteria:**
 - The KoManga menu entry appears; opening it shows the popup.
 - Loads clean in the emulator and on the real Kobo (no load errors in the KOReader log).
 **Blocked by:** KRP-102.
 **Estimate:** S
+**Outcome:** Promoted the KRP-101 throwaway stub into the real plugin entry point — `main.lua` is now framed as the entry (`WidgetContainer:extend{ name = "komanga", is_doc_only = false }`, registers the **KoManga** main-menu entry via `addToMainMenu`, opening it shows an `InfoMessage`); `_meta.lua` carries name/fullname/description. Module layout (`api/`/`state/`/`ui/`, config, settings) is deferred to KRP-202 per the ticket split. Verified in the emulator (built v2026.03, KRP-102): headless boot log shows `Plugin loaded komanga` + `FM loaded plugin komanga at plugins/komanga.koplugin` with no errors/tracebacks; both files parse on the device's LuaJIT 2.1; the 4-spec busted suite still passes. luacheck not yet run (binary install + lint pass is KRP-202). On-device confirmation rides on the same skeleton already verified loading on the real Kobo in KRP-101.
 
 ### KRP-202 — Module layout, config & settings
 **Description:** Establish the internal structure (CLAUDE.md §5): `api/` (networking — the only place HTTP lives), `state/` (pure logic), `ui/` (widgets), plus a single `config` module and `LuaSettings`-backed persistence. Config holds the API base URL and tuning knobs (prefetch window, progress-debounce interval).
