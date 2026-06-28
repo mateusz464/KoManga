@@ -7,6 +7,8 @@ local WidgetContainer = require("ui/widget/container/widgetcontainer")
 local InfoMessage = require("ui/widget/infomessage")
 local UIManager = require("ui/uimanager")
 local Settings = require("settings")
+local Auth = require("state/auth")
+local CredentialPrompt = require("ui/credential_prompt")
 local _ = require("gettext")
 
 local Komanga = WidgetContainer:extend{
@@ -16,17 +18,36 @@ local Komanga = WidgetContainer:extend{
 
 function Komanga:init()
     self.settings = Settings.open()
+    -- 401 from any call routes back to credential entry (KRP-303/304); the API
+    -- client (KRP-302) reads auth:credentialGetter() per request.
+    self.auth = Auth.new{
+        settings = self.settings,
+        on_prompt = function()
+            CredentialPrompt.show(self.auth)
+        end,
+    }
     self.ui.menu:registerToMainMenu(self)
 end
 
 function Komanga:addToMainMenu(menu_items)
     menu_items.komanga = {
         text = _("KoManga"),
-        callback = function()
-            UIManager:show(InfoMessage:new{
-                text = _("KoManga loaded. Browse, search, and reading land in later tickets."),
-            })
-        end,
+        sub_item_table = {
+            {
+                text = _("Browse"),
+                callback = function()
+                    UIManager:show(InfoMessage:new{
+                        text = _("KoManga loaded. Browse, search, and reading land in later tickets."),
+                    })
+                end,
+            },
+            {
+                text = _("Set credential"),
+                callback = function()
+                    CredentialPrompt.show(self.auth)
+                end,
+            },
+        },
     }
 end
 
