@@ -74,7 +74,81 @@ On FW ≥ 4.17, Nickel indexes image content found in **hidden** directories, so
 
 ## KRP-102 — Emulator dev environment
 
-_TBD (KRP-102). Will record the SDL emulator run command and what it can/cannot validate (logic/layout yes; e-ink refresh/feel no — device only)._
+**Status:** **Done** — verified on the dev Mac (Apple Silicon, arm64; macOS 26 / Darwin 25.0.0), 2026-06-28.
+
+KOReader ships **no prebuilt macOS binary** (releases cover Kobo/Kindle/Android/Linux/AppImage only), so the desktop emulator is **built from source** with `kodev`. To avoid polluting the Mac with a global toolchain, everything — the build tools *and* the KOReader source/build — lives in **one deletable folder**, `koreader-plugin/.emulator/` (git-ignored). Removing that folder fully removes the emulator; nothing is installed globally and no `sudo` is used.
+
+### What's in `koreader-plugin/.emulator/`
+| Path | What |
+|---|---|
+| `bin/micromamba` | standalone [micromamba](https://mamba.readthedocs.io) binary (the only thing downloaded loose) |
+| `env/` | conda-forge build toolchain (see below), self-contained prefix |
+| `getopt-env/` | separate prefix for `util-linux` (provides GNU `getopt` + `flock`); kept apart because it conflicts with the toolchain's Python. Its `getopt`/`flock` are symlinked into `env/bin`. |
+| `src/` | KOReader source clone, pinned to **`v2026.03`** (matches the on-device version, KRP-101) |
+| `src/koreader-emulator-arm64-apple-darwin25.0.0-debug/koreader/` | the built emulator (run target) |
+| `buildenv.sh` | `source` it to put the contained toolchain on `PATH` for any build command |
+| `*.log` | last fetch/build/run logs |
+
+### Toolchain (conda-forge, in `env/`)
+`cmake (<3.31)` · `make` · `autoconf` · `automake` · `libtool` · `nasm` · `pkg-config` · `gettext` · `wget` · `meson` · `ninja` · `ragel` · `coreutils` · `perl` · `bash (5.x)` · plus `getopt`/`flock` from `util-linux`. SDL is the one host dependency taken from the system (`/opt/homebrew/lib/libSDL3.dylib`, found at runtime).
+
+### macOS build gotchas (all handled in `env/`, recorded so a rebuild is reproducible)
+- **`cmake` must be 3.x.** cmake 4.x drops support for `cmake_minimum_required(VERSION < 3.5)`, which several of KOReader's pinned third-party libs still declare → pinned to `cmake 3.30`.
+- **`kodev` needs `bash` ≥ 4.0** — macOS ships 3.2; the env provides bash 5 (`kodev` uses `/usr/bin/env bash`, so env-on-PATH wins).
+- **`kodev` needs GNU enhanced `getopt`** (macOS has BSD getopt) → symlinked from the `util-linux` prefix.
+- **Third-party download steps call `flock`** (not on macOS) → symlinked from `util-linux`.
+- **Makefiles call Homebrew-style `g`-prefixed coreutils** (`gln -snfr`, etc.; macOS `ln` lacks `-r`) → `g`-prefixed symlinks for the coreutils set created in `env/bin`.
+- The C/C++ compiler is the **system Apple clang** (Xcode CLT); only the build *tools* come from the env.
+
+### Reproduce the build (one-time)
+```sh
+EMU="$(git rev-parse --show-toplevel)/koreader-plugin/.emulator"
+source "$EMU/buildenv.sh"          # puts the contained toolchain on PATH
+cd "$EMU/src"
+./kodev fetch-thirdparty           # init submodules + fetch third-party sources
+./kodev build                      # builds the host (macOS) SDL emulator  (~minutes)
+```
+
+### Run command (the dev loop)
+```sh
+source "$EMU/buildenv.sh"
+cd "$EMU/src"
+./kodev run                        # default 540×720 window
+# device-shaped window for layout work:
+./kodev run -b -W 1072 -H 1448 -D 300   # -b = use existing build (skip rebuild)
+# or a built-in preset:  ./kodev run -b --simulate=kobo-clara
+```
+`./kodev run` rebuilds if needed then launches the SDL window. Quit from KOReader (top menu → exit) or close the window.
+
+### Loading the in-development plugin
+The emulator reads plugins from `…/koreader-emulator-…/koreader/plugins/`. For the dev loop the plugin is **symlinked** in so source edits are picked up on the next KOReader restart with no copy step:
+```sh
+ln -sfn "$(git rev-parse --show-toplevel)/koreader-plugin/komanga.koplugin" \
+        "$EMU/src/koreader-emulator-arm64-apple-darwin25.0.0-debug/koreader/plugins/komanga.koplugin"
+```
+*(A one-command deploy/reload wrapper for both emulator and device is KRP-203; this is just the manual mechanism.)*
+
+### Acceptance — verified
+The stub plugin from KRP-101 loads in the emulator. From the boot log (`.emulator/run.log`):
+```
+INFO  Looking for plugins in directory: plugins
+DEBUG Plugin loaded komanga
+DEBUG RD loaded plugin komanga at plugins/komanga.koplugin
+```
+The **KoManga** main-menu entry appears and its `InfoMessage` stub shows — no Lua/load errors.
+
+### What the emulator can and cannot validate
+**Can (fast off-device iteration):**
+- Plugin loads, menu wiring, widget layout and navigation flow.
+- Pure logic (API client, state, page mapping) — though that's better covered by `busted` (KRP-103).
+- Catching Lua errors / stack traces quickly.
+
+**Cannot (real Kobo only — these are `[DEVICE]` tickets):**
+- **E-ink refresh behaviour and "feel"** — ghosting, flash vs partial refresh, `UIManager:setDirty` mode quality. The emulator paints to an LCD; it does not reproduce the panel's waveforms.
+- **Exact panel pixels.** On a Retina Mac the SDL backing buffer is **2× the logical size** (default 540×720 → 1080×1440 framebuffer), and a logical height of 1448 exceeds a laptop screen so the window is **clamped** — the emulator cannot match the Kobo's true 1072×1448 at 300 ppi. Use it for relative layout, not pixel-accurate legibility.
+- Touch latency, real Wi-Fi/`NetworkMgr` gating, and overall reading responsiveness.
+
+> **Rule:** the emulator is for fast iteration only. `[DEVICE]`-tagged tickets are **never** closed from the emulator alone (CLAUDE.md §4, §12).
 
 ## KRP-103 — busted test harness
 

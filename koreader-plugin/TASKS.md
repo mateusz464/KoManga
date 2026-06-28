@@ -37,12 +37,14 @@ The web-client epic (`web-client/`) runs in the Kobo's Nickel browser. The devic
 **Outcome:** Verified on the real Kobo Clara BW (2026-06-28). KOReader **v2026.03** (LuaJIT 2.1), installed to `.adds/koreader/`; plugins live in `.adds/koreader/plugins/`. Launched via **KFMon v1.4.6** (`koreader.png` home-screen tile). Stub `komanga.koplugin` (`main.lua` + `_meta.lua`) loads clean: the **KoManga** main-menu entry appears and shows its `InfoMessage` popup; KOReader uses the full 1072×1448 panel with no Nickel chrome. Facts recorded in `docs/koreader.md`. Known gotcha documented there: Nickel imports KOReader's `resources/icons/*.svg` into the library as junk "books" — needs a DB cleanup, see KRP-703.
 
 ### KRP-102 — KOReader emulator dev environment
+**Status:** Done
 **Description:** Get the KOReader desktop emulator running on the dev Mac so the plugin can be exercised off-device (the SDL build). Document the run command and how to load the in-development plugin into it.
 **Acceptance criteria:**
 - Emulator runs locally and loads the stub plugin from KRP-101.
 - `docs/koreader.md` records the run command and **what the emulator can and cannot validate** (logic/layout yes; e-ink refresh/feel no — device only).
 **Blocked by:** KRP-101.
 **Estimate:** M
+**Outcome:** Verified on the dev Mac (Apple Silicon, macOS 26 / Darwin 25.0.0, 2026-06-28). KOReader ships no prebuilt macOS binary, so the SDL emulator is **built from source** at **`v2026.03`** (matching the device). To avoid global toolchain bloat, the whole thing lives in one git-ignored, deletable folder, `koreader-plugin/.emulator/`: a standalone `micromamba` plus a conda-forge build toolchain (cmake 3.x, autotools, nasm, ninja, meson, bash 5, GNU `getopt`/`flock` via `util-linux`, `g`-prefixed coreutils) — no `sudo`, nothing installed globally; only system Apple clang + system SDL3 are reused. Run loop: `source .emulator/buildenv.sh && cd .emulator/src && ./kodev run` (use `-b -W 1072 -H 1448 -D 300` or `--simulate=kobo-clara` for a device-shaped window). The stub `komanga.koplugin` is symlinked into the emulator's `plugins/` and loads clean — boot log shows `Plugin loaded komanga` / `RD loaded plugin komanga`, the KoManga menu entry + stub `InfoMessage` appear, no Lua errors. Build/run commands, macOS build gotchas, and the emulator can/cannot-validate split (layout/logic yes; e-ink refresh/feel + exact panel pixels no — Retina 2× backing + window clamping, device-only) recorded in `docs/koreader.md`. A one-command deploy/reload wrapper is deferred to KRP-203.
 
 ### KRP-103 — [TEST] Plugin test harness (busted)
 **Description:** Set up `busted`-based unit testing for the plugin's pure-Lua logic, with the HTTP boundary mockable (inject a fake API client / fake transport).
