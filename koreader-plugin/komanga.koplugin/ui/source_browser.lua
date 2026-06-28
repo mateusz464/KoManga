@@ -25,9 +25,10 @@ local SourceBrowser = Menu:extend{
     is_popout = false,
     title = _("KoManga"),
     -- Collaborators, injected by main.lua (CLAUDE.md §9):
-    browse = nil, -- state/browse.lua instance
-    net = nil,    -- net.lua wrapper (the single network path)
-    auth = nil,   -- state/auth.lua (optional — used to route a 401 to the prompt)
+    browse = nil,       -- state/browse.lua instance
+    net = nil,          -- net.lua wrapper (the single network path)
+    auth = nil,         -- state/auth.lua (optional — route a 401 to the prompt)
+    show_details = nil, -- function(manga): open the manga-details screen (KRP-404)
 }
 
 function SourceBrowser:init()
@@ -203,13 +204,12 @@ function SourceBrowser:loadMore()
     })
 end
 
--- Manga details + chapter list is KRP-404; this is a placeholder so the row is not
--- a dead tap before then.
+-- Open the manga details + chapter list (KRP-404). main.lua injects show_details so
+-- the collaborator wiring (api client + a fresh Details state) stays there.
 function SourceBrowser:openManga(manga)
-    UIManager:show(InfoMessage:new{
-        text = T(_("“%1” — details and reading land in a later ticket."),
-            manga.title or manga.id),
-    })
+    if self.show_details then
+        self.show_details(manga)
+    end
 end
 
 -- --- Navigation ----------------------------------------------------------------

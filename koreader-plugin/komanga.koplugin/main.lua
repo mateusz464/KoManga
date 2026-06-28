@@ -10,8 +10,10 @@ local Auth = require("state/auth")
 local Net = require("net")
 local ApiClient = require("api/client")
 local Browse = require("state/browse")
+local Details = require("state/details")
 local CredentialPrompt = require("ui/credential_prompt")
 local SourceBrowser = require("ui/source_browser")
+local MangaDetails = require("ui/manga_details")
 local _ = require("gettext")
 
 local Komanga = WidgetContainer:extend{
@@ -70,12 +72,33 @@ function Komanga:showBrowse()
         browse = Browse.new(self.api),
         net = self.net,
         auth = self.auth,
+        show_details = function(manga)
+            self:showDetails(manga)
+        end,
         close_callback = function()
             UIManager:close(browser)
         end,
     }
     UIManager:show(browser)
     browser:start()
+end
+
+-- Open the manga details & chapter-list screen (KRP-404) for a search-result row. A
+-- fresh Details per visit; the screen drives it through net (wifi-gated,
+-- non-blocking) and kicks the loads once the widget is on screen.
+function Komanga:showDetails(manga)
+    local details
+    details = MangaDetails:new{
+        details = Details.new(self.api, manga.id),
+        manga_stub = manga,
+        net = self.net,
+        auth = self.auth,
+        close_callback = function()
+            UIManager:close(details)
+        end,
+    }
+    UIManager:show(details)
+    details:start()
 end
 
 return Komanga
