@@ -237,6 +237,35 @@ prepends the plugin root to `package.path`, so `require("config")` and
   survive a KOReader restart (KRP-303). Verified loading clean in the emulator
   (`FM loaded plugin komanga`, no traceback).
 
+## KRP-203 — deploy / reload dev scripts
+
+One script turns "edit Lua → see it run" into a single command instead of manual
+file shuffling: `koreader-plugin/scripts/deploy.sh` (location-independent, sibling
+to `komanga.koplugin/` and `.emulator/` so it isn't shipped as part of the plugin).
+
+KOReader has **no hot-reload** — it reads `plugins/` once at start, so "reload"
+always means a KOReader restart. The script handles placing the files; the `run`
+target restarts the emulator for you.
+
+| Command | What it does |
+|---|---|
+| `scripts/deploy.sh emulator` | Symlinks `komanga.koplugin` into the emulator's `…/koreader/plugins/` (globs the platform-triple build, KRP-102). A **symlink** is deliberate — source edits are picked up on the next restart with no copy step. Then restart KOReader to reload. |
+| `scripts/deploy.sh device` | Copies the plugin onto the Kobo over USB to `.adds/koreader/plugins/komanga.koplugin/` (install dir per KRP-101). Uses `rsync -a --delete`, excluding dev-only files (`spec/`, `.busted`, `.luacheckrc`, `*.log`) so the device install stays clean. The Kobo is exFAT and can't hold macOS extended attributes, so it spills them into AppleDouble `._*` sidecars on write — `COPYFILE_DISABLE=1` suppresses that and a `dot_clean -m` pass sweeps any that slip through. Errors clearly if the Kobo isn't mounted (`KOBO_MOUNT` env overrides the default `/Volumes/KOBOeReader`). Eject + restart KOReader to reload. |
+| `scripts/deploy.sh run [args...]` | The one-command dev loop: deploy to the emulator, then `source buildenv.sh` + `./kodev run` (extra args, e.g. `-b -W 1072 -H 1448 -D 300`, pass through to `kodev run`). |
+
+**Verified (2026-06-28, emulator):** `scripts/deploy.sh run -b` links the plugin
+and boots the emulator in one command — boot log shows `Plugin loaded komanga` /
+`FM loaded plugin komanga at plugins/komanga.koplugin`, no Lua errors. A change to
+`main.lua` is reflected immediately through the symlink (deployed path resolves to
+source).
+
+**Device deploy verified (2026-06-28):** `scripts/deploy.sh device` copied the plugin
+to the Kobo over USB; the install dir contains exactly the runtime files
+(`main.lua`, `_meta.lua`, `config.lua`, `settings.lua`, `api/`, `state/`, `ui/`) with
+dev-only files and AppleDouble `._*` sidecars excluded (zero `._*` left on the
+volume). On-panel confirmation (menu entry loads after eject + KOReader restart)
+is the user's `[DEVICE]` check.
+
 ### Lint pass (luacheck)
 `luacheck` is installed into the emulator build's rocks tree — no global install,
 same self-contained footprint as busted (KRP-102/103):
