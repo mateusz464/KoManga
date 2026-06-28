@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Author:** Matt
-**Last updated:** 2026-06-24
+**Last updated:** 2026-06-28
 **Scope:** Architecture & planning only. Implementation tasks tracked separately in `TASKS.md`.
 
 ---
@@ -25,13 +25,13 @@ The defining constraint is the Kobo's hardware: a slow ARM SoC, an old WebKit br
 - Single-user, publicly reachable, secured.
 - Run as a reproducible Docker Compose stack on the Mac Mini.
 
-### Non-Goals (for v1)
+### Non-Goals (for v1 of the web-client path)
 - Multi-user accounts or sharing.
-- Reading inside KOReader (we render in our own client).
-- Native Kobo app or KOReader plugin.
 - Offline-first client (network dependency is acceptable).
 - Bundling/redistributing source extensions ourselves (Suwayomi handles sources).
-- Building the web/mobile clients (future epic — see §13).
+- Building the web/mobile clients (future epics — see §13).
+
+> **Reconciled 2026-06-28:** the original v1 scope listed "reading inside KOReader" and "native Kobo app or KOReader plugin" as non-goals — the web client was meant to render its own pages in the Nickel browser. The web-client device spike then found Nickel exposes only a 732×762 viewport on the 1072×1448 panel and surrounds it with browser chrome a page cannot hide. A **KOReader plugin client** is therefore now an **active, separate epic** (`koreader-plugin/`), sharing the same API — see §13. It *does* read inside KOReader (via KOReader's native CBZ reader). This does not change the API contract or the web-client epic.
 
 ---
 
@@ -206,8 +206,9 @@ Volumes for: Suwayomi data, our SQLite DB, the persistent CBZ download store. Th
 
 ## 13. Future Epics (out of scope for v1, but shaping the design)
 
-These are **not** being designed or built now, but the v1 API is being kept deliberately client-agnostic so they slot in without a rewrite.
+The v1 API is kept deliberately client-agnostic so additional clients slot in without a rewrite. One of these has already been promoted to an active epic (the KOReader plugin); the others remain future work.
 
+- **KOReader plugin (Kobo) — ACTIVE epic (`koreader-plugin/`, `KRP-NNN`).** A native-feel Kobo client that runs inside KOReader and uses the **full e-ink panel**, instead of the Nickel browser the web client is constrained by. It exists because the web-client device spike proved Nickel's chrome and 732×762 viewport can't be escaped from a web page (§2, reconciled). It consumes the **same API** (requests the `eink` profile; device-agnostic progress; single credential) and reads chapters through **KOReader's native CBZ reader** — the API already builds `eink` CBZs (§5.2), so the heavy reader work is inherited rather than rebuilt. On-demand streaming is a refinement on top. It does **not** change the API contract; gaps are raised as API-epic tickets.
 - **Manga reading website** — a full-colour browser client. Will consume the same API; page processing may happen client-side or server-side depending on efficiency, which is exactly why page serving is profile-based (`raw` vs `eink`) rather than hardcoded to e-ink.
 - **Mobile app** — same story: consumes the same API, likely requests `raw` pages and processes/displays in full colour on-device.
 
