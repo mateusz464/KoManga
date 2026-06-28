@@ -8,6 +8,7 @@ local InfoMessage = require("ui/widget/infomessage")
 local UIManager = require("ui/uimanager")
 local Settings = require("settings")
 local Auth = require("state/auth")
+local Net = require("net")
 local CredentialPrompt = require("ui/credential_prompt")
 local _ = require("gettext")
 
@@ -26,6 +27,9 @@ function Komanga:init()
             CredentialPrompt.show(self.auth)
         end,
     }
+    -- The single path views use for network calls (KRP-305): wifi-gated +
+    -- non-blocking. Built once here and handed to screens as they land.
+    self.net = Net.new{}
     self.ui.menu:registerToMainMenu(self)
 end
 
