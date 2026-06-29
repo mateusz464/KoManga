@@ -433,7 +433,7 @@
 **Blocked by:** API-105 (error middleware), API-103 (config), API-702 (the `Authorization` header to redact).
 **Estimate:** M
 
-### API-805 — Structured JSON logging (pino) (impl)
+### API-805 — Structured JSON logging (pino) (impl) — **Done**
 **Description:** Make API-804 pass — introduce `pino` behind the `Logger` port, route the existing `console.*` sites through it, redact the secret, and wire the level from config.
 **Acceptance criteria:**
 - All API-804 tests pass.

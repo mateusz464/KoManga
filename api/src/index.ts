@@ -8,9 +8,18 @@ import { openDatabase } from "./adapters/db/database.js";
 import { SqliteDownloadsRepository } from "./adapters/db/downloads-repository.js";
 import { SqliteReadingProgressRepository } from "./adapters/db/reading-progress-repository.js";
 import { SqliteLibraryRepository } from "./adapters/db/library-repository.js";
+import { createPinoLogger } from "./adapters/logging/pino-logger.js";
+import { createRequestLogger } from "./http/request-logger.js";
 import { createApp } from "./http/app.js";
 
 const config = loadConfig();
+
+const loggerOptions = {
+  level: config.logLevel,
+  authToken: config.auth.token,
+};
+const logger = createPinoLogger(loggerOptions);
+const requestLogger = createRequestLogger(loggerOptions);
 
 const suwayomi = createSuwayomiClient({
   baseUrl: config.suwayomi.url,
@@ -37,6 +46,8 @@ const libraryRepository = new SqliteLibraryRepository(db);
 
 const app = createApp({
   suwayomi,
+  logger,
+  requestLogger,
   authToken: config.auth.token,
   rateLimit: {
     limit: config.rateLimit.limit,
@@ -54,5 +65,5 @@ const app = createApp({
 });
 
 app.listen(config.port, () => {
-  console.log(`KoManga API listening on port ${config.port}`);
+  logger.info("KoManga API listening", { port: config.port });
 });

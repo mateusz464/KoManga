@@ -7,6 +7,7 @@ import type { DownloadStore } from "../services/ports/download-store.js";
 import type { DownloadsRepository } from "../services/ports/downloads-repository.js";
 import type { ReadingProgressRepository } from "../services/ports/reading-progress-repository.js";
 import type { LibraryRepository } from "../services/ports/library-repository.js";
+import type { Logger } from "../services/ports/logger.js";
 import { SourceService } from "../services/source-service.js";
 import { SearchService } from "../services/search-service.js";
 import { MangaService } from "../services/manga-service.js";
@@ -23,14 +24,29 @@ import { pageRouter } from "../routes/page.js";
 import { downloadsRouter } from "../routes/downloads.js";
 import { progressRouter } from "../routes/progress.js";
 import { libraryRouter } from "../routes/library.js";
-import { errorHandler, notFoundHandler } from "./error-handler.js";
+import { createErrorHandler, notFoundHandler } from "./error-handler.js";
 import { requireAuth } from "./auth.js";
 import { rateLimit, type RateLimitOptions } from "./rate-limit.js";
+
+// Null-object logger so endpoint tests can build an app without wiring logging;
+// the real composition root always injects a pino-backed Logger (§3 — not a
+// global external singleton, just a no-op default).
+const noop = (): void => undefined;
+const NOOP_LOGGER: Logger = {
+  debug: noop,
+  info: noop,
+  warn: noop,
+  error: noop,
+};
 
 // The optional deps gate which routers mount, so a test can pass just the ports
 // an endpoint needs.
 export interface AppDependencies {
   readonly suwayomi: SuwayomiClient;
+  // Structured logger for the error handler. Omitted in tests → no-op.
+  readonly logger?: Logger;
+  // Edge request-logging middleware (pino-http), built in the composition root.
+  readonly requestLogger?: express.RequestHandler;
   readonly authToken?: string;
   readonly rateLimit?: RateLimitOptions;
   readonly imageProcessor?: ImageProcessor;
@@ -48,6 +64,12 @@ export interface AppDependencies {
 
 export function createApp(deps: AppDependencies): express.Express {
   const app = express();
+
+  // Log every request at the edge (method, path, status, latency) before any
+  // routing, so even /health and rejected requests are recorded.
+  if (deps.requestLogger) {
+    app.use(deps.requestLogger);
+  }
 
   app.get("/health", (_req, res) => {
     res.json({ status: "ok" });
@@ -122,7 +144,7 @@ export function createApp(deps: AppDependencies): express.Express {
   }
 
   app.use(notFoundHandler);
-  app.use(errorHandler);
+  app.use(createErrorHandler(deps.logger ?? NOOP_LOGGER));
 
   return app;
 }

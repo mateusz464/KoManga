@@ -1,13 +1,24 @@
 import { describe, expect, it } from "vitest";
 import express from "express";
 import request from "supertest";
-import { errorHandler, notFoundHandler } from "../../src/http/error-handler.js";
+import {
+  createErrorHandler,
+  notFoundHandler,
+} from "../../src/http/error-handler.js";
 import {
   ApiError,
   BadRequestError,
   UnauthorizedError,
   NotFoundError,
 } from "../../src/http/errors.js";
+import type { Logger } from "../../src/services/ports/logger.js";
+
+const silentLogger: Logger = {
+  debug: () => undefined,
+  info: () => undefined,
+  warn: () => undefined,
+  error: () => undefined,
+};
 
 // Build a throwaway app whose only route throws `err`, with the centralised
 // error handler mounted last. Express forwards the throw to the error handler,
@@ -17,7 +28,7 @@ function appThrowing(err: unknown): express.Express {
   app.get("/boom", () => {
     throw err;
   });
-  app.use(errorHandler);
+  app.use(createErrorHandler(silentLogger));
   return app;
 }
 

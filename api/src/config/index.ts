@@ -1,6 +1,8 @@
 // The only module that reads process.env (CLAUDE.md §5). Loading is fail-fast:
 // it aggregates every problem and throws once, before the server listens.
 
+import type { LogLevel } from "../services/ports/logger.js";
+
 // The eink panel (Kobo Clara BW) renders PNG and JPEG but not WebP/AVIF
 // (KWC-102, docs/device.md). Constrain the eink output set so a misconfiguration
 // can't silently emit a format the only eink client can't decode.
@@ -8,8 +10,21 @@ export type EinkFormat = "png" | "jpeg";
 
 const EINK_FORMATS: readonly EinkFormat[] = ["png", "jpeg"];
 
+// Validated like IMAGE_EINK_FORMAT: a misconfigured level fails startup rather
+// than silently logging nothing (or too much).
+const LOG_LEVELS: readonly LogLevel[] = [
+  "trace",
+  "debug",
+  "info",
+  "warn",
+  "error",
+  "fatal",
+  "silent",
+];
+
 export interface Config {
   readonly port: number;
+  readonly logLevel: LogLevel;
   readonly suwayomi: {
     readonly url: string;
   };
@@ -58,6 +73,7 @@ const DEFAULTS = {
   IMAGE_TARGET_WIDTH: 1072,
   IMAGE_TARGET_HEIGHT: 1448,
   IMAGE_EINK_FORMAT: "png" as EinkFormat,
+  LOG_LEVEL: "info" as LogLevel,
   DATABASE_PATH: "./data/komanga.sqlite",
   CBZ_STORE_PATH: "./data/downloads",
 } as const;
@@ -107,8 +123,24 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     return value as EinkFormat;
   };
 
+  const logLevel = (key: string, fallback: LogLevel): LogLevel => {
+    const raw = env[key];
+    if (raw === undefined || raw.trim() === "") {
+      return fallback;
+    }
+    const value = raw.trim().toLowerCase();
+    if (!LOG_LEVELS.includes(value as LogLevel)) {
+      problems.push(
+        `${key} must be one of ${LOG_LEVELS.join(", ")} (got "${raw}")`,
+      );
+      return fallback;
+    }
+    return value as LogLevel;
+  };
+
   const config: Config = {
     port: positiveInt("PORT", DEFAULTS.PORT),
+    logLevel: logLevel("LOG_LEVEL", DEFAULTS.LOG_LEVEL),
     suwayomi: {
       url: requireString("SUWAYOMI_URL"),
     },
