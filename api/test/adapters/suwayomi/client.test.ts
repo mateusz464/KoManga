@@ -36,6 +36,19 @@ function chapterNotFoundError(): unknown {
   };
 }
 
+// Shape of the rejection `graphql-request` throws when a source genuinely has
+// no chapters: Suwayomi answers the `fetchChapters` mutation with a "No
+// chapters found" GraphQL error. The adapter maps this to an empty list, not a
+// 5xx (API-904).
+function noChaptersFoundError(): unknown {
+  return {
+    response: {
+      data: { fetchChapters: null },
+      errors: [{ message: "No chapters found" }],
+    },
+  };
+}
+
 // Contract test for the Suwayomi client port (API-201). The adapter is
 // exercised against a *mocked GraphQL transport* so the mapping and error
 // contract are pinned without a live Suwayomi server. The concrete mapping is
@@ -146,6 +159,37 @@ describe("SuwayomiGraphQLClient (port contract)", () => {
       expect(chapters[0]).toMatchObject({ name: "Ch. 1", chapterNumber: 1 });
     });
 
+    it("fetchChapters scrapes the source and maps the chapter list", async () => {
+      const { transport, request } = transportReturning({
+        fetchChapters: {
+          chapters: [
+            { id: "100", name: "Ch. 1", chapterNumber: 1, pageCount: 18 },
+            { id: "101", name: "Ch. 2", chapterNumber: 2, pageCount: 20 },
+          ],
+        },
+      });
+      const client = new SuwayomiGraphQLClient(transport);
+
+      const chapters = await client.fetchChapters("10");
+
+      expect(chapters.map((c) => c.id)).toEqual(["100", "101"]);
+      expect(chapters[0]).toMatchObject({ name: "Ch. 1", chapterNumber: 1 });
+      // The manga id is forwarded to the transport coerced to an Int.
+      expect(request).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ mangaId: 10 }),
+      );
+    });
+
+    it("fetchChapters returns an empty list when the payload has no chapters", async () => {
+      const { transport } = transportReturning({
+        fetchChapters: { chapters: [] },
+      });
+      const client = new SuwayomiGraphQLClient(transport);
+
+      await expect(client.fetchChapters("10")).resolves.toEqual([]);
+    });
+
     it("getChapterPageCount returns the number of pages, not their data", async () => {
       const { transport, request } = transportReturning({
         fetchChapterPages: {
@@ -218,6 +262,35 @@ describe("SuwayomiGraphQLClient (port contract)", () => {
 
       await expect(client.listChapters("999999")).rejects.toBeInstanceOf(
         NotFoundError,
+      );
+    });
+
+    it("fetchChapters maps a 'No chapters found' source response to an empty list", async () => {
+      const transport = transportFailing(noChaptersFoundError());
+      const client = new SuwayomiGraphQLClient(transport);
+
+      // A source that genuinely has no chapters is not an error — it is an
+      // empty list (API-904), never a 5xx.
+      await expect(client.fetchChapters("10")).resolves.toEqual([]);
+    });
+
+    it("fetchChapters maps Suwayomi's missing-manga error to NotFoundError", async () => {
+      const transport = transportFailing(mangaNotFoundError());
+      const client = new SuwayomiGraphQLClient(transport);
+
+      await expect(client.fetchChapters("999999")).rejects.toBeInstanceOf(
+        NotFoundError,
+      );
+    });
+
+    it("a non-not-found GraphQL error on fetchChapters stays a SuwayomiError", async () => {
+      const transport = transportFailing(
+        new Error("GraphQL Error: source temporarily unavailable"),
+      );
+      const client = new SuwayomiGraphQLClient(transport);
+
+      await expect(client.fetchChapters("10")).rejects.toBeInstanceOf(
+        SuwayomiError,
       );
     });
 

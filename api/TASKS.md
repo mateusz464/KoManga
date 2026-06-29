@@ -461,7 +461,7 @@
 **Blocked by:** none (fix to already-Done API-306 / the API-202 adapter).
 **Estimate:** M
 
-### API-904 — Fetch chapters from source on manga details (impl)
+### API-904 — Fetch chapters from source on manga details (impl) — **Done**
 **Description:** Make API-903 pass — trigger Suwayomi's `fetchChapters` mutation so the chapter list is populated from the source, not just read from cache.
 **Acceptance criteria:**
 - All API-903 tests pass.

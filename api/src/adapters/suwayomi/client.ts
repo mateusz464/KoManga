@@ -78,6 +78,25 @@ const LIST_CHAPTERS = /* GraphQL */ `
   }
 `;
 
+// Scrapes the source for the manga's chapters and returns the populated list.
+// A query of `manga.chapters.nodes` (LIST_CHAPTERS) only reads what Suwayomi
+// has already stored; this mutation is what actually fetches from the source,
+// so a freshly-searched manga gets its chapters here (API-904).
+const FETCH_CHAPTERS = /* GraphQL */ `
+  mutation FetchChapters($mangaId: Int!) {
+    fetchChapters(input: { mangaId: $mangaId }) {
+      chapters {
+        id
+        name
+        chapterNumber
+        scanlator
+        uploadDate
+        pageCount
+      }
+    }
+  }
+`;
+
 // Page URLs come from this mutation, not from a field on the chapter.
 const FETCH_CHAPTER_PAGES = /* GraphQL */ `
   mutation ChapterPages($chapterId: Int!) {
@@ -176,11 +195,26 @@ export class SuwayomiGraphQLClient implements SuwayomiClient {
     return (data.manga?.chapters?.nodes ?? []).map(mapChapter);
   }
 
-  // Stub pending API-904: the real implementation issues Suwayomi's
-  // `fetchChapters` mutation to scrape the source, then maps the result (with
-  // "No chapters found" → []). Throws until then so nothing relies on it early.
-  async fetchChapters(_mangaId: string): Promise<Chapter[]> {
-    throw new SuwayomiError("fetchChapters not implemented (API-904)");
+  // Triggers Suwayomi's source scrape and returns the resulting chapters. A
+  // source that genuinely has none answers with a "No chapters found" GraphQL
+  // error — mapped to an empty list, not a 5xx (consistent with API-306's
+  // not-found handling). An unknown manga id still maps to NotFoundError.
+  async fetchChapters(mangaId: string): Promise<Chapter[]> {
+    let data: { fetchChapters?: { chapters?: RawChapter[] } };
+    try {
+      data = (await this.transport.request(FETCH_CHAPTERS, {
+        mangaId: toIntId(mangaId),
+      })) as { fetchChapters?: { chapters?: RawChapter[] } };
+    } catch (cause) {
+      if (isNoChaptersFound(cause)) {
+        return [];
+      }
+      if (isMangaNotFound(cause)) {
+        throw new NotFoundError(`Manga ${mangaId} not found`);
+      }
+      throw new SuwayomiError(undefined, cause);
+    }
+    return (data.fetchChapters?.chapters ?? []).map(mapChapter);
   }
 
   async getChapterPageCount(chapterId: string): Promise<number> {
@@ -326,6 +360,26 @@ function isChapterNotFound(cause: unknown): boolean {
   }
   return errors.some((error: RawGraphQLError) =>
     /collection is empty/i.test(String(error?.message ?? "")),
+  );
+}
+
+// A source with no chapters surfaces as a "No chapters found" GraphQL error on
+// the `fetchChapters` mutation — the signal to map to an empty list rather than
+// a 5xx (API-904). Empty payloads are handled separately by the caller.
+function isNoChaptersFound(cause: unknown): boolean {
+  if (typeof cause !== "object" || cause === null || !("response" in cause)) {
+    return false;
+  }
+  const response = (cause as { response?: unknown }).response;
+  if (typeof response !== "object" || response === null) {
+    return false;
+  }
+  const errors = (response as { errors?: unknown }).errors;
+  if (!Array.isArray(errors)) {
+    return false;
+  }
+  return errors.some((error: RawGraphQLError) =>
+    /no chapters found/i.test(String(error?.message ?? "")),
   );
 }
 
