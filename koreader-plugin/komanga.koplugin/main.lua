@@ -11,6 +11,8 @@ local Net = require("net")
 local ApiClient = require("api/client")
 local Browse = require("state/browse")
 local Details = require("state/details")
+local Covers = require("state/covers")
+local Config = require("config")
 local CredentialPrompt = require("ui/credential_prompt")
 local SourceBrowser = require("ui/source_browser")
 local MangaDetails = require("ui/manga_details")
@@ -70,6 +72,9 @@ function Komanga:showBrowse()
     local browser
     browser = SourceBrowser:new{
         browse = Browse.new(self.api),
+        -- A fresh cover cache per visit (CLAUDE.md §8: bounded prefetch); the window
+        -- comes from config so it's tunable in one place (KRP-406).
+        covers = Covers.new(self.api, { window = Config.cover_prefetch_window }),
         net = self.net,
         auth = self.auth,
         show_details = function(manga)
@@ -90,6 +95,7 @@ function Komanga:showDetails(manga)
     local details
     details = MangaDetails:new{
         details = Details.new(self.api, manga.id),
+        covers = Covers.new(self.api, { window = Config.cover_prefetch_window }),
         manga_stub = manga,
         net = self.net,
         auth = self.auth,

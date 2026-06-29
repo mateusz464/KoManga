@@ -16,8 +16,19 @@ local Menu = require("ui/widget/menu")
 local InfoMessage = require("ui/widget/infomessage")
 local InputDialog = require("ui/widget/inputdialog")
 local UIManager = require("ui/uimanager")
+local CoverThumbnail = require("ui/cover_thumbnail")
 local T = require("ffi/util").template
 local _ = require("gettext")
+
+-- Cover slot for a result row (KRP-406). The cover keeps the manga 5:7 aspect; its
+-- height is capped to the menu's real row height at render time (see coverSlot) so a
+-- full-height cover can't bleed into the next row — the on-device finding behind the
+-- cap (a row is shorter than the nominal 112 at the default items-per-page). COVER_H
+-- is the nominal upper bound; final sizing is on-device tuning (KRP-701, [DEVICE]).
+local COVER_ASPECT = 5 / 7 -- standard manga cover width:height
+local COVER_H = 112
+local COVER_W = math.floor(COVER_H * COVER_ASPECT) -- reserved column when a row is tall enough
+local COVER_MARGIN = 2 -- top/bottom breathing room so the cover never touches the row edge
 
 local SourceBrowser = Menu:extend{
     name = "komanga_source_browser",
@@ -26,6 +37,7 @@ local SourceBrowser = Menu:extend{
     title = _("KoManga"),
     -- Collaborators, injected by main.lua (CLAUDE.md §9):
     browse = nil,       -- state/browse.lua instance
+    covers = nil,       -- state/covers.lua instance (cover prefetch + cache)
     net = nil,          -- net.lua wrapper (the single network path)
     auth = nil,         -- state/auth.lua (optional — route a 401 to the prompt)
     show_details = nil, -- function(manga): open the manga-details screen (KRP-404)
@@ -92,6 +104,7 @@ end
 
 function SourceBrowser:renderSources()
     self.paths = {}
+    self.state_w = 0 -- source rows carry no cover; don't indent their text (KRP-406)
     if self.browse:getError() then
         self:handleError(self.browse:getError())
     end
@@ -159,12 +172,29 @@ function SourceBrowser:runSearch(source, query)
         on_result = function(data, err)
             self.browse:applySearch(source.id, query, data, err)
             self:renderResults()
+            self:loadCovers()
         end,
     })
 end
 
+-- Cover slot bounded by the menu's actual row height (self.item_dimen.h, derived
+-- from items-per-page) so a full-aspect cover can't overflow into the next row
+-- (KRP-406 device finding). Width follows the 5:7 aspect from the capped height, so
+-- the reserved text indent matches the cover that's actually drawn. Falls back to the
+-- nominal slot before the menu has computed a row height.
+function SourceBrowser:coverSlot()
+    local h = COVER_H
+    if self.item_dimen and self.item_dimen.h and self.item_dimen.h > 0 then
+        h = math.min(COVER_H, self.item_dimen.h - 2 * COVER_MARGIN)
+    end
+    local w = math.min(COVER_W, math.floor(h * COVER_ASPECT))
+    return w, h
+end
+
 function SourceBrowser:renderResults()
     self.paths = { { mode = "results" } } -- non-empty → back arrow enabled
+    local cover_w, cover_h = self:coverSlot()
+    self.state_w = cover_w -- reserve the left column for cover thumbnails (KRP-406)
     if self.browse:getError() then
         self:handleError(self.browse:getError())
     end
@@ -174,10 +204,16 @@ function SourceBrowser:renderResults()
         item_table[1] = { text = _("No results.") }
     else
         for _, manga in ipairs(self.browse:getResults()) do
-            item_table[#item_table + 1] = {
+            local item = {
                 text = manga.title or manga.id,
                 callback = function() self:openManga(manga) end,
             }
+            -- A ready cover renders as the row's left widget; a pending/failed/
+            -- absent cover just leaves text — never a blank or broken row (KRP-406).
+            if self.covers and self.covers:isReady(manga.id) then
+                item.state = CoverThumbnail.build(self.covers:getBytes(manga.id), cover_w, cover_h)
+            end
+            item_table[#item_table + 1] = item
         end
         if self.browse:hasMore() then
             item_table[#item_table + 1] = {
@@ -187,6 +223,36 @@ function SourceBrowser:renderResults()
         end
     end
     self:switchItemTable(T(_("Search: %1"), self.browse:getQuery()), item_table)
+end
+
+-- Fetch a bounded window of result covers (CLAUDE.md §8) through the single network
+-- path (net.lua: non-blocking + wifi-gated), then re-render so the arrived covers
+-- appear. One-shot per call (only the planner's new ids are fetched) so it can't
+-- loop with renderResults; a failed cover is remembered and degrades to text.
+function SourceBrowser:loadCovers()
+    if not self.covers then
+        return
+    end
+    local ids = {}
+    for _, manga in ipairs(self.browse:getResults()) do
+        ids[#ids + 1] = manga.id
+    end
+    local batch = self.covers:plan(ids)
+    if #batch == 0 then
+        return
+    end
+    self.net:run(function()
+        return self.covers:fetch(batch)
+    end, {
+        text = _("Loading covers…"),
+        on_result = function(results, err)
+            if err then
+                return -- covers are optional; a failed pass just leaves text
+            end
+            self.covers:apply(results)
+            self:renderResults()
+        end,
+    })
 end
 
 function SourceBrowser:loadMore()
@@ -200,6 +266,7 @@ function SourceBrowser:loadMore()
         on_result = function(data, err)
             self.browse:applyMore(data, err)
             self:renderResults()
+            self:loadCovers()
         end,
     })
 end

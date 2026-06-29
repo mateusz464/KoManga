@@ -74,9 +74,12 @@ function ApiClient.new(opts)
     }, ApiClient)
 end
 
--- Shape and run one request, returning (data, nil) | (nil, err). `body` is a
--- pre-encoded JSON string; `extra_headers` carries e.g. Content-Type.
-function ApiClient:_request(method, url, body, extra_headers)
+-- Shape and run one request, returning (response, nil) on a 2xx or (nil, err) on a
+-- transport failure / non-2xx. This is the shared transport+auth+error stage every
+-- method goes through; `_request` decodes the JSON envelope on top of it, while raw
+-- byte endpoints (covers, KRP-406) read response.body directly. `body` is a
+-- pre-encoded request body; `extra_headers` carries e.g. Content-Type.
+function ApiClient:_send(method, url, body, extra_headers)
     local headers = {}
     if extra_headers then
         for k, v in pairs(extra_headers) do
@@ -106,6 +109,17 @@ function ApiClient:_request(method, url, body, extra_headers)
             err.code = decoded.error.code
             err.message = decoded.error.message
         end
+        return nil, err
+    end
+
+    return response, nil
+end
+
+-- Shape and run one JSON request, returning (data, nil) | (nil, err): the { data }
+-- envelope unwrapped, or a decode error if the 2xx body wasn't decodable JSON.
+function ApiClient:_request(method, url, body, extra_headers)
+    local response, err = self:_send(method, url, body, extra_headers)
+    if not response then
         return nil, err
     end
 
@@ -181,6 +195,24 @@ end
 
 function ApiClient:cbzUrl(chapterId)
     return join_url(self.base_url, "/api/downloads/" .. chapterId)
+end
+
+-- Cover thumbnail (KRP-406). The server negotiates the profile and produces the
+-- eink rendition; this client only ever asks for eink (§6, mirroring pageImageUrl).
+function ApiClient:coverImageUrl(mangaId)
+    return join_url(self.base_url, "/api/manga/" .. mangaId .. "/cover?profile=eink")
+end
+
+-- Fetch a cover's raw image bytes (not the JSON envelope — this endpoint serves the
+-- image directly). Returns (bytes, nil) on success or (nil, err) with the same
+-- transport/http error shape as every other call, so a missing cover (e.g. 404) is
+-- an ordinary error the caller degrades to text on (KRP-406).
+function ApiClient:fetchCover(mangaId)
+    local response, err = self:_send("GET", self:coverImageUrl(mangaId))
+    if not response then
+        return nil, err
+    end
+    return response.body, nil
 end
 
 return ApiClient

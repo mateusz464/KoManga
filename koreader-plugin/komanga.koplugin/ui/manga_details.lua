@@ -13,16 +13,23 @@
 local Menu = require("ui/widget/menu")
 local InfoMessage = require("ui/widget/infomessage")
 local UIManager = require("ui/uimanager")
+local CoverThumbnail = require("ui/cover_thumbnail")
 local T = require("ffi/util").template
 local _ = require("gettext")
+
+-- Cover slot size on the details header row (KRP-406); on-device tuning is KRP-701.
+local COVER_W = 80
+local COVER_H = 112
 
 local MangaDetails = Menu:extend{
     name = "komanga_manga_details",
     is_borderless = true,
     is_popout = false,
     title = _("KoManga"),
+    state_w = COVER_W, -- reserve the left column for the cover thumbnail (KRP-406)
     -- Collaborators, injected by main.lua (CLAUDE.md §9):
     details = nil,    -- state/details.lua instance
+    covers = nil,     -- state/covers.lua instance (cover prefetch + cache)
     net = nil,        -- net.lua wrapper (the single network path)
     auth = nil,       -- state/auth.lua (optional — routes a 401 to the prompt)
     manga_stub = nil, -- the search-result row (title for the header before load)
@@ -84,9 +91,35 @@ function MangaDetails:loadDetails()
             self.details:applyManga(data, err)
             self:render()
             if not err then
+                self:loadCover()
                 self:loadProgress()
                 self:loadFollowState()
             end
+        end,
+    })
+end
+
+-- Fetch this manga's cover through the single network path (net.lua: non-blocking +
+-- wifi-gated) and re-render so it appears on the header row. One-shot (the planner
+-- dedups), and a missing/failed cover simply leaves the header text (KRP-406).
+function MangaDetails:loadCover()
+    if not self.covers then
+        return
+    end
+    local batch = self.covers:plan({ self.details:getMangaId() })
+    if #batch == 0 then
+        return
+    end
+    self.net:run(function()
+        return self.covers:fetch(batch)
+    end, {
+        text = _("Loading cover…"),
+        on_result = function(results, err)
+            if err then
+                return -- the cover is optional; on failure the header stays text
+            end
+            self.covers:apply(results)
+            self:render()
         end,
     })
 end
@@ -171,13 +204,19 @@ function MangaDetails:render()
 
     local item_table = {}
 
-    -- Follow / unfollow toggle row.
-    item_table[#item_table + 1] = {
+    -- Follow / unfollow toggle row, doubling as the cover header: a ready cover
+    -- renders as its left widget, otherwise the row is just text (KRP-406).
+    local header = {
         text = self.details:isFollowed()
             and _("★ In library — tap to remove")
             or _("☆ Add to library"),
         callback = function() self:toggleFollow() end,
     }
+    if self.covers and self.covers:isReady(self.details:getMangaId()) then
+        header.state = CoverThumbnail.build(
+            self.covers:getBytes(self.details:getMangaId()), COVER_W, COVER_H)
+    end
+    item_table[#item_table + 1] = header
 
     local chapters = self.details:getChapters()
     if not manga then

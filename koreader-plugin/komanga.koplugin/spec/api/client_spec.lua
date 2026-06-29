@@ -244,6 +244,69 @@ describe("ApiClient", function()
             client:downloadChapter("ch9", "m7")
             assert.is_nil(sole(rec).url:find("raw", 1, true))
         end)
+
+        it("builds a cover-image URL with profile=eink", function()
+            local client = make(FakeTransport.ok({}))
+            assert.are.equal(BASE .. "/api/manga/m7/cover?profile=eink", client:coverImageUrl("m7"))
+        end)
+
+        it("never requests the raw profile for a cover image", function()
+            local client = make(FakeTransport.ok({}))
+            assert.is_nil(client:coverImageUrl("m7"):find("raw", 1, true))
+        end)
+    end)
+
+    describe("cover image (raw bytes)", function()
+        -- Distinct from JSON endpoints: the cover endpoint serves image bytes
+        -- directly, so fetchCover returns the raw body, NOT the { data } envelope.
+        local PNG = "\137PNG\r\n\26\nbinary\0bytes"
+
+        local function raw_ok(body, status)
+            return function()
+                return { status = status or 200, body = body, headers = {} }
+            end
+        end
+
+        it("GETs /api/manga/:id/cover with the eink profile", function()
+            local client, rec = make(raw_ok(PNG))
+            client:fetchCover("m7")
+
+            local req = sole(rec)
+            assert.are.equal("GET", req.method)
+            assert.are.equal(BASE .. "/api/manga/m7/cover?profile=eink", req.url)
+        end)
+
+        it("returns the raw image bytes unchanged (no envelope unwrap, no decode)", function()
+            local client = make(raw_ok(PNG))
+            local bytes, err = client:fetchCover("m7")
+
+            assert.is_nil(err)
+            assert.are.equal(PNG, bytes)
+        end)
+
+        it("attaches the Bearer credential like every other call", function()
+            local client, rec = make(raw_ok(PNG))
+            client:fetchCover("m7")
+
+            assert.are.equal("Bearer " .. TOKEN, sole(rec).headers["Authorization"])
+        end)
+
+        it("maps a missing cover (404) to an http error to degrade to text on", function()
+            local client = make(FakeTransport.httpError(404, "NOT_FOUND", "No cover"))
+            local bytes, err = client:fetchCover("m7")
+
+            assert.is_nil(bytes)
+            assert.are.equal("http", err.kind)
+            assert.are.equal(404, err.status)
+        end)
+
+        it("maps a transport failure to a transport error", function()
+            local client = make(FakeTransport.failing("network is unreachable"))
+            local bytes, err = client:fetchCover("m7")
+
+            assert.is_nil(bytes)
+            assert.are.equal("transport", err.kind)
+        end)
     end)
 
     describe("envelope unwrap", function()

@@ -67,6 +67,10 @@ function Details:load()
     return self:applyManga(self:fetchManga())
 end
 
+function Details:getMangaId()
+    return self.manga_id
+end
+
 function Details:getManga()
     return self.manga
 end
