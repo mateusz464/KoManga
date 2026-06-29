@@ -9,25 +9,35 @@ import {
   type SuwayomiClient,
 } from "../../src/services/ports/suwayomi-client.js";
 
-// Contract test for `GET /api/manga/:id` (API-305). The endpoint is exercised
-// through Express with the Suwayomi client mocked at the port boundary
-// (CLAUDE.md §4): it combines the manga details and the chapter list into one
-// response, presents the chapters in reading order, and carries the
-// reading-direction metadata the API owns (RFC §6 — "Reading direction
-// metadata comes from the API"). The route is implemented in API-306 — these
-// assertions stay red until then.
+// Contract test for `GET /api/manga/:id` (API-305/306, refined by API-903). The
+// endpoint is exercised through Express with the Suwayomi client mocked at the
+// port boundary (CLAUDE.md §4). It combines the manga details and the chapter
+// list into one response, presents the chapters in reading order, and carries
+// the reading-direction metadata the API owns (RFC §6).
+//
+// API-903 pins the source chapter-fetch: a freshly-searched manga has nothing
+// in Suwayomi's stored `manga.chapters.nodes` (the read-only `listChapters`
+// path) until the source is scraped via the `fetchChapters` mutation. The
+// endpoint must therefore trigger that fetch and return the fetched chapters —
+// it must not just read the (empty) stored list. These assertions stay red
+// against the current read-only `MangaService.getManga` until API-904.
 
-// A SuwayomiClient stub whose details/chapter lookups are controllable; every
-// other method rejects so the test fails loudly if the route reaches past the
-// ports it needs.
+// A SuwayomiClient stub whose details / stored-chapter / source-fetch lookups
+// are controllable; every other method rejects so the test fails loudly if the
+// route reaches past the ports it needs.
 function clientReturning(options: {
   details?: MangaDetails;
   detailsError?: unknown;
+  // Chapters the *source* returns when its chapter-fetch is triggered.
   chapters?: readonly Chapter[];
+  // What the read-only stored-chapter lookup returns. Empty by default: a
+  // freshly-searched manga has nothing stored until the source is scraped.
+  storedChapters?: readonly Chapter[];
 }): {
   suwayomi: SuwayomiClient;
   getMangaDetails: ReturnType<typeof vi.fn>;
   listChapters: ReturnType<typeof vi.fn>;
+  fetchChapters: ReturnType<typeof vi.fn>;
 } {
   const getMangaDetails = vi.fn(async (_id: string) => {
     if (options.detailsError !== undefined) {
@@ -36,6 +46,9 @@ function clientReturning(options: {
     return options.details as MangaDetails;
   });
   const listChapters = vi.fn(async (_id: string) => [
+    ...(options.storedChapters ?? []),
+  ]);
+  const fetchChapters = vi.fn(async (_id: string) => [
     ...(options.chapters ?? []),
   ]);
   const unexpected = vi.fn(async () => {
@@ -46,10 +59,11 @@ function clientReturning(options: {
     search: unexpected,
     getMangaDetails,
     listChapters,
+    fetchChapters,
     getChapterPageCount: unexpected,
     fetchPage: unexpected,
   };
-  return { suwayomi, getMangaDetails, listChapters };
+  return { suwayomi, getMangaDetails, listChapters, fetchChapters };
 }
 
 const sampleDetails: MangaDetails = {
@@ -72,23 +86,28 @@ const unorderedChapters: readonly Chapter[] = [
 ];
 
 describe("GET /api/manga/:id", () => {
-  it("returns the manga details with an ordered chapter list", async () => {
-    const { suwayomi, getMangaDetails, listChapters } = clientReturning({
+  it("triggers the source chapter-fetch and returns the fetched chapters, ordered", async () => {
+    // Nothing stored yet (the freshly-searched case); the source returns the
+    // chapters only when its fetch is triggered.
+    const { suwayomi, getMangaDetails, fetchChapters } = clientReturning({
       details: sampleDetails,
       chapters: unorderedChapters,
+      storedChapters: [],
     });
 
     const res = await request(createApp({ suwayomi })).get("/api/manga/42");
 
     expect(res.status).toBe(200);
     expect(getMangaDetails).toHaveBeenCalledWith("42");
-    expect(listChapters).toHaveBeenCalledWith("42");
+    // The endpoint must trigger the source chapter-fetch rather than rely on
+    // the empty stored list — this is the regression API-903 pins.
+    expect(fetchChapters).toHaveBeenCalledWith("42");
 
     expect(res.body.data).toEqual(
       expect.objectContaining({ manga: sampleDetails }),
     );
-    // Chapters are presented in ascending chapter-number order regardless of
-    // the order the upstream returned them in.
+    // Fetched chapters are presented in ascending chapter-number order
+    // regardless of the order the source returned them in.
     expect(res.body.data.chapters.map((c: Chapter) => c.chapterNumber)).toEqual(
       [1, 2, 3],
     );
@@ -108,20 +127,26 @@ describe("GET /api/manga/:id", () => {
     const res = await request(createApp({ suwayomi })).get("/api/manga/42");
 
     expect(res.status).toBe(200);
-    // The API owns reading direction; manga defaults to right-to-left.
+    // The response keeps the existing `{ manga, chapters, readingDirection }`
+    // shape; the API owns reading direction; manga defaults to right-to-left.
     expect(res.body.data).toHaveProperty("readingDirection");
     expect(res.body.data.readingDirection).toBe("rtl");
   });
 
-  it("returns 200 with an empty chapter list when the manga has no chapters", async () => {
-    const { suwayomi } = clientReturning({
+  it("returns 200 with an empty chapter list when the source genuinely has none", async () => {
+    // Suwayomi answers "No chapters found"; the adapter maps that to an empty
+    // list, so the source fetch resolves to `[]` — that must surface as a 200
+    // with `chapters: []`, never a 5xx.
+    const { suwayomi, fetchChapters } = clientReturning({
       details: sampleDetails,
       chapters: [],
+      storedChapters: [],
     });
 
     const res = await request(createApp({ suwayomi })).get("/api/manga/42");
 
     expect(res.status).toBe(200);
+    expect(fetchChapters).toHaveBeenCalledWith("42");
     expect(res.body.data.manga).toEqual(sampleDetails);
     expect(res.body.data.chapters).toEqual([]);
   });

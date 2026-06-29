@@ -67,6 +67,14 @@ export interface SuwayomiClient {
   search(params: SearchParams): Promise<SearchResult>;
   getMangaDetails(mangaId: string): Promise<MangaDetails>;
   listChapters(mangaId: string): Promise<Chapter[]>;
+  /**
+   * Triggers Suwayomi's source chapter-fetch (the scrape) and resolves with the
+   * resulting chapters. Unlike {@link listChapters}, which only reads whatever
+   * Suwayomi has already stored, this populates them from the source — so a
+   * freshly-searched manga returns its chapters on first open. A source that
+   * genuinely has none resolves to `[]`, not an error.
+   */
+  fetchChapters(mangaId: string): Promise<Chapter[]>;
   /** Page count only (no image data); rejects {@link NotFoundError} on unknown id. */
   getChapterPageCount(chapterId: string): Promise<number>;
   fetchPage(ref: PageRef): Promise<RawPage>;

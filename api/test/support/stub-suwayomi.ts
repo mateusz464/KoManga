@@ -12,6 +12,7 @@ export function stubSuwayomi(): SuwayomiClient {
     search: unexpected,
     getMangaDetails: unexpected,
     listChapters: unexpected,
+    fetchChapters: unexpected,
     getChapterPageCount: unexpected,
     fetchPage: unexpected,
   };

@@ -176,6 +176,13 @@ export class SuwayomiGraphQLClient implements SuwayomiClient {
     return (data.manga?.chapters?.nodes ?? []).map(mapChapter);
   }
 
+  // Stub pending API-904: the real implementation issues Suwayomi's
+  // `fetchChapters` mutation to scrape the source, then maps the result (with
+  // "No chapters found" → []). Throws until then so nothing relies on it early.
+  async fetchChapters(_mangaId: string): Promise<Chapter[]> {
+    throw new SuwayomiError("fetchChapters not implemented (API-904)");
+  }
+
   async getChapterPageCount(chapterId: string): Promise<number> {
     const pages = await this.fetchPageUrls(chapterId);
     return pages.length;

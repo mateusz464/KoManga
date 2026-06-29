@@ -102,6 +102,7 @@ function buildSuwayomi(
     search: unexpected,
     getMangaDetails: unexpected,
     listChapters: unexpected,
+    fetchChapters: unexpected,
     getChapterPageCount: vi.fn(async (_chapterId: string) => pageCount),
     fetchPage,
   };

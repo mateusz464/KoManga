@@ -28,6 +28,7 @@ function clientListing(sources: Source[]): {
     search: unexpected,
     getMangaDetails: unexpected,
     listChapters: unexpected,
+    fetchChapters: unexpected,
     getChapterPageCount: unexpected,
     fetchPage: unexpected,
   };
@@ -45,6 +46,7 @@ function clientFailing(error: unknown): SuwayomiClient {
     search: unexpected,
     getMangaDetails: unexpected,
     listChapters: unexpected,
+    fetchChapters: unexpected,
     getChapterPageCount: unexpected,
     fetchPage: unexpected,
   };
