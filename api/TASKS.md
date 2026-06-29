@@ -419,6 +419,35 @@
 
 ---
 
+> **Observability slice (8xx).** Structured logging is an ops concern, so it sits with deployment. Driven by the home-server log pipeline (JSON-to-stdout → Grafana Alloy → Loki → Grafana): the API must emit machine-parseable JSON logs so the stack can ingest and query them, without ever logging the single-user secret. Independent of the feature build order — can be picked up any time (like the 9xx fixes).
+
+### API-804 — [TEST] Structured JSON logging (pino) + secret redaction — **Done**
+**Description:** The API currently logs with two ad-hoc `console.*` calls — startup (`src/index.ts:57`) and the unexpected-error path (`src/http/error-handler.ts:19`, the `console.error(err)` that CLAUDE.md §6 mandates as "log server-side, return a safe message"). For the home-server log pipeline (Alloy → Loki → Grafana) the API must emit **structured JSON to stdout** through a real logger (`pino`), behind a domain-named **`Logger` port** so services/middleware depend on the interface, not the library (CLAUDE.md §3/§11) — and it must **never log the single-user secret** (CLAUDE.md §5/§9: credentials "never logged"). Write failing tests pinning the logging contract, with the **redaction test as the security-critical one**.
+**Acceptance criteria:**
+- A `Logger` **port** (`src/services/ports/logger.ts`) exists — domain-named methods (`debug`/`info`/`warn`/`error`) taking a message + optional structured fields — and is mockable; nothing outside the adapter imports `pino`.
+- **Redaction (security-critical):** exercising the **real `pino` adapter** writing to a captured in-memory stream (adapter-level, real lib per CLAUDE.md §4.4), the serialized output for a request/log carrying an `Authorization: Bearer <token>` header (and/or the configured `AUTH_TOKEN`) **never contains the secret value** — the field is absent or `[Redacted]`. A test that logs the token and greps the captured bytes must not find it.
+- **Error middleware logs through the port:** a non-`ApiError` reaching `errorHandler` is passed to the injected `Logger` at `error` level **and** the client still receives the existing safe `{ error: { code: "INTERNAL", message } }` 500 with **no stack trace / internal detail leaked** (assert both: the logger was called with the error, the response body is unchanged). `ApiError`s map as before.
+- **JSON to stdout / config-driven level:** logs are JSON (not pretty) in the default/prod path; the level comes from config (`LOG_LEVEL`, new in `src/config`), with a documented default and invalid values rejected at startup via the existing aggregated-config-error path (mirrors `IMAGE_EINK_FORMAT`).
+- Tests fail red against current code (no `Logger` port, `console.*` in place, no `LOG_LEVEL` config).
+**Motivated by:** home-server log standardisation (pino → Alloy → Loki → Grafana). Pairs with a root-level Alloy/Loki Compose addition (separate, non-API work).
+**Blocked by:** API-105 (error middleware), API-103 (config), API-702 (the `Authorization` header to redact).
+**Estimate:** M
+
+### API-805 — Structured JSON logging (pino) (impl)
+**Description:** Make API-804 pass — introduce `pino` behind the `Logger` port, route the existing `console.*` sites through it, redact the secret, and wire the level from config.
+**Acceptance criteria:**
+- All API-804 tests pass.
+- A `pino` adapter (`src/adapters/logging/pino-logger.ts`) implements the `Logger` port, configured with `redact` covering `req.headers.authorization` + the auth token so the secret never serializes; the concrete `pino` type stays inside the adapter (no library type crosses the port boundary, CLAUDE.md §11).
+- The two `console.*` sites are replaced: `error-handler.ts`'s unexpected-error log and `index.ts`'s startup log go through the injected `Logger`. The error handler receives the logger by construction (e.g. a factory / `AppDependencies.logger`, following the established optional-dep + composition-root pattern); **no global logger singleton** (CLAUDE.md §3).
+- HTTP request logging is added at the edge via `pino-http` (in the `http/` layer, not services), inheriting the same redaction — so Loki gets one structured line per request (method, path, status, latency) with no secret.
+- JSON to stdout by default; `pino-pretty` is dev-only (not a prod dependency / not the container's output format — Alloy parses JSON).
+- `LOG_LEVEL` added to the typed config and documented in `.env.example`; `pino`/`pino-http` pinned in `package.json` (note any native/Docker caveat alongside the existing `sharp`/`better-sqlite3` notes if relevant).
+- Full suite, lint, typecheck, format clean.
+**Blocked by:** API-804.
+**Estimate:** S
+
+---
+
 # Feature: Bug Fixes / Device-spike reconciliation (9xx)
 
 > Defects and contract-drift surfaced after the feature work, chiefly by the
@@ -473,6 +502,30 @@
 **Blocked by:** API-903.
 **Estimate:** M
 
+### API-905 — [TEST] Cover-image endpoint with profile negotiation
+**Description:** Clients have **no way to render manga covers** through the API. Search results (`GET /api/search`) and manga details (`GET /api/manga/:id`) expose a `thumbnailUrl`, but it is the **raw Suwayomi thumbnail URL** passed straight through (`src/adapters/suwayomi/client.ts`, `mapMangaSummary`/`mapMangaDetails` → `String(node.thumbnailUrl)`) — a Suwayomi-internal path that is unreachable from a client (Suwayomi is internal-only, never publicly exposed — RFC §6) and that bypasses the `eink` image pipeline. The only image-serving endpoint with profile negotiation is `GET /api/page/:id` (chapter pages, not covers). So a client cannot show a cover at all, let alone the device-renderable `eink` form its panel needs. Surfaced by the KOReader-plugin epic: **KRP-406** (cover thumbnails in browse/details lists) is blocked because there is no API-served, profile-negotiated cover image — and per RFC §13 / CLAUDE.md §6 the client must not reach Suwayomi or the raw URL directly. Add a cover-image endpoint that mirrors the page endpoint: `GET /api/manga/:id/cover?profile=raw|eink`, serving the cover **bytes** processed through the existing `ImageProcessor`, cached via the existing `SessionCache`. Write failing tests (all ports mocked at their boundaries, injected via `createApp`) pinning the contract.
+**Acceptance criteria:**
+- `GET /api/manga/:id/cover` defaults to `profile=raw`; `?profile=eink` runs the eink transform; `?profile=<other>` → 400 `BAD_REQUEST`, rejected at the edge before any port is touched (mirrors `routes/page.ts`).
+- Cache **miss** flows source-fetch → `imageProcessor.process(source, profile)` → `sessionCache.set` → serve the processed bytes with the processor's content-type; cache **hit** serves the stored bytes and skips the upstream fetch + process. The cover cache key is **profile-aware and distinct from page-id keys** (e.g. `cover:<mangaId>`, so it can't collide with `<chapterId>:<index>` page ids).
+- The cover source comes from Suwayomi via a **new port capability** (e.g. `SuwayomiClient.fetchCover(mangaId): Promise<RawPage>`) — the test mocks it; no GraphQL/HTTP detail leaks into the test. Unknown manga → the port rejects `NotFoundError` → 404 (assert the port was reached so the generic 404 fallback can't make it pass green); upstream failure → `SuwayomiError` → 502.
+- Response is the image bytes with the processed content-type (not the `{ data }` JSON envelope), exactly like the page endpoint.
+- Tests fail red against current code (no `cover` route, no `fetchCover` port method).
+**Surfaced by:** KRP-406 (KOReader plugin — cover thumbnails).
+**Blocked by:** none (extends already-Done API-407/408 image path + the API-202 adapter).
+**Estimate:** M
+
+### API-906 — Cover-image endpoint with profile negotiation (impl)
+**Description:** Make API-905 pass — serve manga covers through the same profile-negotiated, cached image path as chapter pages, sourcing the cover from Suwayomi behind the port.
+**Acceptance criteria:**
+- All API-905 tests pass.
+- `routes/manga.ts` (or a sibling cover router) mounts `GET /api/manga/:id/cover` with the same profile-parse + binary-response shape as `routes/page.ts`; the serving flow lives in a service (reuse/extend `PageService` or a small `CoverService`) using the injected `ImageProcessor` + `SessionCache`, keyed `cover:<mangaId>`.
+- A new `SuwayomiClient.fetchCover(mangaId): Promise<RawPage>` is added to the port and implemented in the API-202 adapter (the thumbnail fetch + its GraphQL/HTTP coupling stay inside the adapter; Suwayomi's "not found" maps to `NotFoundError`, other upstream failures to `SuwayomiError`), mirroring `fetchPage`/`fetchChapters`.
+- Stays within ports/adapters layering — no GraphQL in the service/route; the adapter maps the envelope/errors.
+- No change to the `raw` profile semantics or future colour-client paths (RFC §13) — covers honour the same `raw`/`eink` set as pages.
+- Full suite, lint, typecheck, format clean.
+**Blocked by:** API-905.
+**Estimate:** M
+
 ---
 
 ## Suggested build order (respecting strict deps)
@@ -484,8 +537,8 @@
 5. **Download:** 501/502, 503/504 → 505/506
 6. **Progress:** 601/602, 603/604
 7. **Auth/Security:** 701/702 → 703/704 (can start once 105 done; apply globally before deploy)
-8. **Deploy:** 801 → 802 → 803
-9. **Bug fixes (9xx):** 901 → 902 (independent of the above; can be picked up any time)
+8. **Deploy:** 801 → 802 → 803 ; **Observability:** 804 → 805 (independent — needs only 103/105/702, can be picked up any time)
+9. **Bug fixes (9xx):** 901 → 902, 903 → 904, 905 → 906 (independent of the above; can be picked up any time)
 
 > Note: Auth (7xx) only depends on the bootstrap layer, so it can be built early in parallel even though it's listed late. Everything funnels into API-801 for deployment.
 > Note: 9xx are post-hoc fixes/reconciliations (e.g. from the device spike), not part of the original feature build order.

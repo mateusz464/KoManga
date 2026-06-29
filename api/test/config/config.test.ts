@@ -146,4 +146,41 @@ describe("loadConfig", () => {
 
     expect(() => loadConfig(env)).not.toThrow(/super-secret/);
   });
+
+  // LOG_LEVEL feeds the pino logger (API-804/805). It is validated against the
+  // standard pino level set the same fail-fast way as IMAGE_EINK_FORMAT.
+  describe("LOG_LEVEL", () => {
+    it("defaults to info", () => {
+      expect(loadConfig(validEnv()).logLevel).toBe("info");
+    });
+
+    it("accepts the standard pino levels", () => {
+      expect(loadConfig({ ...validEnv(), LOG_LEVEL: "debug" }).logLevel).toBe(
+        "debug",
+      );
+      expect(loadConfig({ ...validEnv(), LOG_LEVEL: "warn" }).logLevel).toBe(
+        "warn",
+      );
+      expect(loadConfig({ ...validEnv(), LOG_LEVEL: "silent" }).logLevel).toBe(
+        "silent",
+      );
+    });
+
+    it("rejects an unknown level via the aggregated-config-error path", () => {
+      expect(() => loadConfig({ ...validEnv(), LOG_LEVEL: "loud" })).toThrow(
+        /LOG_LEVEL/,
+      );
+    });
+
+    it("names the allowed levels when rejecting an unknown one", () => {
+      try {
+        loadConfig({ ...validEnv(), LOG_LEVEL: "loud" });
+        expect.unreachable("loadConfig should have rejected LOG_LEVEL=loud");
+      } catch (err) {
+        const message = (err as Error).message;
+        expect(message).toMatch(/LOG_LEVEL/);
+        expect(message).toMatch(/info/);
+      }
+    });
+  });
 });
