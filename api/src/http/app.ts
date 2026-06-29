@@ -13,6 +13,7 @@ import { SearchService } from "../services/search-service.js";
 import { MangaService } from "../services/manga-service.js";
 import { ChapterService } from "../services/chapter-service.js";
 import { PageService } from "../services/page-service.js";
+import { CoverService } from "../services/cover-service.js";
 import { DownloadService } from "../services/download-service.js";
 import { ProgressService } from "../services/progress-service.js";
 import { LibraryService } from "../services/library-service.js";
@@ -21,6 +22,7 @@ import { searchRouter } from "../routes/search.js";
 import { mangaRouter } from "../routes/manga.js";
 import { chapterRouter } from "../routes/chapter.js";
 import { pageRouter } from "../routes/page.js";
+import { coverRouter } from "../routes/cover.js";
 import { downloadsRouter } from "../routes/downloads.js";
 import { progressRouter } from "../routes/progress.js";
 import { libraryRouter } from "../routes/library.js";
@@ -100,6 +102,12 @@ export function createApp(deps: AppDependencies): express.Express {
           deps.sessionCache,
           deps.prefetchWindow,
         ),
+      ),
+    );
+    app.use(
+      "/api",
+      coverRouter(
+        new CoverService(deps.suwayomi, deps.imageProcessor, deps.sessionCache),
       ),
     );
   }

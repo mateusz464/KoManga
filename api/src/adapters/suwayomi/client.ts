@@ -97,6 +97,16 @@ const FETCH_CHAPTERS = /* GraphQL */ `
   }
 `;
 
+// The cover's source URL lives on the manga itself; rooted at `manga(id:)` so an
+// unknown id surfaces the same non-null violation `runManga` maps to NotFoundError.
+const MANGA_THUMBNAIL = /* GraphQL */ `
+  query MangaThumbnail($id: Int!) {
+    manga(id: $id) {
+      thumbnailUrl
+    }
+  }
+`;
+
 // Page URLs come from this mutation, not from a field on the chapter.
 const FETCH_CHAPTER_PAGES = /* GraphQL */ `
   mutation ChapterPages($chapterId: Int!) {
@@ -231,10 +241,20 @@ export class SuwayomiGraphQLClient implements SuwayomiClient {
     return this.fetchBytes(this.resolveUrl(url));
   }
 
-  // Stub pending the real GraphQL/thumbnail-fetch implementation in API-906;
-  // the cover endpoint isn't wired yet, so this is never reached.
-  async fetchCover(_mangaId: string): Promise<RawPage> {
-    throw new Error("fetchCover not implemented (API-906)");
+  // Resolves the manga's cover the same way as a page: read its (Suwayomi-
+  // internal) thumbnail URL, then fetch the bytes server-side so clients never
+  // see the raw URL (RFC §6). Unknown manga → NotFoundError (via runManga);
+  // a manga with no cover is also treated as not found rather than a 5xx.
+  async fetchCover(mangaId: string): Promise<RawPage> {
+    const data = await this.runManga<{ manga?: { thumbnailUrl?: unknown } }>(
+      MANGA_THUMBNAIL,
+      mangaId,
+    );
+    const url = data.manga?.thumbnailUrl;
+    if (typeof url !== "string" || url.length === 0) {
+      throw new NotFoundError(`Cover for manga ${mangaId} not found`);
+    }
+    return this.fetchBytes(this.resolveUrl(url));
   }
 
   // Single source of a chapter's pages — both the count and individual fetches

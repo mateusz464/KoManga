@@ -214,6 +214,24 @@ describe("SuwayomiGraphQLClient (port contract)", () => {
 
       await expect(client.getChapterPageCount("100")).resolves.toBe(0);
     });
+
+    it("fetchCover reads the manga's thumbnail URL and fetches its bytes", async () => {
+      const { transport, request } = transportReturning({
+        manga: { thumbnailUrl: "/t/10" },
+      });
+      const cover = { bytes: Buffer.from("cover"), contentType: "image/png" };
+      const fetchBytes = vi.fn(async (_url: string) => cover);
+      const client = new SuwayomiGraphQLClient(transport, { fetchBytes });
+
+      await expect(client.fetchCover("10")).resolves.toEqual(cover);
+      // The (Suwayomi-internal) thumbnail URL is resolved + fetched server-side.
+      expect(fetchBytes).toHaveBeenCalledWith("/t/10");
+      // The manga id is forwarded to the transport coerced to an Int.
+      expect(request).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ id: 10 }),
+      );
+    });
   });
 
   describe("GraphQL error", () => {
@@ -320,6 +338,26 @@ describe("SuwayomiGraphQLClient (port contract)", () => {
 
       await expect(client.getChapterPageCount("100")).rejects.toBeInstanceOf(
         SuwayomiError,
+      );
+    });
+
+    it("fetchCover maps Suwayomi's missing-manga error to NotFoundError", async () => {
+      const transport = transportFailing(mangaNotFoundError());
+      const client = new SuwayomiGraphQLClient(transport);
+
+      await expect(client.fetchCover("999999")).rejects.toBeInstanceOf(
+        NotFoundError,
+      );
+    });
+
+    it("fetchCover maps a manga with no thumbnail to NotFoundError", async () => {
+      const { transport } = transportReturning({
+        manga: { thumbnailUrl: null },
+      });
+      const client = new SuwayomiGraphQLClient(transport);
+
+      await expect(client.fetchCover("10")).rejects.toBeInstanceOf(
+        NotFoundError,
       );
     });
 
