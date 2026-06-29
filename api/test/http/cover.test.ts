@@ -5,7 +5,6 @@ import { createApp } from "../../src/http/app.js";
 import { NotFoundError } from "../../src/http/errors.js";
 import {
   SuwayomiError,
-  type PageRef,
   type RawPage,
   type SuwayomiClient,
 } from "../../src/services/ports/suwayomi-client.js";
@@ -20,40 +19,41 @@ import type {
   SessionCache,
 } from "../../src/services/ports/session-cache.js";
 
-// Contract test for `GET /api/page/:id?profile=` (API-407). The endpoint is the
-// critical path: it integrates a Suwayomi page fetch → image processing → the
-// session cache (RFC §5/§6). All three are mocked at their port boundaries
-// (CLAUDE.md §4) and injected via `createApp`, so this test asserts the wiring,
-// not any concrete adapter:
-//   - profile negotiation: defaults to `raw`, `eink` triggers the eink transform,
-//     anything else → 400.
+// Contract test for `GET /api/manga/:id/cover?profile=` (API-905). Covers are
+// served through the same profile-negotiated, cached image path as chapter
+// pages (RFC §6, CLAUDE.md §6) — what differs is the source (the manga cover,
+// fetched via the new `SuwayomiClient.fetchCover` port capability) and the
+// cache key (`cover:<mangaId>`, deliberately distinct from the
+// `<chapterId>:<index>` page ids so it can't collide). All three ports are
+// mocked at their boundaries (CLAUDE.md §4) and injected via `createApp`, so
+// this asserts the wiring, not any concrete adapter:
+//   - profile negotiation: defaults to `raw`, `eink` triggers the eink
+//     transform, anything else → 400.
 //   - cache miss → fetch + process + store; cache hit → served without refetch.
-//   - unknown page → 404.
-// Unlike the metadata endpoints, a page response is the image *bytes* with the
-// processed content-type, not a JSON envelope. The route is implemented in
-// API-408 — these assertions stay red until then.
+//   - unknown manga → 404; upstream failure → 502.
+// Like the page endpoint, the response is the image *bytes* with the processed
+// content-type, not a JSON envelope. The route + the adapter's `fetchCover`
+// land in API-906 — these assertions stay red until then.
 
-// Page ids are `<chapterId>:<index>` (0-based), as minted by the chapter
-// page-list endpoint (API-401/402). The route must split that back into a
-// PageRef before calling the Suwayomi client.
-const PAGE_ID = "77:0";
-const PAGE_REF: PageRef = { chapterId: "77", pageIndex: 0 };
+const MANGA_ID = "42";
+// Cover keys are namespaced so they can never collide with page ids
+// ("<chapterId>:<index>").
+const COVER_KEY = "cover:42";
 
 const SOURCE: RawPage = {
-  bytes: Buffer.from("raw-source-bytes"),
+  bytes: Buffer.from("raw-cover-bytes"),
   contentType: "image/jpeg",
 };
 
-// Distinct bytes/type so we can prove the *processed* output is what gets served,
-// not the raw source.
+// Distinct bytes/type so we can prove the *processed* output is what gets
+// served, not the raw source.
 const PROCESSED: ProcessedImage = {
-  bytes: Buffer.from("processed-output-bytes"),
+  bytes: Buffer.from("processed-cover-bytes"),
   contentType: "image/png",
 };
 
 // superagent has no built-in parser for image/* responses, so collect the raw
-// body into a Buffer ourselves for the byte-level assertions. The response is the
-// underlying readable stream at parse time, though supertest types it as Response.
+// body into a Buffer ourselves for the byte-level assertions.
 function binaryParser(
   res: Response,
   cb: (err: Error | null, body: Buffer) => void,
@@ -64,34 +64,34 @@ function binaryParser(
   stream.on("end", () => cb(null, Buffer.concat(chunks)));
 }
 
-interface PageDeps {
+interface CoverDeps {
   suwayomi: SuwayomiClient;
   imageProcessor: ImageProcessor;
   sessionCache: SessionCache;
-  fetchPage: ReturnType<typeof vi.fn>;
+  fetchCover: ReturnType<typeof vi.fn>;
   process: ReturnType<typeof vi.fn>;
   get: ReturnType<typeof vi.fn>;
   set: ReturnType<typeof vi.fn>;
 }
 
 // Builds the three port mocks. `cached` is what the session cache serves on
-// lookup (undefined = miss); `fetchError` makes the Suwayomi fetch reject.
+// lookup (undefined = miss); `fetchError` makes the cover fetch reject.
 function buildDeps(options: {
   cached?: CachedPage;
   source?: RawPage;
   fetchError?: unknown;
   processed?: ProcessedImage;
-}): PageDeps {
+}): CoverDeps {
   const get = vi.fn(
-    (_pageId: string, _profile: ImageProfile): CachedPage | undefined =>
+    (_key: string, _profile: ImageProfile): CachedPage | undefined =>
       options.cached,
   );
   const set = vi.fn(
-    (_pageId: string, _profile: ImageProfile, _page: CachedPage): void => {},
+    (_key: string, _profile: ImageProfile, _page: CachedPage): void => {},
   );
   const sessionCache: SessionCache = { get, set };
 
-  const fetchPage = vi.fn(async (_ref: PageRef): Promise<RawPage> => {
+  const fetchCover = vi.fn(async (_mangaId: string): Promise<RawPage> => {
     if (options.fetchError !== undefined) {
       throw options.fetchError;
     }
@@ -107,8 +107,8 @@ function buildDeps(options: {
     listChapters: unexpected,
     fetchChapters: unexpected,
     getChapterPageCount: unexpected,
-    fetchPage,
-    fetchCover: unexpected,
+    fetchPage: unexpected,
+    fetchCover,
   };
 
   const process = vi.fn(
@@ -123,14 +123,14 @@ function buildDeps(options: {
     suwayomi,
     imageProcessor,
     sessionCache,
-    fetchPage,
+    fetchCover,
     process,
     get,
     set,
   };
 }
 
-function appFrom(deps: PageDeps) {
+function appFrom(deps: CoverDeps) {
   return createApp({
     suwayomi: deps.suwayomi,
     imageProcessor: deps.imageProcessor,
@@ -138,12 +138,12 @@ function appFrom(deps: PageDeps) {
   });
 }
 
-describe("GET /api/page/:id", () => {
+describe("GET /api/manga/:id/cover", () => {
   it("defaults to the raw profile and serves the processed bytes on a cache miss", async () => {
     const deps = buildDeps({ cached: undefined });
 
     const res = await request(appFrom(deps))
-      .get(`/api/page/${PAGE_ID}`)
+      .get(`/api/manga/${MANGA_ID}/cover`)
       .buffer(true)
       .parse(binaryParser);
 
@@ -153,38 +153,39 @@ describe("GET /api/page/:id", () => {
     expect(res.body.equals(PROCESSED.bytes)).toBe(true);
     expect(res.headers["content-type"]).toContain(PROCESSED.contentType);
 
-    // Miss → looked up under the default `raw` profile, fetched, processed, stored.
-    expect(deps.get).toHaveBeenCalledWith(PAGE_ID, "raw");
-    expect(deps.fetchPage).toHaveBeenCalledWith(PAGE_REF);
+    // Miss → looked up under the default `raw` profile against the namespaced
+    // cover key, fetched, processed, stored.
+    expect(deps.get).toHaveBeenCalledWith(COVER_KEY, "raw");
+    expect(deps.fetchCover).toHaveBeenCalledWith(MANGA_ID);
     expect(deps.process).toHaveBeenCalledWith(SOURCE, "raw");
-    expect(deps.set).toHaveBeenCalledWith(PAGE_ID, "raw", PROCESSED);
+    expect(deps.set).toHaveBeenCalledWith(COVER_KEY, "raw", PROCESSED);
   });
 
   it("runs the eink transform and keys the cache by the eink profile", async () => {
     const deps = buildDeps({ cached: undefined });
 
     const res = await request(appFrom(deps))
-      .get(`/api/page/${PAGE_ID}?profile=eink`)
+      .get(`/api/manga/${MANGA_ID}/cover?profile=eink`)
       .buffer(true)
       .parse(binaryParser);
 
     expect(res.status).toBe(200);
     expect(res.body.equals(PROCESSED.bytes)).toBe(true);
 
-    expect(deps.get).toHaveBeenCalledWith(PAGE_ID, "eink");
+    expect(deps.get).toHaveBeenCalledWith(COVER_KEY, "eink");
     expect(deps.process).toHaveBeenCalledWith(SOURCE, "eink");
-    expect(deps.set).toHaveBeenCalledWith(PAGE_ID, "eink", PROCESSED);
+    expect(deps.set).toHaveBeenCalledWith(COVER_KEY, "eink", PROCESSED);
   });
 
   it("serves a cache hit without refetching or reprocessing", async () => {
     const hit: CachedPage = {
-      bytes: Buffer.from("cached-bytes"),
+      bytes: Buffer.from("cached-cover-bytes"),
       contentType: "image/png",
     };
     const deps = buildDeps({ cached: hit });
 
     const res = await request(appFrom(deps))
-      .get(`/api/page/${PAGE_ID}`)
+      .get(`/api/manga/${MANGA_ID}/cover`)
       .buffer(true)
       .parse(binaryParser);
 
@@ -193,8 +194,8 @@ describe("GET /api/page/:id", () => {
     expect(res.headers["content-type"]).toContain(hit.contentType);
 
     // A hit must short-circuit the upstream entirely.
-    expect(deps.get).toHaveBeenCalledWith(PAGE_ID, "raw");
-    expect(deps.fetchPage).not.toHaveBeenCalled();
+    expect(deps.get).toHaveBeenCalledWith(COVER_KEY, "raw");
+    expect(deps.fetchCover).not.toHaveBeenCalled();
     expect(deps.process).not.toHaveBeenCalled();
     expect(deps.set).not.toHaveBeenCalled();
   });
@@ -203,7 +204,7 @@ describe("GET /api/page/:id", () => {
     const deps = buildDeps({ cached: undefined });
 
     const res = await request(appFrom(deps)).get(
-      `/api/page/${PAGE_ID}?profile=sepia`,
+      `/api/manga/${MANGA_ID}/cover?profile=sepia`,
     );
 
     expect(res.status).toBe(400);
@@ -212,24 +213,21 @@ describe("GET /api/page/:id", () => {
     });
     // Rejected at the edge — nothing downstream is touched.
     expect(deps.get).not.toHaveBeenCalled();
-    expect(deps.fetchPage).not.toHaveBeenCalled();
+    expect(deps.fetchCover).not.toHaveBeenCalled();
     expect(deps.process).not.toHaveBeenCalled();
   });
 
-  it("returns the 404 error envelope when the page is unknown", async () => {
+  it("returns the 404 error envelope when the manga is unknown", async () => {
     const deps = buildDeps({
       cached: undefined,
-      fetchError: new NotFoundError("Page not found"),
+      fetchError: new NotFoundError("Manga not found"),
     });
 
-    const res = await request(appFrom(deps)).get("/api/page/999:0");
+    const res = await request(appFrom(deps)).get("/api/manga/999/cover");
 
     // Asserting the fetch was reached keeps this red until the route exists —
     // the generic 404 fallback never touches the Suwayomi client.
-    expect(deps.fetchPage).toHaveBeenCalledWith({
-      chapterId: "999",
-      pageIndex: 0,
-    });
+    expect(deps.fetchCover).toHaveBeenCalledWith("999");
     expect(res.status).toBe(404);
     expect(res.body).toEqual({
       error: { code: "NOT_FOUND", message: expect.any(String) },
@@ -242,7 +240,9 @@ describe("GET /api/page/:id", () => {
       fetchError: new SuwayomiError(),
     });
 
-    const res = await request(appFrom(deps)).get(`/api/page/${PAGE_ID}`);
+    const res = await request(appFrom(deps)).get(
+      `/api/manga/${MANGA_ID}/cover`,
+    );
 
     expect(res.status).toBe(502);
     expect(res.body).toEqual({

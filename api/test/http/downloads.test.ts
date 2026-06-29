@@ -147,6 +147,7 @@ function buildDeps(options: DepsOptions = {}) {
     fetchChapters: unexpected,
     getChapterPageCount,
     fetchPage,
+    fetchCover: unexpected,
   };
 
   // process echoes the source bytes (tagged) so the built page order is checkable.

@@ -231,6 +231,12 @@ export class SuwayomiGraphQLClient implements SuwayomiClient {
     return this.fetchBytes(this.resolveUrl(url));
   }
 
+  // Stub pending the real GraphQL/thumbnail-fetch implementation in API-906;
+  // the cover endpoint isn't wired yet, so this is never reached.
+  async fetchCover(_mangaId: string): Promise<RawPage> {
+    throw new Error("fetchCover not implemented (API-906)");
+  }
+
   // Single source of a chapter's pages — both the count and individual fetches
   // derive from its `pages` array (CLAUDE.md §13). An unknown chapter comes back
   // as a "Collection is empty." error, mapped to 404 not 502 (live, API-402).

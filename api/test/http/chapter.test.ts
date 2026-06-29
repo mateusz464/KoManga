@@ -41,6 +41,7 @@ function clientWithPageCount(options: {
     fetchChapters: unexpected,
     getChapterPageCount,
     fetchPage: unexpected,
+    fetchCover: unexpected,
   };
   return { suwayomi, getChapterPageCount };
 }

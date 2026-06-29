@@ -33,6 +33,7 @@ function clientSearching(result: SearchResult): {
     fetchChapters: unexpected,
     getChapterPageCount: unexpected,
     fetchPage: unexpected,
+    fetchCover: unexpected,
   };
   return { suwayomi, search };
 }
@@ -51,6 +52,7 @@ function clientFailing(error: unknown): SuwayomiClient {
     fetchChapters: unexpected,
     getChapterPageCount: unexpected,
     fetchPage: unexpected,
+    fetchCover: unexpected,
   };
 }
 

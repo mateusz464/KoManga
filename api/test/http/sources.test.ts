@@ -31,6 +31,7 @@ function clientListing(sources: Source[]): {
     fetchChapters: unexpected,
     getChapterPageCount: unexpected,
     fetchPage: unexpected,
+    fetchCover: unexpected,
   };
   return { suwayomi, listSources };
 }
@@ -49,6 +50,7 @@ function clientFailing(error: unknown): SuwayomiClient {
     fetchChapters: unexpected,
     getChapterPageCount: unexpected,
     fetchPage: unexpected,
+    fetchCover: unexpected,
   };
 }
 

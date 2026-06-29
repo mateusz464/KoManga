@@ -15,5 +15,6 @@ export function stubSuwayomi(): SuwayomiClient {
     fetchChapters: unexpected,
     getChapterPageCount: unexpected,
     fetchPage: unexpected,
+    fetchCover: unexpected,
   };
 }

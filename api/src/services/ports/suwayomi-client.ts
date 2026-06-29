@@ -78,6 +78,15 @@ export interface SuwayomiClient {
   /** Page count only (no image data); rejects {@link NotFoundError} on unknown id. */
   getChapterPageCount(chapterId: string): Promise<number>;
   fetchPage(ref: PageRef): Promise<RawPage>;
+  /**
+   * Fetches the manga's cover image bytes from Suwayomi. Mirrors
+   * {@link fetchPage} — the raw thumbnail (a Suwayomi-internal URL clients can't
+   * reach) is resolved server-side so covers can be served through the same
+   * profile-negotiated, cached image path as chapter pages (RFC §6). Unknown
+   * manga rejects {@link NotFoundError}; upstream failures reject
+   * {@link SuwayomiError}.
+   */
+  fetchCover(mangaId: string): Promise<RawPage>;
 }
 
 /**
