@@ -12,10 +12,12 @@ local ApiClient = require("api/client")
 local Browse = require("state/browse")
 local Details = require("state/details")
 local Covers = require("state/covers")
+local Reader = require("state/reader")
 local Config = require("config")
 local CredentialPrompt = require("ui/credential_prompt")
 local SourceBrowser = require("ui/source_browser")
 local MangaDetails = require("ui/manga_details")
+local ReaderLauncher = require("ui/reader_launcher")
 local _ = require("gettext")
 
 local Komanga = WidgetContainer:extend{
@@ -92,19 +94,37 @@ end
 -- fresh Details per visit; the screen drives it through net (wifi-gated,
 -- non-blocking) and kicks the loads once the widget is on screen.
 function Komanga:showDetails(manga)
+    local details_state = Details.new(self.api, manga.id)
     local details
     details = MangaDetails:new{
-        details = Details.new(self.api, manga.id),
+        details = details_state,
         covers = Covers.new(self.api, { window = Config.cover_prefetch_window }),
         manga_stub = manga,
         net = self.net,
         auth = self.auth,
+        open_reader = function(chapter)
+            self:openReader(details_state, chapter)
+        end,
         close_callback = function()
             UIManager:close(details)
         end,
     }
     UIManager:show(details)
     details:start()
+end
+
+-- Open a chapter in KOReader's native reader (KRP-502). A fresh Reader per chapter;
+-- the launcher drives it through net (wifi-gated, non-blocking) and honours the
+-- manga's reading direction (RTL/LTR) from the loaded details.
+function Komanga:openReader(details_state, chapter)
+    ReaderLauncher.open{
+        reader = Reader.new(self.api, details_state:getMangaId(), chapter.id),
+        chapter_id = chapter.id,
+        rtl = details_state:getReadingDirection() == "rtl",
+        net = self.net,
+        api = self.api,
+        auth = self.auth,
+    }
 end
 
 return Komanga

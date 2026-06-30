@@ -33,6 +33,7 @@ local MangaDetails = Menu:extend{
     net = nil,        -- net.lua wrapper (the single network path)
     auth = nil,       -- state/auth.lua (optional — routes a 401 to the prompt)
     manga_stub = nil, -- the search-result row (title for the header before load)
+    open_reader = nil, -- function(chapter): opens the chapter in the reader (KRP-502)
 }
 
 function MangaDetails:init()
@@ -236,12 +237,13 @@ function MangaDetails:render()
     self:switchItemTable(title, item_table)
 end
 
--- Opening a chapter in KOReader's reader is KRP-502; this is a placeholder so the
--- row is not a dead tap before then.
+-- Open the tapped chapter in KOReader's native reader (KRP-502). The collaborator
+-- construction (Reader state + the launcher) lives in main.lua; this just hands off
+-- the chapter so no business logic leaks into the view (CLAUDE.md §5).
 function MangaDetails:openChapter(chapter)
-    UIManager:show(InfoMessage:new{
-        text = T(_("“%1” — reading lands in a later ticket."), chapter_label(chapter)),
-    })
+    if self.open_reader then
+        self.open_reader(chapter)
+    end
 end
 
 -- Keep the menu open on a tap and run the row's action (the default would close the

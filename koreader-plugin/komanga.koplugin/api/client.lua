@@ -215,4 +215,17 @@ function ApiClient:fetchCover(mangaId)
     return response.body, nil
 end
 
+-- Fetch a chapter's built eink CBZ bytes (KRP-502). Like fetchCover, this endpoint
+-- serves the archive directly, not the { data } envelope, so it reads
+-- response.body through the shared transport/auth/error stage (a missing build →
+-- an ordinary error). KRP-502 writes the bytes to the downloads dir and hands the
+-- file to ReaderUI. The URL is the eink-only cbzUrl builder (§6).
+function ApiClient:fetchChapterCbz(chapterId)
+    local response, err = self:_send("GET", self:cbzUrl(chapterId))
+    if not response then
+        return nil, err
+    end
+    return response.body, nil
+end
+
 return ApiClient
