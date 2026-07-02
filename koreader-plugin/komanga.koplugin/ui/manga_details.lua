@@ -14,6 +14,7 @@ local Menu = require("ui/widget/menu")
 local InfoMessage = require("ui/widget/infomessage")
 local UIManager = require("ui/uimanager")
 local CoverThumbnail = require("ui/cover_thumbnail")
+local ErrorText = require("ui/errors")
 local T = require("ffi/util").template
 local _ = require("gettext")
 
@@ -41,24 +42,6 @@ function MangaDetails:init()
     Menu.init(self)
 end
 
--- Turn the api/client.lua typed error into a single on-panel line (CLAUDE.md §9:
--- never leave the panel blank — every failure gets a visible state).
-local function err_text(err)
-    if not err then
-        return _("Something went wrong.")
-    elseif err.kind == "http" then
-        if err.status == 401 then
-            return _("Not authorised — check your credential.")
-        end
-        return T(_("Server error (%1)."), tostring(err.status or "?"))
-    elseif err.kind == "transport" then
-        return _("Network error — is Wi-Fi on?")
-    elseif err.kind == "decode" then
-        return _("Unexpected response from the server.")
-    end
-    return _("Something went wrong.")
-end
-
 -- A 401 routes back to credential entry (CLAUDE.md §6, KRP-303/304); any other
 -- error is shown in place. Returns true if the error was handled here.
 function MangaDetails:handleError(err)
@@ -71,7 +54,7 @@ function MangaDetails:handleError(err)
     if self.auth and self.auth:handleError(err) then
         return true
     end
-    UIManager:show(InfoMessage:new{ text = err_text(err) })
+    UIManager:show(InfoMessage:new{ text = ErrorText.text(err) })
     return true
 end
 

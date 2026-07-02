@@ -15,8 +15,8 @@ local DocSettings = require("docsettings")
 local DataStorage = require("datastorage")
 local InfoMessage = require("ui/widget/infomessage")
 local UIManager = require("ui/uimanager")
+local Retry = require("ui/retry")
 local util = require("util")
-local T = require("ffi/util").template
 local _ = require("gettext")
 
 local ReaderLauncher = {}
@@ -35,41 +35,9 @@ local function cbz_path(chapterId)
     return downloads_dir() .. "/" .. name .. ".cbz"
 end
 
--- Turn the api/client.lua typed error into one on-panel line (CLAUDE.md §9: never a
--- blank panel — every failure gets a visible state).
-local function err_text(err)
-    if not err then
-        return _("Something went wrong.")
-    elseif err.kind == "http" then
-        if err.status == 401 then
-            return _("Not authorised — check your credential.")
-        end
-        return T(_("Server error (%1)."), tostring(err.status or "?"))
-    elseif err.kind == "transport" then
-        return _("Network error — is Wi-Fi on?")
-    elseif err.kind == "decode" then
-        return _("Unexpected response from the server.")
-    elseif err.kind == "build" then
-        return _("This chapter could not be prepared for reading.")
-    end
-    return _("Something went wrong.")
-end
-
--- A 401 routes back to credential entry (CLAUDE.md §6, KRP-303/304); a user-dismissed
--- loading dialog leaves the panel as-is; any other error is shown in place.
-local function handle_error(err, auth)
-    if not err or err.kind == "cancelled" then
-        return
-    end
-    if auth and auth:handleError(err) then
-        return
-    end
-    UIManager:show(InfoMessage:new{ text = err_text(err) })
-end
-
 -- Record reader display settings into the document's settings sidecar before
 -- opening, so KOReader's reader picks them up at load (it reads these from the doc
--- config on open). Two settings:
+-- config on open), plus the KoManga chapter identity for the in-reader menu:
 --   * inverse_reading_order — RTL → invert page-turn order; LTR written explicitly
 --     so it's deterministic rather than inheriting the global default.
 --   * zoom_mode "page" — fit the WHOLE page within the panel. KOReader's default is
@@ -80,11 +48,19 @@ end
 --     continuous (scroll) mode, which stacks pages vertically so the tail of one
 --     page and the head of the next share the screen. 0 = one page per screen,
 --     which is what a manga reader wants (KM-99).
-local function apply_reader_settings(path, rtl)
-    local doc_settings = DocSettings:open(path)
-    doc_settings:saveSetting("inverse_reading_order", rtl == true)
+local function apply_reader_settings(opts)
+    local doc_settings = DocSettings:open(opts.path)
+    doc_settings:saveSetting("inverse_reading_order", opts.rtl == true)
     doc_settings:saveSetting("zoom_mode", "page")
     doc_settings:saveSetting("kopt_page_scroll", 0)
+    -- Stash the KoManga chapter identity so the in-reader menu (ui/reader_menu.lua,
+    -- KRP-506) can offer chapter actions for this document, and so it still knows
+    -- the chapter when the CBZ is reopened later from the file manager. Written to
+    -- the sidecar KOReader reads at open (same mechanism as the display settings).
+    doc_settings:saveSetting("komanga_chapter_id", opts.chapter_id)
+    if opts.manga_id ~= nil then
+        doc_settings:saveSetting("komanga_manga_id", opts.manga_id)
+    end
     doc_settings:flush()
 end
 
@@ -96,42 +72,58 @@ end
 -- silently never opens (KRP-502 bug fix).
 local function download_and_open(opts)
     local path = cbz_path(opts.chapter_id)
-    opts.net:run(function()
-        return opts.api:downloadChapterCbzToFile(opts.chapter_id, path)
-    end, {
+    -- Step 2: download the built CBZ to disk, then open the reader. Retry.run gives
+    -- the loading/retry state (KRP-506): a slow download shows a dismissable dialog,
+    -- a transient failure offers Retry rather than dead-ending on a blank panel.
+    Retry.run{
+        net = opts.net,
+        auth = opts.auth,
         text = _("Downloading chapter…"),
-        on_result = function(saved_path, err)
-            if err then
-                handle_error(err, opts.auth)
-                return
-            end
+        task = function()
+            return opts.api:downloadChapterCbzToFile(opts.chapter_id, path)
+        end,
+        on_success = function(saved_path)
             if not saved_path then
                 UIManager:show(InfoMessage:new{ text = _("Could not save the chapter.") })
                 return
             end
-
-            apply_reader_settings(saved_path, opts.rtl)
+            apply_reader_settings{
+                path = saved_path,
+                rtl = opts.rtl,
+                chapter_id = opts.chapter_id,
+                manga_id = opts.manga_id,
+            }
             ReaderUI:showReader(saved_path)
         end,
-    })
+    }
 end
 
 -- Open a chapter in KOReader's native reader.
---   opts = { reader, chapter_id, rtl, net, api, auth? }
+--   opts = { reader, chapter_id, manga_id, rtl, net, api, auth? }
 -- `reader` is a state/reader.lua instance; `rtl` true for right-to-left manga.
 function ReaderLauncher.open(opts)
     local reader = opts.reader
     -- Step 1: acquire the eink build (POST download). The blocking call runs
-    -- off-thread in net.lua's fork; the record is applied here in the parent.
-    opts.net:run(function()
-        return reader:fetchDownload()
-    end, {
+    -- off-thread in net.lua's fork; the record is applied here in the parent. A
+    -- `failed` build comes back as a 2xx record, so it is surfaced as a retryable
+    -- build error through the task's (data, err) contract — Retry then offers a
+    -- re-attempt uniformly instead of a dead end (KRP-506).
+    Retry.run{
+        net = opts.net,
+        auth = opts.auth,
         text = _("Preparing chapter…"),
-        on_result = function(data, err)
-            if not reader:applyDownload(data, err) then
-                handle_error(reader:getError(), opts.auth)
-                return
+        task = function()
+            local data, err = reader:fetchDownload()
+            if err then
+                return nil, err
             end
+            if data and data.status == "failed" then
+                return nil, { kind = "build", status = "failed" }
+            end
+            return data, nil
+        end,
+        on_success = function(data)
+            reader:applyDownload(data, nil)
             if not reader:isReady() then
                 -- The server builds synchronously today, so a non-completed status
                 -- is a safety net rather than an expected path.
@@ -142,7 +134,7 @@ function ReaderLauncher.open(opts)
             end
             download_and_open(opts)
         end,
-    })
+    }
 end
 
 return ReaderLauncher

@@ -18,6 +18,7 @@ local CredentialPrompt = require("ui/credential_prompt")
 local SourceBrowser = require("ui/source_browser")
 local MangaDetails = require("ui/manga_details")
 local ReaderLauncher = require("ui/reader_launcher")
+local ReaderMenu = require("ui/reader_menu")
 local _ = require("gettext")
 
 local Komanga = WidgetContainer:extend{
@@ -48,6 +49,25 @@ function Komanga:init()
 end
 
 function Komanga:addToMainMenu(menu_items)
+    -- Reader context (a document is open): offer the in-reader chapter menu instead
+    -- of Browse. The same plugin loads in both the file manager and the reader
+    -- (is_doc_only = false); self.ui is the ReaderUI here and carries the open
+    -- document. The menu is built only for a KoManga chapter (nil otherwise), and
+    -- attached to KOReader's own reader menu so opening/closing it never disturbs the
+    -- reading position (KRP-506).
+    if self.ui and self.ui.document then
+        local entry = ReaderMenu.build{
+            ui = self.ui,
+            net = self.net,
+            api = self.api,
+            auth = self.auth,
+        }
+        if entry then
+            menu_items.komanga = entry
+        end
+        return
+    end
+
     menu_items.komanga = {
         text = _("KoManga"),
         sub_item_table = {
@@ -120,6 +140,7 @@ function Komanga:openReader(details_state, chapter)
     ReaderLauncher.open{
         reader = Reader.new(self.api, details_state:getMangaId(), chapter.id),
         chapter_id = chapter.id,
+        manga_id = details_state:getMangaId(),
         rtl = details_state:getReadingDirection() == "rtl",
         net = self.net,
         api = self.api,
