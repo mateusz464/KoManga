@@ -249,6 +249,7 @@ The web-client epic (`web-client/`) runs in the Kobo's Nickel browser. The devic
 **Estimate:** L
 
 ### KRP-504 — [TEST] On-demand streaming / prefetch window (logic)
+**Status:** Done
 **Description:** Tests for the "read without downloading the whole chapter" refinement: stream pages within a bounded, configurable window so the next page is ready on turn; already-fetched pages need no refetch.
 **Acceptance criteria:**
 - Viewing page N triggers fetch of the next page(s) within the window.
