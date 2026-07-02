@@ -41,6 +41,12 @@ end
 
 -- Runtime transport: a real HTTP round-trip via luasocket. Lazily required so the
 -- module imports cleanly under busted (specs inject their own transport).
+--
+-- When request.sink_path is set the body is streamed straight to that file (an
+-- ltn12 file sink) instead of accumulated in memory, so an arbitrarily large
+-- download never lives in a Lua string — essential for chapter CBZs, which are
+-- tens of MB and would OOM the device if buffered and marshalled (KRP-502). In
+-- that mode response.body is nil (the bytes are on disk, not returned).
 local function default_transport(request)
     local ltn12 = require("ltn12")
     local headers = {}
@@ -50,19 +56,32 @@ local function default_transport(request)
     if request.body then
         headers["Content-Length"] = tostring(#request.body)
     end
-    local chunks = {}
+
+    local chunks, sink
+    if request.sink_path then
+        local file, open_err = io.open(request.sink_path, "wb")
+        if not file then
+            return nil, "cannot open sink file: " .. tostring(open_err)
+        end
+        -- ltn12.sink.file closes the handle when the stream ends (or on error).
+        sink = ltn12.sink.file(file)
+    else
+        chunks = {}
+        sink = ltn12.sink.table(chunks)
+    end
+
     local http = request.url:match("^https") and require("ssl.https") or require("socket.http")
     local ok, code = http.request({
         method = request.method,
         url = request.url,
         headers = headers,
         source = request.body and ltn12.source.string(request.body) or nil,
-        sink = ltn12.sink.table(chunks),
+        sink = sink,
     })
     if not ok then
         return nil, tostring(code)
     end
-    return { status = code, body = table.concat(chunks), headers = {} }
+    return { status = code, body = chunks and table.concat(chunks) or nil, headers = {} }
 end
 
 -- opts = { base_url, get_credential = function() -> credential|nil, transport? }.
@@ -78,8 +97,10 @@ end
 -- transport failure / non-2xx. This is the shared transport+auth+error stage every
 -- method goes through; `_request` decodes the JSON envelope on top of it, while raw
 -- byte endpoints (covers, KRP-406) read response.body directly. `body` is a
--- pre-encoded request body; `extra_headers` carries e.g. Content-Type.
-function ApiClient:_send(method, url, body, extra_headers)
+-- pre-encoded request body; `extra_headers` carries e.g. Content-Type;
+-- `sink_path`, when set, streams the response body to that file instead of
+-- buffering it (large downloads — KRP-502), leaving response.body nil.
+function ApiClient:_send(method, url, body, extra_headers, sink_path)
     local headers = {}
     if extra_headers then
         for k, v in pairs(extra_headers) do
@@ -97,6 +118,7 @@ function ApiClient:_send(method, url, body, extra_headers)
         url = url,
         headers = headers,
         body = body,
+        sink_path = sink_path,
     })
     if not response then
         return nil, { kind = "transport", message = transport_err or "transport failure" }
@@ -215,17 +237,22 @@ function ApiClient:fetchCover(mangaId)
     return response.body, nil
 end
 
--- Fetch a chapter's built eink CBZ bytes (KRP-502). Like fetchCover, this endpoint
--- serves the archive directly, not the { data } envelope, so it reads
--- response.body through the shared transport/auth/error stage (a missing build →
--- an ordinary error). KRP-502 writes the bytes to the downloads dir and hands the
--- file to ReaderUI. The URL is the eink-only cbzUrl builder (§6).
-function ApiClient:fetchChapterCbz(chapterId)
-    local response, err = self:_send("GET", self:cbzUrl(chapterId))
+-- Download a chapter's built eink CBZ (KRP-502) straight to `destPath`, returning
+-- (destPath, nil) on success or (nil, err). Unlike fetchCover, a chapter CBZ is far
+-- too large to return as a string: reader_launcher runs this inside net.lua's forked
+-- subprocess, and marshalling tens of MB back through the pipe OOMs the device
+-- (the child's buffer.encode fails → caller gets nil → the reader never opens).
+-- Streaming to a file (sink_path) keeps the bytes on disk the whole way; only the
+-- small path crosses the pipe, and the parent hands that file to ReaderUI. A
+-- failure removes any partial file so a retry starts clean. URL is the eink-only
+-- cbzUrl builder (§6).
+function ApiClient:downloadChapterCbzToFile(chapterId, destPath)
+    local response, err = self:_send("GET", self:cbzUrl(chapterId), nil, nil, destPath)
     if not response then
+        os.remove(destPath)
         return nil, err
     end
-    return response.body, nil
+    return destPath, nil
 end
 
 return ApiClient

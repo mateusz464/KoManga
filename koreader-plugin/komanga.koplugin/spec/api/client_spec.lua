@@ -309,6 +309,64 @@ describe("ApiClient", function()
         end)
     end)
 
+    describe("chapter CBZ (streamed to file)", function()
+        -- A built chapter CBZ is far too large to marshal back through net.lua's
+        -- forked subprocess (serialising ~tens of MB OOMs a Kobo — the child's
+        -- buffer.encode fails and the caller gets nil). So the client streams the
+        -- response body straight to a file on disk (sink_path) inside the
+        -- subprocess and returns only the path; nothing large crosses the pipe.
+        local DEST = "/tmp/komanga-test/ch9.cbz"
+
+        it("GETs the eink cbzUrl and sinks the body to the given path", function()
+            local client, rec = make(function()
+                return { status = 200, body = nil, headers = {} }
+            end)
+            client:downloadChapterCbzToFile("ch9", DEST)
+
+            local req = sole(rec)
+            assert.are.equal("GET", req.method)
+            assert.are.equal(BASE .. "/api/downloads/ch9", req.url)
+            -- The transport is told where to sink; the body never comes back as a string.
+            assert.are.equal(DEST, req.sink_path)
+        end)
+
+        it("returns the destination path (not bytes) on success", function()
+            local client = make(function()
+                return { status = 200, body = nil, headers = {} }
+            end)
+            local path, err = client:downloadChapterCbzToFile("ch9", DEST)
+
+            assert.is_nil(err)
+            assert.are.equal(DEST, path)
+        end)
+
+        it("attaches the Bearer credential like every other call", function()
+            local client, rec = make(function()
+                return { status = 200, body = nil, headers = {} }
+            end)
+            client:downloadChapterCbzToFile("ch9", DEST)
+
+            assert.are.equal("Bearer " .. TOKEN, sole(rec).headers["Authorization"])
+        end)
+
+        it("maps a missing build (404) to an http error", function()
+            local client = make(FakeTransport.httpError(404, "NOT_FOUND", "No download"))
+            local path, err = client:downloadChapterCbzToFile("ch9", DEST)
+
+            assert.is_nil(path)
+            assert.are.equal("http", err.kind)
+            assert.are.equal(404, err.status)
+        end)
+
+        it("maps a transport failure to a transport error", function()
+            local client = make(FakeTransport.failing("network is unreachable"))
+            local path, err = client:downloadChapterCbzToFile("ch9", DEST)
+
+            assert.is_nil(path)
+            assert.are.equal("transport", err.kind)
+        end)
+    end)
+
     describe("envelope unwrap", function()
         it("returns the data field, not the wrapper", function()
             local client = make(function()

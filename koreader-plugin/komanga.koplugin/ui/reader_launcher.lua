@@ -1,6 +1,6 @@
 -- KRP-502 — Open chapter in KOReader's reader (glue). Takes an acquired chapter
 -- from state/reader.lua (KRP-501) all the way into KOReader's native CBZ reader:
--- acquire the eink build, download its bytes, write them to the plugin's downloads
+-- acquire the eink build, stream its bytes to a file in the plugin's downloads
 -- dir, honour the manga's reading direction (RTL/LTR), then hand the file to
 -- ReaderUI:showReader. All KOReader-API coupling (ReaderUI, DocSettings,
 -- DataStorage, the filesystem) is confined here so state/ stays pure (CLAUDE.md
@@ -8,8 +8,8 @@
 --
 -- Two sequential net calls mirror the two-step server contract: POST the download
 -- (the slow side — the server fetches + processes + builds the CBZ) then GET the
--- stored bytes. The fetch/apply split is kept so the blocking call runs in net.lua's
--- forked sub-process and the result is applied in the parent (KRP-305).
+-- stored CBZ, streamed to a file. Both run in net.lua's forked sub-process; only
+-- small results (the record, then the file path) are marshalled back (KRP-305).
 local ReaderUI = require("apps/reader/readerui")
 local DocSettings = require("docsettings")
 local DataStorage = require("datastorage")
@@ -77,28 +77,30 @@ local function apply_reading_direction(path, rtl)
     doc_settings:flush()
 end
 
--- Step 2: download the built CBZ bytes, write them to disk, then open the reader.
+-- Step 2: download the built CBZ to disk, then open the reader. The download
+-- streams straight to `path` inside net.lua's forked subprocess (api streams the
+-- HTTP body to a file sink), so a chapter's tens of MB never cross the subprocess
+-- pipe — only the small path is marshalled back. Returning the bytes instead OOMs
+-- the device: the child's serialisation fails, the caller gets nil, and the reader
+-- silently never opens (KRP-502 bug fix).
 local function download_and_open(opts)
+    local path = cbz_path(opts.chapter_id)
     opts.net:run(function()
-        return opts.api:fetchChapterCbz(opts.chapter_id)
+        return opts.api:downloadChapterCbzToFile(opts.chapter_id, path)
     end, {
         text = _("Downloading chapter…"),
-        on_result = function(bytes, err)
+        on_result = function(saved_path, err)
             if err then
                 handle_error(err, opts.auth)
                 return
             end
-            local path = cbz_path(opts.chapter_id)
-            local file = io.open(path, "wb")
-            if not file then
+            if not saved_path then
                 UIManager:show(InfoMessage:new{ text = _("Could not save the chapter.") })
                 return
             end
-            file:write(bytes)
-            file:close()
 
-            apply_reading_direction(path, opts.rtl)
-            ReaderUI:showReader(path)
+            apply_reading_direction(saved_path, opts.rtl)
+            ReaderUI:showReader(saved_path)
         end,
     })
 end
