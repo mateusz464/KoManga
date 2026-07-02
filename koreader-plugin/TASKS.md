@@ -258,10 +258,12 @@ The web-client epic (`web-client/`) runs in the Kobo's Nickel browser. The devic
 **Estimate:** M
 
 ### KRP-505 — Streaming reader (impl)
+**Status:** Done
 **Description:** Implement bounded streaming satisfying KRP-504 — either a custom paged image viewer (`ImageWidget` + tap zones + `setDirty` refresh) or progressive CBZ assembly handed to `ReaderUI`. Reading direction honoured for page order and tap zones.
 **Acceptance criteria:** All KRP-504 tests pass.
 **Blocked by:** KRP-504, KRP-502.
 **Estimate:** L
+**Outcome:** Implemented `state/prefetch.lua` — the pure, framework-free state satisfying the KRP-504 contract (CLAUDE.md §5 — `state/` is pure, busted-testable; network only via an injected ApiClient). `Prefetch.new(api, page_ids, opts)` owns the two non-UI concerns of the "read without downloading the whole chapter" refinement: (1) **bounded, position-driven prefetch** (CLAUDE.md §8) — `plan(current)` returns the displayed page plus up to `opts.window` pages ahead (default `config.prefetch_window` = 2), clamped to the chapter, in reading order, so the next page is fetched before the turn but the pass never fans out into one request per page; and (2) **no refetch** — a page already `pending`/`ready` is skipped, so advancing only fetches the newly entered page and reading back a cached page costs no round-trip. Unlike a cover (KRP-406) a **failed page is retryable** (not terminal — a manga page can't degrade to text), so `plan` re-picks a failed page on a later pass. Mirrors the other state modules' pure `fetch`/`apply` split (the fetch is what `net.lua` runs in a forked sub-process, KRP-305; `apply` records results parent-side). The public API is **position-based** (1-based page numbers the reader knows — `plan`/`getBytes`/`isReady`/`isFailed`/`pageCount`); internally a position maps to the chapter's page id, which is what `api:fetchPage(id)` fetches (wire shape mirrors `fetchCover`). Page bytes stay opaque — decoding + the on-panel paged viewer, tap zones, and `setDirty` refresh are the reader's job, validated on-device in **KRP-506** (`[DEVICE]`). **busted 134 successes / 0 failures** (KRP-504's prefetch specs now green against the impl); **luacheck clean — 0/0 across 32 files**.
 
 ### KRP-506 — [DEVICE] In-reader menu & loading/error states
 **Description:** Add the in-reader actions (download-this-chapter, chapter/page jump) and on-device-legible loading/error/retry states for slow or failed page/CBZ fetches, integrated with KOReader's reader without disrupting reading position.
