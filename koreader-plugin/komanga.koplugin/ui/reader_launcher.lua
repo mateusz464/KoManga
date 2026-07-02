@@ -67,13 +67,24 @@ local function handle_error(err, auth)
     UIManager:show(InfoMessage:new{ text = err_text(err) })
 end
 
--- Record the reading direction into the document's settings sidecar before opening,
--- so KOReader's reader picks it up at load (readerview reads inverse_reading_order
--- from the doc config). RTL → invert page-turn order; LTR is written explicitly so
--- it's deterministic rather than inheriting the global default.
-local function apply_reading_direction(path, rtl)
+-- Record reader display settings into the document's settings sidecar before
+-- opening, so KOReader's reader picks them up at load (it reads these from the doc
+-- config on open). Two settings:
+--   * inverse_reading_order — RTL → invert page-turn order; LTR written explicitly
+--     so it's deterministic rather than inheriting the global default.
+--   * zoom_mode "page" — fit the WHOLE page within the panel. KOReader's default is
+--     "pagewidth", which scales a portrait manga page to the panel width and lets
+--     its height overflow off-screen (the top gets cut off). "page" fits both
+--     dimensions, so the entire page is visible with no overflow (KM-99).
+--   * kopt_page_scroll 0 — force paged mode. KOReader defaults CBZ/PDF to
+--     continuous (scroll) mode, which stacks pages vertically so the tail of one
+--     page and the head of the next share the screen. 0 = one page per screen,
+--     which is what a manga reader wants (KM-99).
+local function apply_reader_settings(path, rtl)
     local doc_settings = DocSettings:open(path)
     doc_settings:saveSetting("inverse_reading_order", rtl == true)
+    doc_settings:saveSetting("zoom_mode", "page")
+    doc_settings:saveSetting("kopt_page_scroll", 0)
     doc_settings:flush()
 end
 
@@ -99,7 +110,7 @@ local function download_and_open(opts)
                 return
             end
 
-            apply_reading_direction(saved_path, opts.rtl)
+            apply_reader_settings(saved_path, opts.rtl)
             ReaderUI:showReader(saved_path)
         end,
     })
