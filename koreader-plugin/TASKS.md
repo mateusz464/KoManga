@@ -291,12 +291,14 @@ The web-client epic (`web-client/`) runs in the Kobo's Nickel browser. The devic
 > Wire the reader to server-side progress sync and a library/home view.
 
 ### KRP-601 — [TEST] Progress sync (logic)
+**Status:** Done
 **Description:** Tests that turning a page pushes progress to the API (debounced), and that opening a manga resumes from the stored last-read position (last-write-wins). Covers mapping KOReader reader page events ↔ API progress.
 **Acceptance criteria:**
 - Page turns push progress, debounced (not every turn hammering the API).
 - Reopening a manga resumes at the synced position.
 **Blocked by:** KRP-502.
 **Estimate:** M
+**Outcome:** Wrote `spec/state/progress_spec.lua` — the failing contract for `state/progress.lua` (implemented in KRP-602), network mocked at the `api/` boundary via `FakeApi` (CLAUDE.md §4/§5). A `Progress.new(api, mangaId, chapterId, opts)` is scoped to the open chapter and owns the two concerns: (1) **debounced push on page turn** — at-most-one push per `opts.debounce` seconds (default `config.progress_debounce_seconds` = 5): `onPageTurn(readerPage)` pushes on the leading edge and coalesces rapid turns into the LATEST position (last-write-wins), with a driven clock (`opts.now`) exercising the window deterministically; the decision is pure (no network — the caller runs `push(body)` off-thread through `net.lua`, KRP-305), and `flush()` force-syncs the last pending position on the reader-close event. (2) **resume** — `resume()`/`fetchResume`/`applyResume` map the manga's stored progress to a 1-based reader seek page, but only when it belongs to this chapter; a never-read 404 is the empty state (no resume, not an error), a non-404 error is surfaced. Page mapping mirrors `state/reader.lua` + the API port: API `page` is 0-based within the chapter, KOReader's CBZ reader is 1-based (reader page N ↔ api page N-1). **busted 142 successes / 0 failures / 1 error** — the one error is this spec failing on the not-yet-existent `state.progress` (correct red-first for a `[TEST]` ticket, resolved by KRP-602); **luacheck clean**.
 
 ### KRP-602 — Progress sync (impl)
 **Description:** Hook KOReader's reader page-update/close events to push debounced progress and resume on open, satisfying KRP-601.
