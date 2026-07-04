@@ -37,9 +37,10 @@ local function fake_trapper(opts)
 end
 
 -- A fake NetworkMgr: `online` decides whether runWhenOnline runs the callback now
--- (connected) or defers it to the wifi prompt/enable path (offline).
+-- (connected) or defers it to the wifi prompt/enable path (offline). isOnline() backs
+-- the best-effort background path (no prompt).
 local function fake_network_mgr(online)
-    local rec = { gated = 0, ran_callback = false }
+    local rec = { gated = 0, ran_callback = false, online_checks = 0 }
     rec.mgr = {
         runWhenOnline = function(_, callback)
             rec.gated = rec.gated + 1
@@ -49,6 +50,10 @@ local function fake_network_mgr(online)
             end
             -- offline: NetworkMgr would prompt/enable wifi and run later; here we
             -- just record that gating happened and the fetch did NOT run yet.
+        end,
+        isOnline = function()
+            rec.online_checks = rec.online_checks + 1
+            return online
         end,
     }
     return rec
@@ -135,5 +140,41 @@ describe("net (async networking & wifi gating)", function()
         assert.is_false(nm.ran_callback)    -- ... but we're offline,
         assert.is_false(tr.task_ran)        -- ... so the fetch never ran,
         assert.is_false(result_called)      -- ... and nothing failed silently.
+    end)
+
+    describe("background mode (progress sync — KRP-602)", function()
+        it("runs a background call silently (invisible widget, no loading dialog)", function()
+            local tr = fake_trapper()
+            local nm = fake_network_mgr(true)
+            local net = Net.new{ network_mgr = nm.mgr, trapper = tr.trapper }
+
+            local got
+            net:run(function() return { ok = true }, nil end, {
+                background = true,
+                text = "ignored when background",
+                on_result = function(data, err) got = { data = data, err = err } end,
+            })
+
+            assert.is_true(tr.task_ran)
+            assert.is_false(tr.loading_text)   -- no dialog text: invisible Trapper widget
+            assert.are.same({ ok = true }, got.data)
+        end)
+
+        it("does not prompt for wifi when offline — skips best-effort, reports offline", function()
+            local tr = fake_trapper()
+            local nm = fake_network_mgr(false)
+            local net = Net.new{ network_mgr = nm.mgr, trapper = tr.trapper }
+
+            local got
+            net:run(function() return {} end, {
+                background = true,
+                on_result = function(data, err) got = { data = data, err = err } end,
+            })
+
+            assert.are.equal(0, nm.gated)      -- never routes through the wifi prompt,
+            assert.is_false(tr.task_ran)       -- ... the fetch is simply skipped,
+            assert.is_nil(got.data)
+            assert.are.equal("offline", got.err.kind)  -- ... and the caller is told why.
+        end)
     end)
 end)

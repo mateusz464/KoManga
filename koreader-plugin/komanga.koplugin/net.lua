@@ -36,7 +36,8 @@ end
 --             It runs in a forked sub-process (Trapper), so it must not touch the
 --             UI, settings, or wifi — pure fetch + decode only (which is exactly
 --             what api/client.lua does). Its return values are marshalled back.
---   opts    : { text = loading message, on_result = function(data, err) }.
+--   opts    : { text = loading message, on_result = function(data, err),
+--               background = bool }.
 --
 -- Flow: ensure we're online (NetworkMgr prompts/enables wifi if not), then wrap
 -- the fetch in a coroutine showing a dismissable loading dialog. If the user
@@ -44,15 +45,25 @@ end
 -- than leaving the panel blank. on_result always runs through api/client.lua's
 -- (data, err) contract, so callers (and Auth:handleError for 401s) treat a
 -- gated/cancelled call exactly like any other.
+--
+-- `background = true` is the best-effort, unobtrusive variant for calls that fire
+-- silently during another activity — progress sync on page turns (KRP-602): it runs
+-- ONLY when already online (never prompts to enable wifi — an offline turn is just
+-- skipped, on_result gets a { kind = "offline" } error) and behind an INVISIBLE
+-- Trapper widget (no loading dialog flashing on every turn), while still running the
+-- fetch off the UI thread so reading never stutters.
 function Net:run(task, opts)
     opts = opts or {}
-    local loading_text = opts.text or "Loading…"
     local on_result = opts.on_result
+    local background = opts.background == true
+    -- false → an invisible Trapper widget (no dialog); a string → the loading dialog.
+    -- (Not the `and/or` idiom: `false` is falsy, so it would fall through to the text.)
+    local loading_text = opts.text or "Loading…"
+    if background then
+        loading_text = false
+    end
 
-    -- runWhenOnline runs the callback now if already online, otherwise routes
-    -- through NetworkMgr's wifi prompt/enable and runs it once connected — so an
-    -- offline call is never a silent failure.
-    self.network_mgr:runWhenOnline(function()
+    local function fetch()
         self.trapper:wrap(function()
             -- The fetch runs in a sub-process so the UI thread keeps ticking and
             -- the loading dialog stays dismissable; completed is false if the
@@ -69,7 +80,23 @@ function Net:run(task, opts)
                 on_result(data, err)
             end
         end)
-    end)
+    end
+
+    if background then
+        -- Best-effort: only sync when already online; never interrupt reading with a
+        -- wifi prompt. An offline turn is skipped, not a silent failure to the caller.
+        if self.network_mgr:isOnline() then
+            fetch()
+        elseif on_result then
+            on_result(nil, { kind = "offline" })
+        end
+        return
+    end
+
+    -- runWhenOnline runs the callback now if already online, otherwise routes
+    -- through NetworkMgr's wifi prompt/enable and runs it once connected — so an
+    -- offline call is never a silent failure.
+    self.network_mgr:runWhenOnline(fetch)
 end
 
 return Net

@@ -19,6 +19,7 @@ local SourceBrowser = require("ui/source_browser")
 local MangaDetails = require("ui/manga_details")
 local ReaderLauncher = require("ui/reader_launcher")
 local ReaderMenu = require("ui/reader_menu")
+local ProgressSync = require("ui/progress_sync")
 local _ = require("gettext")
 
 local Komanga = WidgetContainer:extend{
@@ -45,7 +46,39 @@ function Komanga:init()
         base_url = self.settings:getApiBaseUrl(),
         get_credential = self.auth:credentialGetter(),
     }
+    -- Reader context (a document is open): sync reading progress to the API off the
+    -- reader's page-update/close events (KRP-602). The plugin is a registered ReaderUI
+    -- module, so those events broadcast to the handlers below; the sync only engages
+    -- for a KoManga chapter (recovered from the DocSettings sidecar on ReaderReady).
+    if self.ui and self.ui.document then
+        self.progress_sync = ProgressSync.new{
+            ui = self.ui,
+            net = self.net,
+            api = self.api,
+        }
+    end
     self.ui.menu:registerToMainMenu(self)
+end
+
+-- Reader events (broadcast to the plugin as a registered ReaderUI module). Each
+-- delegates to the progress sync and returns nothing, so the event keeps propagating
+-- to KOReader's own modules. Guarded so they are inert in the file-manager context.
+function Komanga:onReaderReady(doc_settings)
+    if self.progress_sync then
+        self.progress_sync:onReaderReady(doc_settings)
+    end
+end
+
+function Komanga:onPageUpdate(page)
+    if self.progress_sync then
+        self.progress_sync:onPageTurn(page)
+    end
+end
+
+function Komanga:onCloseDocument()
+    if self.progress_sync then
+        self.progress_sync:onClose()
+    end
 end
 
 function Komanga:addToMainMenu(menu_items)
