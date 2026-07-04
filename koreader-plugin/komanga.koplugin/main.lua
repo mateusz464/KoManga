@@ -5,6 +5,8 @@
 -- builds the collaborators once and hands them to the screens as they land.
 local WidgetContainer = require("ui/widget/container/widgetcontainer")
 local UIManager = require("ui/uimanager")
+local InfoMessage = require("ui/widget/infomessage")
+local ErrorText = require("ui/errors")
 local Settings = require("settings")
 local Auth = require("state/auth")
 local Net = require("net")
@@ -13,10 +15,12 @@ local Browse = require("state/browse")
 local Details = require("state/details")
 local Covers = require("state/covers")
 local Reader = require("state/reader")
+local Library = require("state/library")
 local Config = require("config")
 local CredentialPrompt = require("ui/credential_prompt")
 local SourceBrowser = require("ui/source_browser")
 local MangaDetails = require("ui/manga_details")
+local LibraryView = require("ui/library_view")
 local ReaderLauncher = require("ui/reader_launcher")
 local ReaderMenu = require("ui/reader_menu")
 local ProgressSync = require("ui/progress_sync")
@@ -105,6 +109,12 @@ function Komanga:addToMainMenu(menu_items)
         text = _("KoManga"),
         sub_item_table = {
             {
+                text = _("Library"),
+                callback = function()
+                    self:showLibrary()
+                end,
+            },
+            {
                 text = _("Browse"),
                 callback = function()
                     self:showBrowse()
@@ -118,6 +128,86 @@ function Komanga:addToMainMenu(menu_items)
             },
         },
     }
+end
+
+-- Open the library / home screen (KRP-604): followed manga, continue-reading, and
+-- the downloaded-chapters list. A fresh Library per visit; the screen drives it
+-- through net (wifi-gated, non-blocking) and kicks the loads once it is on screen.
+function Komanga:showLibrary()
+    local library_state = Library.new(self.api)
+    local home
+    home = LibraryView:new{
+        library = library_state,
+        net = self.net,
+        auth = self.auth,
+        continue_reading = function(manga_id)
+            self:continueReading(library_state, manga_id)
+        end,
+        open_download = function(download)
+            self:resumeReader(download.mangaId, download.chapterId)
+        end,
+        close_callback = function()
+            UIManager:close(home)
+        end,
+    }
+    UIManager:show(home)
+    home:start()
+end
+
+-- Resolve a followed manga's last-read position and act on it (KRP-604). A resolved
+-- target jumps into the reader at that chapter (resume-seek happens on open, KRP-602);
+-- a never-read manga has no target, so we open its details so the user can pick a
+-- chapter. The progress lookup runs through net (wifi-gated, non-blocking).
+function Komanga:continueReading(library_state, manga_id)
+    self.net:run(function()
+        return library_state:fetchProgress(manga_id)
+    end, {
+        text = _("Finding your place…"),
+        on_result = function(data, err)
+            local target, resolve_err = Library.continueTarget(data, err)
+            if resolve_err then
+                if resolve_err.kind == "cancelled" then
+                    return
+                end
+                if not self.auth:handleError(resolve_err) then
+                    UIManager:show(InfoMessage:new{ text = ErrorText.text(resolve_err) })
+                end
+                return
+            end
+            if not target then
+                -- Never read yet: open details so the user can start a chapter.
+                self:showDetails({ id = manga_id })
+                return
+            end
+            self:resumeReader(target.mangaId, target.chapterId)
+        end,
+    })
+end
+
+-- Open a specific chapter in the reader (KRP-604) — used by continue-reading and by
+-- opening a downloaded chapter. Reading direction lives in the manga metadata, so we
+-- load it first (through net) to honour RTL/LTR, then hand off to the reader launcher
+-- (which downloads the eink CBZ and opens KOReader's native reader — KRP-502).
+function Komanga:resumeReader(manga_id, chapter_id)
+    local details_state = Details.new(self.api, manga_id)
+    self.net:run(function()
+        return details_state:fetchManga()
+    end, {
+        text = _("Loading chapter…"),
+        on_result = function(data, err)
+            details_state:applyManga(data, err)
+            if err then
+                if err.kind == "cancelled" then
+                    return
+                end
+                if not self.auth:handleError(err) then
+                    UIManager:show(InfoMessage:new{ text = ErrorText.text(err) })
+                end
+                return
+            end
+            self:openReader(details_state, { id = chapter_id })
+        end,
+    })
 end
 
 -- Open the source list & search screen (KRP-402). A fresh Browse per visit so each
