@@ -36,6 +36,7 @@ local LibraryView = Menu:extend{
     auth = nil,             -- state/auth.lua (optional — routes a 401 to the prompt)
     continue_reading = nil, -- function(entry): open a followed manga's continue target (KRP-607)
     open_download = nil,    -- function(download): open a completed downloaded chapter
+    delete_download = nil,  -- function(download): confirm + delete a downloaded chapter (KRP-807)
 }
 
 function LibraryView:init()
@@ -134,6 +135,7 @@ function LibraryView:render()
             item_table[#item_table + 1] = {
                 text = self.library.downloadTitle(download),
                 mandatory = self.library.downloadNumber(download),
+                download = download, -- marks the row as a deletable download (onMenuHold)
                 callback = function()
                     if self.open_download then
                         self.open_download(download)
@@ -152,6 +154,16 @@ end
 function LibraryView:onMenuSelect(item)
     if item.callback then
         item.callback()
+    end
+    return true
+end
+
+-- Long-press a Downloaded row to delete it (KRP-807): the confirm + file/index
+-- removal is main.lua's injected collaborator. Only download rows carry `download`,
+-- so holding a heading or a Following row is a harmless no-op.
+function LibraryView:onMenuHold(item)
+    if item.download and self.delete_download then
+        self.delete_download(item.download)
     end
     return true
 end

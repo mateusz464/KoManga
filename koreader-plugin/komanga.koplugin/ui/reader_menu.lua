@@ -15,6 +15,7 @@ local InfoMessage = require("ui/widget/infomessage")
 local UIManager = require("ui/uimanager")
 local Retry = require("ui/retry")
 local DownloadCoordinator = require("state/download_coordinator")
+local DownloadDelete = require("ui/download_delete")
 local _ = require("gettext")
 
 local ReaderMenu = {}
@@ -75,18 +76,36 @@ function ReaderMenu.build(opts)
     if not ctx then
         return nil
     end
+    local sub_items = {
+        {
+            text = _("Download this chapter for offline"),
+            keep_menu_open = true,
+            callback = function()
+                download_chapter(opts, ctx)
+            end,
+        },
+    }
+    -- Only offer delete once the chapter is actually downloaded (KRP-807); the
+    -- confirm + file/index removal is the shared ui/download_delete helper.
+    if opts.downloads:has(ctx.chapterId) then
+        sub_items[#sub_items + 1] = {
+            text = _("Delete this download"),
+            keep_menu_open = true,
+            callback = function()
+                DownloadDelete.confirm{
+                    downloads = opts.downloads,
+                    chapter = ctx,
+                    on_deleted = function()
+                        UIManager:show(InfoMessage:new{ text = _("Download deleted.") })
+                    end,
+                }
+            end,
+        }
+    end
     return {
         text = _("KoManga"),
         sorting_hint = "more_tools",
-        sub_item_table = {
-            {
-                text = _("Download this chapter for offline"),
-                keep_menu_open = true,
-                callback = function()
-                    download_chapter(opts, ctx)
-                end,
-            },
-        },
+        sub_item_table = sub_items,
     }
 end
 

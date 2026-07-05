@@ -25,6 +25,7 @@ local LibraryView = require("ui/library_view")
 local ReaderLauncher = require("ui/reader_launcher")
 local ReaderMenu = require("ui/reader_menu")
 local ProgressSync = require("ui/progress_sync")
+local DownloadDelete = require("ui/download_delete")
 local _ = require("gettext")
 
 local Komanga = WidgetContainer:extend{
@@ -136,7 +137,10 @@ end
 -- the downloaded-chapters list. A fresh Library per visit; the screen drives it
 -- through net (wifi-gated, non-blocking) and kicks the loads once it is on screen.
 function Komanga:showLibrary()
-    local library_state = Library.new(self.api, Downloads.open())
+    -- One device-index handle shared by the Library read and the delete path, so a
+    -- deletion (KRP-807) mutates the same in-memory index the view renders from.
+    local downloads = Downloads.open()
+    local library_state = Library.new(self.api, downloads)
     local home
     home = LibraryView:new{
         library = library_state,
@@ -147,6 +151,15 @@ function Komanga:showLibrary()
         end,
         open_download = function(download)
             self:resumeReader(download.mangaId, download.chapterId)
+        end,
+        delete_download = function(download)
+            DownloadDelete.confirm{
+                downloads = downloads,
+                chapter = download,
+                on_deleted = function()
+                    home:render()
+                end,
+            }
         end,
         close_callback = function()
             UIManager:close(home)
