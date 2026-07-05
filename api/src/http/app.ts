@@ -158,8 +158,17 @@ export function createApp(deps: AppDependencies): express.Express {
     );
   }
 
-  if (deps.libraryRepository) {
-    app.use("/api", libraryRouter(new LibraryService(deps.libraryRepository)));
+  if (deps.libraryRepository && deps.readingProgressRepository) {
+    app.use(
+      "/api",
+      libraryRouter(
+        new LibraryService(
+          deps.libraryRepository,
+          deps.readingProgressRepository,
+          deps.suwayomi,
+        ),
+      ),
+    );
   }
 
   // Serve the built web client same-origin (KWC-202). Mounted after the /api

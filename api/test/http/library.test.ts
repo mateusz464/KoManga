@@ -5,6 +5,7 @@ import type {
   LibraryEntry,
   LibraryRepository,
 } from "../../src/services/ports/library-repository.js";
+import type { ReadingProgressRepository } from "../../src/services/ports/reading-progress-repository.js";
 import { stubSuwayomi } from "../support/stub-suwayomi.js";
 
 // Contract test for the library / follows endpoints (API-603):
@@ -59,12 +60,23 @@ function makeRepo(seed: LibraryEntry[] = []) {
   return { repo, list, add, remove, rows };
 }
 
+// API-912 enriches list() with a continue target computed from progress + the
+// STORED chapter list. These endpoints don't exercise that computation (see
+// library-continue.test.ts), so wire empty stored chapters and no progress: every
+// entry gets the neutral `{ nextChapter: null, caughtUp: false }`.
+const UNENRICHED = { nextChapter: null, caughtUp: false } as const;
+
+function stubProgressRepository(): ReadingProgressRepository {
+  return { get: () => undefined, save: () => undefined };
+}
+
 function buildDeps(seed: LibraryEntry[] = []) {
   const { repo, list, add, remove, rows } = makeRepo(seed);
   return {
     deps: {
-      suwayomi: stubSuwayomi(),
+      suwayomi: { ...stubSuwayomi(), listChapters: async () => [] },
       libraryRepository: repo,
+      readingProgressRepository: stubProgressRepository(),
     },
     list,
     add,
@@ -95,7 +107,9 @@ describe("GET /api/library", () => {
 
     expect(res.status).toBe(200);
     // The { data } envelope carries the title alongside mangaId/addedAt.
-    expect(res.body).toEqual({ data: seed });
+    expect(res.body).toEqual({
+      data: seed.map((e) => ({ ...e, ...UNENRICHED })),
+    });
   });
 });
 
@@ -132,7 +146,7 @@ describe("PUT /api/library/:mangaId", () => {
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
-      data: [{ mangaId: MANGA_ID, addedAt: 1000, title: TITLE }],
+      data: [{ mangaId: MANGA_ID, addedAt: 1000, title: TITLE, ...UNENRICHED }],
     });
   });
 
@@ -163,7 +177,7 @@ describe("PUT /api/library/:mangaId", () => {
     const res = await request(app).get("/api/library");
 
     expect(res.body).toEqual({
-      data: [{ mangaId: MANGA_ID, addedAt: 1000, title: TITLE }],
+      data: [{ mangaId: MANGA_ID, addedAt: 1000, title: TITLE, ...UNENRICHED }],
     });
   });
 

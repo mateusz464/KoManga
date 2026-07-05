@@ -112,6 +112,7 @@ spec/           # busted specs, mirroring the modules; logic only
 
 ## 9. Coding standards
 
+- **Comments only for complex code that isn't understandable without them.** Do NOT narrate obvious lines, restate what the code says, or add a comment above every step/file. A comment must earn its place by explaining a non-obvious *what* or *why*; otherwise leave it out. Before writing any comment, ask "is this code genuinely unreadable without it?" — if not, delete it.
 - **`luacheck` clean** before a ticket is Done; small, single-purpose modules; pure functions in `state/`.
 - Map the API's `{ data }` envelope to plugin-domain tables in `api/` — the rest of the app never sees the wire shape.
 - Name by role (`ApiClient`, `ReaderState`, `net`), not by library.

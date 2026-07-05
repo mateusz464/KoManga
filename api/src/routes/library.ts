@@ -6,8 +6,8 @@ import type { LibraryEntry } from "../services/ports/library-repository.js";
 export function libraryRouter(service: LibraryService): Router {
   const router = Router();
 
-  router.get("/library", (_req, res) => {
-    res.json({ data: service.list() });
+  router.get("/library", async (_req, res) => {
+    res.json({ data: await service.list() });
   });
 
   router.put("/library/:mangaId", json(), (req, res) => {

@@ -157,6 +157,7 @@ Do not build website/mobile features now — just don't foreclose them.
 
 ## 11. Coding standards
 
+- **Comments only for complex code that isn't understandable without them.** Do NOT narrate obvious lines, restate what the code says, or add a comment above every step/file. A comment must earn its place by explaining a non-obvious *what* or *why*; otherwise leave it out. Before writing any comment, ask "is this code genuinely unreadable without it?" — if not, delete it.
 - **TypeScript strict mode on.** No `any` in committed code unless justified with a comment; prefer precise types at boundaries.
 - **Lint + format must pass** before a ticket is Done (`npm run lint`, `npm run format`).
 - Small, focused modules; a file does one job. Favour pure functions in services.
