@@ -39,10 +39,10 @@
 --                      | (nil, err) -- status ∈ "pending"|"completed"|"failed".
 -- Errors are the typed table api/client.lua maps (KRP-301): { kind, status?, ... }.
 --
--- NOTE: library entries carry only a mangaId reference (no title) — the API has no
--- richer library/metadata endpoint yet (RFC §14 defers it). Joining an entry to a
--- title is therefore out of scope for this logic module and would be an API-epic
--- ticket (CLAUDE.md §6/§10), not a plugin-side per-row getManga fan-out (§8).
+-- NOTE: each library entry carries a display `title` captured at follow time
+-- (API-908/KRP-605), alongside its mangaId. The title is optional — a row followed
+-- before API-908 omits it — so `entryTitle` falls back to the mangaId. This is the
+-- denormalised title on the entry, not a per-row getManga fan-out (CLAUDE.md §6/§8).
 
 local Library = require("state.library")
 local FakeApi = require("spec.support.fake_api")
@@ -50,11 +50,13 @@ local FakeApi = require("spec.support.fake_api")
 -- Builders (not constants) so every call hands back a FRESH table — an impl that
 -- mutates a returned list can't corrupt a value a later test reuses.
 
--- The followed-manga list, in the added_at ASC order the API serves.
+-- The followed-manga list, in the added_at ASC order the API serves. Each entry
+-- carries a display title (API-908), except m1 — a pre-title row exercising the
+-- mangaId fallback.
 local function LIBRARY()
     return {
-        { mangaId = "m3", addedAt = 1 },
-        { mangaId = "m7", addedAt = 2 },
+        { mangaId = "m3", addedAt = 1, title = "Berserk" },
+        { mangaId = "m7", addedAt = 2, title = "Vinland Saga" },
         { mangaId = "m1", addedAt = 3 },
     }
 end
@@ -100,6 +102,24 @@ describe("library / home view state", function()
             assert.are.same({ "m3", "m7", "m1" }, pluck(library:getEntries(), "mangaId"))
             assert.are.equal(1, #api.calls)
             assert.are.equal("listLibrary", api.calls[1].method)
+        end)
+
+        it("carries the display title on each followed entry", function()
+            local api = FakeApi.new{ listLibrary = LIBRARY }
+            local library = Library.new(api)
+
+            library:loadLibrary()
+
+            -- The title captured at follow time (API-908) is carried through; a
+            -- pre-title row (m1) simply omits it.
+            assert.are.same({ "Berserk", "Vinland Saga" }, pluck(library:getEntries(), "title"))
+        end)
+
+        it("labels a followed row by title, falling back to the mangaId", function()
+            assert.are.equal("Berserk", Library.entryTitle({ mangaId = "m3", title = "Berserk" }))
+            -- Absent, empty, or non-string title → fall back to the raw mangaId.
+            assert.are.equal("m1", Library.entryTitle({ mangaId = "m1" }))
+            assert.are.equal("m1", Library.entryTitle({ mangaId = "m1", title = "" }))
         end)
 
         it("treats an empty library as the empty state, not an error", function()

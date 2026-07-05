@@ -13,9 +13,9 @@
 -- reading direction, launching the reader — lives in main.lua's injected
 -- collaborators, so no business logic leaks into the view (CLAUDE.md §5).
 --
--- NOTE: library entries carry only a mangaId (the API has no richer library
--- endpoint yet — RFC §14), so a followed row is labelled by its id until an
--- API-epic ticket adds titles (state/library.lua's note; CLAUDE.md §6/§10).
+-- NOTE: a followed row is labelled by the manga's display title, captured at
+-- follow time (API-908) and carried on the library entry; it falls back to the
+-- raw mangaId when the API omits a title (state/library.lua:entryTitle).
 local Menu = require("ui/widget/menu")
 local InfoMessage = require("ui/widget/infomessage")
 local UIManager = require("ui/uimanager")
@@ -129,7 +129,7 @@ function LibraryView:render()
         for _, entry in ipairs(self.library:getEntries()) do
             local manga_id = entry.mangaId
             item_table[#item_table + 1] = {
-                text = manga_id,
+                text = self.library.entryTitle(entry),
                 mandatory = continue_label,
                 callback = function()
                     if self.continue_reading then

@@ -201,9 +201,15 @@ function ApiClient:listLibrary()
     return self:_request("GET", join_url(self.base_url, "/api/library"))
 end
 
-function ApiClient:follow(mangaId, addedAt)
+-- Capture the display title at follow time (API-908) so the library list can label
+-- the row by name; it is optional, so a title-less follow still succeeds.
+function ApiClient:follow(mangaId, addedAt, title)
     local url = join_url(self.base_url, "/api/library/" .. mangaId)
-    return self:_request("PUT", url, rapidjson.encode({ addedAt = addedAt }), JSON_HEADERS)
+    local body = { addedAt = addedAt }
+    if type(title) == "string" and title ~= "" then
+        body.title = title
+    end
+    return self:_request("PUT", url, rapidjson.encode(body), JSON_HEADERS)
 end
 
 function ApiClient:unfollow(mangaId)

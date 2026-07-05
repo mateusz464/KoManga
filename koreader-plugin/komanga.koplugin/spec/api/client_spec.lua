@@ -160,13 +160,22 @@ describe("ApiClient", function()
             assert.are.equal(BASE .. "/api/library", req.url)
         end)
 
-        it("follows a manga with PUT /api/library/:mangaId and addedAt body", function()
+        it("follows a manga with PUT /api/library/:mangaId, capturing the title", function()
             local client, rec = make(FakeTransport.ok({}))
-            client:follow("m7", 1700)
+            client:follow("m7", 1700, "Vinland Saga")
 
             local req = sole(rec)
             assert.are.equal("PUT", req.method)
             assert.are.equal(BASE .. "/api/library/m7", req.url)
+            -- Title captured at follow time (API-908) so the library row shows a name.
+            assert.are.same({ addedAt = 1700, title = "Vinland Saga" }, rapidjson.decode(req.body))
+        end)
+
+        it("omits the title when none is given (title-less follow still valid)", function()
+            local client, rec = make(FakeTransport.ok({}))
+            client:follow("m7", 1700)
+
+            local req = sole(rec)
             assert.are.same({ addedAt = 1700 }, rapidjson.decode(req.body))
         end)
 

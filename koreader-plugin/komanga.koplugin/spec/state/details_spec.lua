@@ -244,6 +244,29 @@ describe("manga details state", function()
             assert.are.equal(1700, api.calls[1].args[2])
         end)
 
+        it("passes the loaded manga title to follow (captured at follow time)", function()
+            local api = FakeApi.new{
+                getManga = DETAILS,
+                follow = function() return { mangaId = MANGA_ID, addedAt = 1700 } end,
+            }
+            local details = Details.new(api, MANGA_ID)
+            details:load()
+
+            details:follow(1700)
+
+            -- The library row is labelled by this title (API-908/KRP-605).
+            assert.are.equal("Berserk", api.calls[#api.calls].args[3])
+        end)
+
+        it("omits the title when details have not loaded", function()
+            local api = FakeApi.new{ follow = function() return { mangaId = MANGA_ID } end }
+            local details = Details.new(api, MANGA_ID)
+
+            details:follow(1700)
+
+            assert.is_nil(api.calls[1].args[3])
+        end)
+
         it("unfollow calls the API and flips state to not-followed", function()
             local api = FakeApi.new{
                 listLibrary = { { mangaId = MANGA_ID, addedAt = 2 } },

@@ -158,8 +158,11 @@ end
 
 -- --- Follow / unfollow ---------------------------------------------------------
 
+-- Capture the manga's display title at follow time (API-908/KRP-605) so the library
+-- list can label the row by name. The title comes from the loaded manga metadata;
+-- if details haven't loaded, it is omitted and the row falls back to the mangaId.
 function Details:fetchFollow(addedAt)
-    return self.api:follow(self.manga_id, addedAt)
+    return self.api:follow(self.manga_id, addedAt, self.manga and self.manga.title)
 end
 
 -- Flip to followed only on success; on a write error the toggle does not flip so a

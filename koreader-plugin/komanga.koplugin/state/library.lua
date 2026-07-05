@@ -23,10 +23,11 @@
 -- per-row lookup, not shared list state — so a failed lookup never clobbers the
 -- shared list error.
 --
--- NOTE: library entries carry only a mangaId reference (no title) — the API has no
--- richer library/metadata endpoint yet (RFC §14). Joining an entry to a title is
--- therefore out of scope here and would be an API-epic ticket (CLAUDE.md §6/§10),
--- not a plugin-side per-row getManga fan-out (§8).
+-- NOTE: each library entry carries a display `title` captured at follow time
+-- (API-908), alongside its mangaId reference. The title is optional — a row
+-- followed before API-908 (or by a title-less client) omits it — so `entryTitle`
+-- falls back to the mangaId. This is the denormalised title on the library entry,
+-- not a per-row getManga fan-out (CLAUDE.md §6/§8/§10).
 
 local Library = {}
 Library.__index = Library
@@ -69,6 +70,15 @@ end
 
 function Library:getEntries()
     return self.entries
+end
+
+-- A followed row's display label: the title captured at follow time (API-908),
+-- falling back to the mangaId when the API omits it (a pre-title library row).
+function Library.entryTitle(entry)
+    if type(entry.title) == "string" and entry.title ~= "" then
+        return entry.title
+    end
+    return entry.mangaId
 end
 
 -- True only after a successful load returned zero entries (the empty state). False
