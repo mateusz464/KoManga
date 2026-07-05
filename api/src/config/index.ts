@@ -38,6 +38,10 @@ export interface Config {
   readonly prefetch: {
     readonly window: number;
   };
+  readonly libraryRefresh: {
+    // 0 disables the periodic followed-manga refresh (API-914).
+    readonly intervalSeconds: number;
+  };
   readonly rateLimit: {
     readonly limit: number;
     readonly windowMs: number;
@@ -68,6 +72,7 @@ const DEFAULTS = {
   CACHE_MAX_BYTES: 256 * 1024 * 1024,
   CACHE_TTL_SECONDS: 60 * 60,
   PREFETCH_WINDOW: 3,
+  LIBRARY_REFRESH_INTERVAL_SECONDS: 24 * 60 * 60,
   RATE_LIMIT: 100,
   RATE_LIMIT_WINDOW_MS: 60 * 1000,
   IMAGE_TARGET_WIDTH: 1072,
@@ -103,6 +108,19 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     const parsed = Number(raw);
     if (!Number.isInteger(parsed) || parsed <= 0) {
       problems.push(`${key} must be a positive integer (got "${raw}")`);
+      return fallback;
+    }
+    return parsed;
+  };
+
+  const nonNegativeInt = (key: string, fallback: number): number => {
+    const raw = env[key];
+    if (raw === undefined || raw.trim() === "") {
+      return fallback;
+    }
+    const parsed = Number(raw);
+    if (!Number.isInteger(parsed) || parsed < 0) {
+      problems.push(`${key} must be a non-negative integer (got "${raw}")`);
       return fallback;
     }
     return parsed;
@@ -153,6 +171,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     },
     prefetch: {
       window: positiveInt("PREFETCH_WINDOW", DEFAULTS.PREFETCH_WINDOW),
+    },
+    libraryRefresh: {
+      intervalSeconds: nonNegativeInt(
+        "LIBRARY_REFRESH_INTERVAL_SECONDS",
+        DEFAULTS.LIBRARY_REFRESH_INTERVAL_SECONDS,
+      ),
     },
     rateLimit: {
       limit: positiveInt("RATE_LIMIT", DEFAULTS.RATE_LIMIT),

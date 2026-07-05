@@ -11,6 +11,7 @@ import { SqliteLibraryRepository } from "./adapters/db/library-repository.js";
 import { createPinoLogger } from "./adapters/logging/pino-logger.js";
 import { createRequestLogger } from "./http/request-logger.js";
 import { createApp } from "./http/app.js";
+import { scheduleFollowedChapterRefresh } from "./services/library-refresh-scheduler.js";
 
 const config = loadConfig();
 
@@ -67,3 +68,13 @@ const app = createApp({
 app.listen(config.port, () => {
   logger.info("KoManga API listening", { port: config.port });
 });
+
+if (config.libraryRefresh.intervalSeconds > 0) {
+  scheduleFollowedChapterRefresh(libraryRepository, suwayomi, {
+    intervalMs: config.libraryRefresh.intervalSeconds * 1000,
+    runOnStart: true,
+    logger,
+  });
+} else {
+  logger.info("Library refresh disabled (LIBRARY_REFRESH_INTERVAL_SECONDS=0)");
+}

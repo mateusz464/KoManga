@@ -23,6 +23,7 @@ describe("loadConfig", () => {
     expect(config.cache.maxBytes).toBeGreaterThan(0);
     expect(config.cache.ttlSeconds).toBeGreaterThan(0);
     expect(config.prefetch.window).toBeGreaterThan(0);
+    expect(config.libraryRefresh.intervalSeconds).toBeGreaterThan(0);
     expect(config.image.targetWidth).toBeGreaterThan(0);
     expect(config.image.targetHeight).toBeGreaterThan(0);
     expect(config.image.einkFormat).toBe("png");
@@ -37,6 +38,7 @@ describe("loadConfig", () => {
       CACHE_MAX_BYTES: "1048576",
       CACHE_TTL_SECONDS: "120",
       PREFETCH_WINDOW: "5",
+      LIBRARY_REFRESH_INTERVAL_SECONDS: "3600",
       IMAGE_TARGET_WIDTH: "1264",
       IMAGE_TARGET_HEIGHT: "1680",
       IMAGE_EINK_FORMAT: "jpeg",
@@ -48,6 +50,7 @@ describe("loadConfig", () => {
     expect(config.cache.maxBytes).toBe(1048576);
     expect(config.cache.ttlSeconds).toBe(120);
     expect(config.prefetch.window).toBe(5);
+    expect(config.libraryRefresh.intervalSeconds).toBe(3600);
     expect(config.image.targetWidth).toBe(1264);
     expect(config.image.targetHeight).toBe(1680);
     expect(config.image.einkFormat).toBe("jpeg");
@@ -99,6 +102,21 @@ describe("loadConfig", () => {
       const env = { ...validEnv(), PREFETCH_WINDOW: "0" };
 
       expect(() => loadConfig(env)).toThrow(/PREFETCH_WINDOW/);
+    });
+
+    it("accepts 0 for LIBRARY_REFRESH_INTERVAL_SECONDS (disabled)", () => {
+      const config = loadConfig({
+        ...validEnv(),
+        LIBRARY_REFRESH_INTERVAL_SECONDS: "0",
+      });
+
+      expect(config.libraryRefresh.intervalSeconds).toBe(0);
+    });
+
+    it("rejects a negative LIBRARY_REFRESH_INTERVAL_SECONDS", () => {
+      const env = { ...validEnv(), LIBRARY_REFRESH_INTERVAL_SECONDS: "-1" };
+
+      expect(() => loadConfig(env)).toThrow(/LIBRARY_REFRESH_INTERVAL_SECONDS/);
     });
 
     it("rejects an unsupported eink image format", () => {
