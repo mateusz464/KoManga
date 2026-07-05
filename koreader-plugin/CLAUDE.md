@@ -76,6 +76,7 @@ spec/           # busted specs, mirroring the modules; logic only
 - **State is framework-free and pure** so busted can test it without KOReader loaded.
 - **UI leans on KOReader widgets.** Build screens from `Menu`/`InputDialog`/etc.; never hand-roll layout or refresh.
 - **No business logic in UI modules beyond presentation** — fetching/decisions live in `state/` + `api/`.
+- **Device-local downloads (RFC §5.4).** `state/downloads.lua` owns the pure, injected-store index of offline downloads; the CBZ bytes live on-device under **`<DataStorage:getDataDir()>/komanga/downloads/<sanitised chapterId>.cbz`** — the same path the transient reader (`ui/reader_launcher.lua`) streams to, so a read-then-downloaded chapter reuses its file. The index is a LuaSettings manifest (`komanga_downloads.lua`), separate from `settings.lua`; `Downloads.open()` is the runtime factory, `Downloads.new(store, dir)` the busted-injectable one. It needs **no new API endpoint** (RFC §13).
 
 ---
 

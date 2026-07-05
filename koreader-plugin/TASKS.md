@@ -432,12 +432,14 @@ The web-client epic (`web-client/`) runs in the Kobo's Nickel browser. The devic
 **Estimate:** M
 
 ### KRP-802 — Device-local download store & index (impl)
+**Status:** Done
 **Description:** Implement `state/downloads.lua` and its persistence to make KRP-801 green: a LuaSettings-backed manifest (extend `settings.lua`, or a JSON manifest under `DataStorage`) for the index, and the on-device CBZ directory layout under KOReader's data dir. Keep KOReader/`DataStorage` coupling out of the pure module (inject paths/store), so busted still runs it. Document the device-local download location in `koreader-plugin/CLAUDE.md` (§5/§6).
 **Acceptance criteria:**
 - KRP-801 specs pass; `luacheck` clean; loads clean in the emulator.
 - Index persists across reloads; CBZ dir created lazily.
 **Blocked by:** KRP-801.
 **Estimate:** M
+**Outcome:** `state/downloads.lua` implemented — a pure, framework-free index over an injected LuaSettings-like store (mirroring `settings.lua`): `add` (idempotent per `chapterId`, persists + flushes), `get`/`has`/`list` (stable insertion order), `remove` (returns the local CBZ path to unlink), and pure `fileNameFor`/`pathFor` helpers. Filename/dir scheme matches `ui/reader_launcher.lua` (`<DataStorage:getDataDir()>/komanga/downloads/<sanitised chapterId>.cbz`) so a read-then-downloaded chapter reuses its file. Runtime coupling stays out of the pure module: `Downloads.open()` wires the real `komanga_downloads.lua` manifest + data-dir path (lazy `require`), `ensureDir()` lazily creates the CBZ dir (runtime only — specs never call it). All 16 KRP-801 specs pass; full suite **205/0**; `luacheck` **0/0** across 45 files; parses on the device's LuaJIT (Lua 5.1). Device-local download location documented in `koreader-plugin/CLAUDE.md` §5.
 
 ### KRP-803 — [TEST] Download-to-device coordinator (logic)
 **Description:** Failing `busted` specs for the coordinator that performs an offline download: fetch the chapter's **transient** `eink` CBZ (`api:readChapterCbzToFile`, KRP-606) straight to the device store's path, then record the index entry (KRP-802) with `title`/`chapterNumber`/`direction`. Idempotent (already-downloaded is a no-op success); a fetch failure removes any partial file and records **nothing** (mirrors `downloadChapterCbzToFile`'s partial-file cleanup). Network mocked at the `api/` boundary; store injected.
