@@ -575,6 +575,63 @@
 
 **Notes (2026-07-05):** Turned the 8 red API-909 assertions green by adding the transient reader path alongside the unchanged persisting download path. New **`ReaderService`** (`src/services/reader-service.ts`): builds a chapter's CBZ exactly like `DownloadService` (getChapterPageCount → sequential fetch+process in chapter order → `CbzBuilder.build`) but takes only `SuwayomiClient`/`ImageProcessor`/`CbzBuilder`/`SessionCache` — **no `DownloadStore`/`DownloadsRepository`**, so it structurally cannot persist a record. Caches the whole archive under a chapter-scoped key `${chapterId}:cbz` + profile in the ephemeral `SessionCache` (raw/eink distinct), checked first so a re-read is a pure cache hit (no refetch/reprocess/rebuild). New **`readerRouter`** (`src/routes/reader.ts`): `GET /api/chapter/:id/cbz`, profile-negotiated via the shared `parseImageProfile` (unsupported → 400 at the edge before any build; upstream `SuwayomiError` propagates to the central 502 envelope), serves the bytes as `application/vnd.comicbook+zip`. Wired in `app.ts` behind its own guard (`imageProcessor && cbzBuilder && sessionCache`) — independent of the download store so reading never records a download; `POST /chapter/:id/download` stays the explicit, persisted, listed path. `GET /api/downloads` now lists only explicitly-downloaded chapters. Full suite **222 passing** (was 214+8 red); typecheck + lint + format clean.
 
+### API-911 — [TEST] Library entries carry the next-unread chapter — **Done**
+**Description:** `GET /api/library` entries (API-907/908: `{ mangaId, addedAt, title? }`) carry no reading position or chapter data, so a client's library/home view cannot show which chapter to read next — it can only offer a bare "Continue". Surfaced by the KOReader-plugin epic (**KRP-607**), which wants each followed row to read `One Piece … Continue (41)`. A client **must not** compute this itself: it would need per-row `getProgress` **and** the chapter list for every followed manga, and `MangaService.getManga` triggers a **live source scrape** on every call (API-904) — a whole-library scrape fan-out is disallowed (RFC §13, CLAUDE.md §6/§8). The API is the right place: it already has progress (SQLite, `ReadingProgressRepository`) and the **stored** chapter list (`SuwayomiClient.listChapters` — reads Suwayomi's stored chapters, **not** the live `fetchChapters` scrape) with `chapterNumber` (a decimal — e.g. Grand Blue Dreaming has 40.5/…) and optional `pageCount`. Enrich each library entry with a computed **continue target**. Write failing tests (ports mocked, injected via `createApp`).
+
+**Semantics to pin (from the plugin epic's product decision):**
+- "Finished a chapter" ≙ **the last page was reached** — with `progress.page` 0-based (`ReadingProgress`) and the chapter's `pageCount`, finished ≙ `page >= pageCount - 1`.
+- Per entry, resolve against the chapter list sorted by `chapterNumber` ASC:
+  - **Never read** (no progress) → next = the **first** chapter.
+  - **Part-way** through the last-read chapter (not finished, or `pageCount` unknown so finish can't be confirmed) → next = **that same** chapter (resume it).
+  - **Finished** the last-read chapter and a later chapter exists → next = the **following** chapter.
+  - **Caught up** (finished the newest chapter, none later) → **no next target**; entry flags `caughtUp`. When a newer chapter later appears in the stored list, the same computation yields a next target again.
+- The `chapterNumber` (decimal) is what the client renders; the `chapterId` is what it opens.
+
+**Acceptance criteria:**
+- Failing test: each `GET /api/library` entry carries a computed continue field — proposed `nextChapter: { id, number } | null` plus `caughtUp: boolean` (final shape at impl's discretion, but it must give the client both the number to show and the id to open, and a distinct caught-up state) — in the `{ data }` envelope, still ordered `added_at ASC`.
+- Cases pinned: never-read → first chapter; part-way → same chapter; finished-not-last → following chapter; finished-last → `caughtUp` (no target); `pageCount` unknown → treated as part-way (resume), not finished; decimal `chapterNumber` preserved exactly (no rounding).
+- Computed from **stored** chapters (`listChapters`) + progress only — **no `fetchChapters` live scrape**, no per-entry `getManga`.
+- Edge cases covered: a followed manga with **no stored chapters** → null next / not caught-up (client falls back to a bare "Continue"); a `progress.chapterId` **absent from the current list** (chapter removed) degrades without throwing.
+- Tests fail red against current code (entries carry no continue field).
+
+**Surfaced by:** KRP-607 (KOReader plugin — "Continue (next chapter number)" in the library view).
+**Blocked by:** none (extends Done API-907/908 library entries + API-601/602 progress + API-201/202 `listChapters`).
+**Estimate:** M
+**Known limitation to note (not solved here):** the caught-up → "new chapter released" transition only reflects chapters **already in Suwayomi's stored list**; refreshing that list (a source scrape) is a separate concern (today only `getManga`/a manga open triggers `fetchChapters`). A periodic library refresh (**API-913/914**) covers this.
+
+**Notes (2026-07-05):** Pinned the continue-target contract at the HTTP boundary in **`test/http/library-continue.test.ts`** — all ports mocked and injected via `createApp` (CLAUDE.md §4), so it exercises route → service → ports through Express, not any adapter. Fakes: a stateful insertion-ordered `LibraryRepository` (mirrors `library.test.ts`, so `added_at ASC` is observable), a map-backed `ReadingProgressRepository`, and a `SuwayomiClient` whose `listChapters` returns seeded **stored** chapters per manga while `fetchChapters`/`getMangaDetails` **throw loudly** — structurally pinning "no live scrape, no per-entry getManga" (a stray call blows up the test, not just an unasserted spy). Shape pinned: each entry keeps its API-908 fields (`mangaId`/`addedAt`/optional `title`) and gains `nextChapter: { id, number } | null` + `caughtUp: boolean`. Semantics pinned as separate cases against a deliberately out-of-order chapter list (forces the ASC-by-`chapterNumber` sort): never-read → first chapter; part-way (`page < pageCount-1`) → resume same chapter; finished-not-last (`page >= pageCount-1`) → following chapter; finished-newest → `caughtUp:true`, null target; `pageCount` unknown → resume (finish unconfirmable); decimal `chapterNumber` (40.5) preserved exactly (no rounding); no stored chapters → null/not-caught-up (bare "Continue" fallback); `progress.chapterId` absent from list → degrades to first chapter, 200, no throw; multi-entry enrich preserves order. Suite **233: 223 passing + 10 red** — the 10 reds are exactly the new continue-field assertions (current entries carry no `nextChapter`/`caughtUp`); the empty-library `{ data: [] }` pin already holds (green). Typecheck (`tsc --noEmit`) + lint + format clean. API-912 adds the enrichment (inject `ReadingProgressRepository` + `SuwayomiClient.listChapters` into the library layer, resolve entries concurrently) → turns all 10 green.
+
+### API-912 — Library entries carry the next-unread chapter (impl) — **To do**
+**Description:** Make API-911 pass — in `LibraryService.list()` (or a thin collaborator), for each entry read its progress + stored chapter list and compute the continue target per the API-911 semantics, returning it on the entry. Inject the `ReadingProgressRepository` and `SuwayomiClient.listChapters` into the library layer (ports/adapters — no GraphQL in the service). Bound the cost: read stored chapters only (no live scrape), and resolve entries concurrently so a multi-item library isn't serialised.
+**Acceptance criteria:**
+- All API-911 tests pass.
+- `GET /api/library` returns each entry with the computed `nextChapter`/`caughtUp` (whatever shape API-911 pinned), ordered `added_at ASC`, in the `{ data }` envelope.
+- No live `fetchChapters` scrape and no per-entry `getManga`; stays within ports/adapters layering; lint/type-check/format clean.
+**Blocked by:** API-911.
+**Estimate:** M
+
+### API-913 — [TEST] Periodic refresh of followed manga chapter lists — **To do**
+**Description:** API-911/912 compute "next-unread / caught-up" from Suwayomi's **stored** chapter list (`SuwayomiClient.listChapters`), which only refreshes when a manga is opened (`getManga` → `fetchChapters`). So a caught-up manga never surfaces a newly-released chapter until the user reopens it (the API-911 known limitation). Add a **periodic background refresh** that, for **each followed manga only** (the `library` entries — never all Suwayomi manga), triggers a source chapter-fetch (`fetchChapters`) so the stored list — and thus the library's continue/caught-up state — stays current on its own. This is the one place a chapter-scrape fan-out is acceptable: a **bounded background job**, not a per-request render (contrast the client-side fan-out rejected in API-911, RFC §13 / CLAUDE.md §8). Write failing tests for the runnable pass (ports mocked, injected).
+**Acceptance criteria:**
+- Failing test: a runnable `refreshFollowedChapters()` (or similar) reads the library list (`LibraryRepository.list`) and calls `SuwayomiClient.fetchChapters` for **each followed manga** — and **only** followed manga (asserted against a seeded library; a non-followed id is never fetched).
+- **Per-manga failure isolation:** one entry's `fetchChapters` throwing does **not** abort the pass — the remaining followed manga still refresh (assert via a fake that throws for one id).
+- **Bounded:** entries are processed with limited concurrency (a small cap), not an unbounded all-at-once fan-out that hammers sources (assert the cap is respected / not one-shot-all).
+- The pass is a **pure, injectable unit** (takes the library repo + Suwayomi client), independent of any timer, so it is unit-testable and manually triggerable.
+- Tests fail red against current code (no such method).
+**Surfaced by:** KRP-607 / API-911 (library "caught up" state must reflect new releases without a manual open).
+**Blocked by:** none (extends Done API-907/908 library + API-201/202 `fetchChapters`; complements API-911/912).
+**Estimate:** M
+
+### API-914 — Periodic refresh of followed manga chapter lists (impl) — **To do**
+**Description:** Make API-913 pass — implement `refreshFollowedChapters()` (iterate library entries, `fetchChapters` each with **bounded concurrency** + **per-item error isolation** + logging) and **schedule it** on a configurable interval (default **~once a day**; a config/env knob, e.g. `LIBRARY_REFRESH_INTERVAL`; `0`/off disables) at the composition root, optionally running once shortly after startup. Consider a manual trigger (e.g. `POST /api/library/refresh`) for on-demand runs / testing. Keep all Suwayomi coupling in the adapter; the scheduler stays **thin** — it only calls the API-913 runnable, so the tested logic and the timer are separable.
+**Acceptance criteria:**
+- All API-913 tests pass.
+- A daily (configurable) background pass refreshes **followed** manga's stored chapters; interval configurable and disableable; per-manga errors logged and isolated (one failure never crashes the process or aborts the pass).
+- After a refresh, `listChapters` — and thus `GET /api/library`'s continue/caught-up from API-912 — reflects newly-released chapters **without** the user opening the manga.
+- Scheduler does not block startup; lint/type-check/format clean; stays within ports/adapters layering.
+**Blocked by:** API-913.
+**Estimate:** M
+
 ---
 
 ## Suggested build order (respecting strict deps)
@@ -587,7 +644,7 @@
 6. **Progress:** 601/602, 603/604
 7. **Auth/Security:** 701/702 → 703/704 (can start once 105 done; apply globally before deploy)
 8. **Deploy:** 801 → 802 → 803 ; **Observability:** 804 → 805 (independent — needs only 103/105/702, can be picked up any time)
-9. **Bug fixes (9xx):** 901 → 902, 903 → 904, 905 → 906, 907 → 908, 909 → 910 (independent of the above; can be picked up any time)
+9. **Bug fixes (9xx):** 901 → 902, 903 → 904, 905 → 906, 907 → 908, 909 → 910, 911 → 912, 913 → 914 (independent of the above; can be picked up any time)
 
 > Note: Auth (7xx) only depends on the bootstrap layer, so it can be built early in parallel even though it's listed late. Everything funnels into API-801 for deployment.
 > Note: 9xx are post-hoc fixes/reconciliations (e.g. from the device spike), not part of the original feature build order.

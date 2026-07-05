@@ -348,6 +348,24 @@ The web-client epic (`web-client/`) runs in the Kobo's Nickel browser. The devic
 **Blocked by:** API-910.
 **Estimate:** M
 
+### KRP-607 — "Continue (next chapter number)" in the library view
+**Description:** The library / home view's **Following** rows show a bare `Continue` mandatory label (`ui/library_view.lua`, KRP-604). Show the chapter the user should read next instead — e.g. `One Piece      Continue (41)` — using the continue target **API-912** adds to each `GET /api/library` entry (`nextChapter { id, number }` + `caughtUp`). The plugin does **not** compute this (it would need per-row progress + chapter lists, and `getManga` is a live scrape — API-904/CLAUDE.md §6/§8); it just renders the API's field and opens the given chapter.
+**Semantics (mirror API-911, the API owns the computation):**
+- **Never read** → `Continue (<first chapter number>)`.
+- **Part-way** through a chapter (not the last page) → `Continue (<that chapter's number>)` (resume).
+- **Finished** a chapter (last page reached) with a later chapter → `Continue (<next chapter number>)`.
+- **Caught up** (finished the newest chapter) → the mandatory reads **`Caught Up`** (no number); it flips back to `Continue (<n>)` once the API reports a newer chapter.
+- `chapterNumber` is a **decimal** (e.g. Grand Blue Dreaming — 40.5, …): render it exactly, trimming only a trailing `.0` (41.0 → `41`, 40.5 → `40.5`). No rounding.
+**Work:** map `nextChapter`/`caughtUp` through `state/library.lua` (pure — add a testable label/number/target helper, e.g. `Library.continueLabel(entry)` → the mandatory text + whether tappable + the chapterId to open; mirrors `entryTitle`/`isOpenable`), update `spec/state/library_spec.lua` (network mocked at the `api/` boundary, CLAUDE.md §4/§5). In `ui/library_view.lua`, render the label on the Following row and open the entry's `nextChapter.id` on tap (resume seek is handled by progress-sync, KRP-602; a `caughtUp` row opens the manga details rather than a dead tap). Degrade gracefully when the API omits the field (no stored chapters / older API) → fall back to a bare `Continue`.
+**Acceptance criteria:**
+- Following rows show `Continue (<next chapter number>)` per the semantics above, `Caught Up` when caught up, and a bare `Continue` fallback when the API omits the target.
+- Decimal chapter numbers render exactly (trailing `.0` trimmed); no rounding.
+- Tapping a row opens the correct chapter (resume for part-way, next for finished); `state/library.lua` maps the fields; busted specs updated and green.
+- `luacheck` clean; loads clean in the emulator.
+- **[DEVICE]** confirm on the Kobo: a part-way manga shows its current chapter; a finished chapter shows the next number; a caught-up manga shows `Caught Up`.
+**Blocked by:** API-912.
+**Estimate:** M
+
 ---
 
 # Feature: Polish & Hardening (7xx)
@@ -396,7 +414,7 @@ The web-client epic (`web-client/`) runs in the Kobo's Nickel browser. The devic
 3. **Networking:** 301→302, 303→304, → 305.
 4. **Browse:** 401→402, 403→404 → 405 (device pass).
 5. **Reader (CBZ first, then streaming):** 501→502 → 503 (device pass) → 504→505 → 506.
-6. **Progress & library:** 601→602, 603→604. *(Follow-ups 605 (needs API-908) and 606 (needs API-910) can land any time once their API blockers ship.)*
+6. **Progress & library:** 601→602, 603→604. *(Follow-ups 605 (needs API-908) and 606 (needs API-910) can land any time once their API blockers ship; 607 (needs API-912) adds "Continue (next chapter number)" to the library view.)*
 7. **Polish:** 701 → 703, 702, → 704 (final acceptance).
 
 > Notes:
