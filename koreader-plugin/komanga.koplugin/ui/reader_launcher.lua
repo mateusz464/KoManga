@@ -1,15 +1,17 @@
--- KRP-502 — Open chapter in KOReader's reader (glue). Takes an acquired chapter
--- from state/reader.lua (KRP-501) all the way into KOReader's native CBZ reader:
--- acquire the eink build, stream its bytes to a file in the plugin's downloads
--- dir, honour the manga's reading direction (RTL/LTR), then hand the file to
--- ReaderUI:showReader. All KOReader-API coupling (ReaderUI, DocSettings,
+-- KRP-502/606 — Open chapter in KOReader's reader (glue). Takes an acquired
+-- chapter from state/reader.lua (KRP-501) all the way into KOReader's native CBZ
+-- reader: acquire the eink CBZ, stream its bytes to a file in the plugin's
+-- downloads dir, honour the manga's reading direction (RTL/LTR), then hand the file
+-- to ReaderUI:showReader. All KOReader-API coupling (ReaderUI, DocSettings,
 -- DataStorage, the filesystem) is confined here so state/ stays pure (CLAUDE.md
--- §5/§12); every network call goes through net.lua (wifi-gated, non-blocking — §7).
+-- §5/§12); the network call goes through net.lua (wifi-gated, non-blocking — §7).
 --
--- Two sequential net calls mirror the two-step server contract: POST the download
--- (the slow side — the server fetches + processes + builds the CBZ) then GET the
--- stored CBZ, streamed to a file. Both run in net.lua's forked sub-process; only
--- small results (the record, then the file path) are marshalled back (KRP-305).
+-- Reading uses the TRANSIENT read path (KRP-606): a single GET streams the eink CBZ
+-- straight to a file, WITHOUT persisting a download record, so a chapter that was
+-- only read never shows up under "Downloaded" (only the explicit "Download this
+-- chapter for offline" action, ui/reader_menu.lua, persists one). The fetch runs in
+-- net.lua's forked sub-process; only the small file path is marshalled back
+-- (KRP-305) — the tens-of-MB CBZ stays on disk (api streams to a file sink).
 local ReaderUI = require("apps/reader/readerui")
 local DocSettings = require("docsettings")
 local DataStorage = require("datastorage")
@@ -64,27 +66,29 @@ local function apply_reader_settings(opts)
     doc_settings:flush()
 end
 
--- Step 2: download the built CBZ to disk, then open the reader. The download
--- streams straight to `path` inside net.lua's forked subprocess (api streams the
--- HTTP body to a file sink), so a chapter's tens of MB never cross the subprocess
--- pipe — only the small path is marshalled back. Returning the bytes instead OOMs
--- the device: the child's serialisation fails, the caller gets nil, and the reader
--- silently never opens (KRP-502 bug fix).
-local function download_and_open(opts)
+-- Open a chapter in KOReader's native reader.
+--   opts = { reader, chapter_id, manga_id, rtl, net, auth? }
+-- `reader` is a state/reader.lua instance; `rtl` true for right-to-left manga.
+function ReaderLauncher.open(opts)
     local path = cbz_path(opts.chapter_id)
-    -- Step 2: download the built CBZ to disk, then open the reader. Retry.run gives
-    -- the loading/retry state (KRP-506): a slow download shows a dismissable dialog,
-    -- a transient failure offers Retry rather than dead-ending on a blank panel.
+    -- Acquire the eink CBZ via the transient read path (no persisted download),
+    -- streamed straight to `path` inside net.lua's forked subprocess (api streams
+    -- the HTTP body to a file sink), so a chapter's tens of MB never cross the
+    -- subprocess pipe — only the small path is marshalled back. Returning the bytes
+    -- instead OOMs the device: the child's serialisation fails, the caller gets nil,
+    -- and the reader silently never opens (KRP-502 bug fix). Retry.run gives the
+    -- loading/retry state (KRP-506): a slow fetch shows a dismissable dialog, a
+    -- transient failure offers Retry rather than dead-ending on a blank panel.
     Retry.run{
         net = opts.net,
         auth = opts.auth,
-        text = _("Downloading chapter…"),
+        text = _("Preparing chapter…"),
         task = function()
-            return opts.api:downloadChapterCbzToFile(opts.chapter_id, path)
+            return opts.reader:fetchCbz(path)
         end,
         on_success = function(saved_path)
             if not saved_path then
-                UIManager:show(InfoMessage:new{ text = _("Could not save the chapter.") })
+                UIManager:show(InfoMessage:new{ text = _("Could not load the chapter.") })
                 return
             end
             apply_reader_settings{
@@ -94,45 +98,6 @@ local function download_and_open(opts)
                 manga_id = opts.manga_id,
             }
             ReaderUI:showReader(saved_path)
-        end,
-    }
-end
-
--- Open a chapter in KOReader's native reader.
---   opts = { reader, chapter_id, manga_id, rtl, net, api, auth? }
--- `reader` is a state/reader.lua instance; `rtl` true for right-to-left manga.
-function ReaderLauncher.open(opts)
-    local reader = opts.reader
-    -- Step 1: acquire the eink build (POST download). The blocking call runs
-    -- off-thread in net.lua's fork; the record is applied here in the parent. A
-    -- `failed` build comes back as a 2xx record, so it is surfaced as a retryable
-    -- build error through the task's (data, err) contract — Retry then offers a
-    -- re-attempt uniformly instead of a dead end (KRP-506).
-    Retry.run{
-        net = opts.net,
-        auth = opts.auth,
-        text = _("Preparing chapter…"),
-        task = function()
-            local data, err = reader:fetchDownload()
-            if err then
-                return nil, err
-            end
-            if data and data.status == "failed" then
-                return nil, { kind = "build", status = "failed" }
-            end
-            return data, nil
-        end,
-        on_success = function(data)
-            reader:applyDownload(data, nil)
-            if not reader:isReady() then
-                -- The server builds synchronously today, so a non-completed status
-                -- is a safety net rather than an expected path.
-                UIManager:show(InfoMessage:new{
-                    text = _("Chapter is still being prepared — try again shortly."),
-                })
-                return
-            end
-            download_and_open(opts)
         end,
     }
 end

@@ -261,4 +261,26 @@ function ApiClient:downloadChapterCbzToFile(chapterId, destPath)
     return destPath, nil
 end
 
+-- Transient read path (KRP-606): the URL for a chapter's eink CBZ built and served
+-- straight from the server's session cache, WITHOUT persisting a download record —
+-- so plain reading never appears under "Downloaded" (only the explicit POST
+-- /download does, ui/reader_menu.lua). Always eink (§6), mirroring cbzUrl.
+function ApiClient:readCbzUrl(chapterId)
+    return join_url(self.base_url, "/api/chapter/" .. chapterId .. "/cbz?profile=eink")
+end
+
+-- Fetch a chapter's transient eink CBZ (KRP-606) straight to `destPath`, returning
+-- (destPath, nil) or (nil, err). Same streaming-to-file rationale as
+-- downloadChapterCbzToFile (a CBZ is far too large to marshal back through
+-- net.lua's fork), but it hits the transient read endpoint so reading a chapter
+-- does not create a persisted download.
+function ApiClient:readChapterCbzToFile(chapterId, destPath)
+    local response, err = self:_send("GET", self:readCbzUrl(chapterId), nil, nil, destPath)
+    if not response then
+        os.remove(destPath)
+        return nil, err
+    end
+    return destPath, nil
+end
+
 return ApiClient

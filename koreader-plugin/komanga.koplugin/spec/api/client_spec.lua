@@ -376,6 +376,70 @@ describe("ApiClient", function()
         end)
     end)
 
+    describe("transient reader CBZ (streamed to file, KRP-606)", function()
+        -- The reader acquires its CBZ via the transient read path — GET
+        -- /api/chapter/:id/cbz — which builds and serves the eink CBZ WITHOUT
+        -- persisting a download record, so plain reading never appears under
+        -- "Downloaded" (only the explicit POST /download does). Same streaming-to-
+        -- file rationale as the persisted path: the body is too large to marshal
+        -- back through net.lua's fork, so it sinks straight to disk (sink_path).
+        local DEST = "/tmp/komanga-test/read-ch9.cbz"
+
+        it("GETs the eink transient cbz endpoint and sinks the body to the given path", function()
+            local client, rec = make(function()
+                return { status = 200, body = nil, headers = {} }
+            end)
+            client:readChapterCbzToFile("ch9", DEST)
+
+            local req = sole(rec)
+            assert.are.equal("GET", req.method)
+            -- Transient read path, always eink — never POST /download, never raw.
+            assert.are.equal(BASE .. "/api/chapter/ch9/cbz?profile=eink", req.url)
+            assert.are.equal(DEST, req.sink_path)
+        end)
+
+        it("readCbzUrl is a pure eink-only builder", function()
+            local client = make()
+            assert.are.equal(BASE .. "/api/chapter/ch9/cbz?profile=eink", client:readCbzUrl("ch9"))
+        end)
+
+        it("returns the destination path (not bytes) on success", function()
+            local client = make(function()
+                return { status = 200, body = nil, headers = {} }
+            end)
+            local path, err = client:readChapterCbzToFile("ch9", DEST)
+
+            assert.is_nil(err)
+            assert.are.equal(DEST, path)
+        end)
+
+        it("attaches the Bearer credential like every other call", function()
+            local client, rec = make(function()
+                return { status = 200, body = nil, headers = {} }
+            end)
+            client:readChapterCbzToFile("ch9", DEST)
+
+            assert.are.equal("Bearer " .. TOKEN, sole(rec).headers["Authorization"])
+        end)
+
+        it("maps a missing chapter (404) to an http error", function()
+            local client = make(FakeTransport.httpError(404, "NOT_FOUND", "No chapter"))
+            local path, err = client:readChapterCbzToFile("ch9", DEST)
+
+            assert.is_nil(path)
+            assert.are.equal("http", err.kind)
+            assert.are.equal(404, err.status)
+        end)
+
+        it("maps a transport failure to a transport error", function()
+            local client = make(FakeTransport.failing("network is unreachable"))
+            local path, err = client:readChapterCbzToFile("ch9", DEST)
+
+            assert.is_nil(path)
+            assert.are.equal("transport", err.kind)
+        end)
+    end)
+
     describe("envelope unwrap", function()
         it("returns the data field, not the wrapper", function()
             local client = make(function()

@@ -266,7 +266,6 @@ function Komanga:openReader(details_state, chapter)
         manga_id = details_state:getMangaId(),
         rtl = details_state:getReadingDirection() == "rtl",
         net = self.net,
-        api = self.api,
         auth = self.auth,
     }
 end

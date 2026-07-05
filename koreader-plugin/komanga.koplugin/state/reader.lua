@@ -1,25 +1,24 @@
--- KRP-501/502 — Chapter acquisition & page mapping (logic). The pure,
+-- KRP-501/502/606 — Chapter acquisition & page mapping (logic). The pure,
 -- framework-free state behind acquiring a chapter for reading via the CBZ +
 -- ReaderUI path (CLAUDE.md §5: state/ is pure, busted-testable with no KOReader
 -- loaded). It reaches the network only through an injected ApiClient (CLAUDE.md
 -- §5/§9 — state never touches socket.http); KRP-502's reader glue (ui/) writes the
 -- bytes to disk and hands the file to ReaderUI.
 --
--- It owns three jobs (the KRP-501 acceptance criteria):
---   1. Acquire the chapter's `eink` CBZ via ApiClient:downloadChapter — the
---      eink-only path (api/client.lua appends ?profile=eink); never a raw CBZ (§6).
---   2. Track build status (pending | completed | failed): only a completed build is
---      "ready" and exposes the stored-CBZ URL; a failed build is surfaced as an
---      error so the UI can offer retry; a transport/HTTP error acquires nothing.
---   3. Map the API page index ↔ CBZ page index. API page indices are 0-based;
---      KOReader's CBZ reader is 1-based, so the mapping is a fixed ±1 offset.
+-- Acquisition uses the TRANSIENT read path (KRP-606): ApiClient:readChapterCbzToFile
+-- hits GET /api/chapter/:id/cbz, where the server builds and serves the chapter's
+-- eink CBZ from its session cache WITHOUT persisting a download record — so plain
+-- reading never shows up under "Downloaded" (only the explicit POST /download does,
+-- ui/reader_menu.lua). It is the eink-only path (never a raw CBZ, §6).
 --
--- Acquisition mirrors the other state modules' split into a pure `fetchDownload`
--- (the blocking API call, returning api/client.lua's (data, err)) and an
--- `applyDownload` (mutates this state); `acquire` the specs drive is their
--- composition. The split exists because net.lua runs the fetch in a forked
--- sub-process (KRP-305) which can't mutate this table across the fork, so the UI
--- runs the fetch through net and applies the result in the parent (KRP-502).
+-- It owns two jobs:
+--   1. Acquire the chapter's eink CBZ. `fetchCbz` is a pure fetch, safe to run
+--      off-thread in net.lua's forked sub-process (KRP-305): it streams the bytes
+--      to destPath and returns only (path, err) — the file is on disk, nothing
+--      large crosses the fork pipe. The UI glue picks destPath and opens the file.
+--   2. Map the API page index ↔ CBZ page index. API page indices are 0-based;
+--      KOReader's CBZ reader is 1-based, so the mapping is a fixed ±1 offset
+--      (KRP-502/602 use it to seek a resumed position and translate progress).
 
 local Reader = {}
 Reader.__index = Reader
@@ -31,65 +30,17 @@ function Reader.new(api, mangaId, chapterId)
         api = api,
         manga_id = mangaId,
         chapter_id = chapterId,
-        status = nil,
-        error = nil,
     }, Reader)
-end
-
--- Pure fetch (safe to run off-thread): POST the eink download, returns (data, err).
-function Reader:fetchDownload()
-    return self.api:downloadChapter(self.chapter_id, self.manga_id)
-end
-
--- Apply the fetched download record. A transport/HTTP error acquires nothing (no
--- status, error surfaced); a `failed` build is surfaced as an error and stays
--- not-ready; a `pending`/`completed` build clears any prior error.
-function Reader:applyDownload(data, err)
-    if err then
-        self.error = err
-        return false, err
-    end
-    self.status = data.status
-    if data.status == "failed" then
-        self.error = { kind = "build", status = "failed" }
-        return false, self.error
-    end
-    self.error = nil
-    return true
-end
-
-function Reader:acquire()
-    return self:applyDownload(self:fetchDownload())
 end
 
 function Reader:getChapterId()
     return self.chapter_id
 end
 
-function Reader:getStatus()
-    return self.status
-end
-
--- Only a completed build is ready to open.
-function Reader:isReady()
-    return self.status == "completed"
-end
-
-function Reader:isFailed()
-    return self.status == "failed"
-end
-
--- The stored-CBZ URL, but only once the build is completed (nil otherwise). The
--- bytes themselves are fetched by the reader glue (KRP-502), off this state.
-function Reader:getCbzUrl()
-    if not self:isReady() then
-        return nil
-    end
-    return self.api:cbzUrl(self.chapter_id)
-end
-
-function Reader:getError()
-    return self.error
+-- Pure fetch (safe to run off-thread): stream the transient eink CBZ to destPath,
+-- returning (destPath, nil) on success or (nil, err). No persisted download.
+function Reader:fetchCbz(destPath)
+    return self.api:readChapterCbzToFile(self.chapter_id, destPath)
 end
 
 -- --- API page index ↔ CBZ page index ------------------------------------------
