@@ -31,12 +31,14 @@ export class DownloadService {
       return existing;
     }
 
-    const pageCount = await this.suwayomi.getChapterPageCount(chapterId);
+    // Resolve the chapter's page URLs once, then fetch + process each; re-running
+    // resolution per page would issue an upstream page-resolution round-trip per
+    // page (the same N+1 the transient reader path avoids).
+    const pageUrls = await this.suwayomi.fetchPageUrls(chapterId);
 
-    // Fetch + process pages sequentially so the archive preserves chapter order.
     const pages: CbzPage[] = [];
-    for (let pageIndex = 0; pageIndex < pageCount; pageIndex++) {
-      const source = await this.suwayomi.fetchPage({ chapterId, pageIndex });
+    for (const url of pageUrls) {
+      const source = await this.suwayomi.fetchPageBytes(url);
       pages.push(await this.imageProcessor.process(source, profile));
     }
 

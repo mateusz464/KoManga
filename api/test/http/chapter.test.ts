@@ -40,6 +40,8 @@ function clientWithPageCount(options: {
     listChapters: unexpected,
     fetchChapters: unexpected,
     getChapterPageCount,
+    fetchPageUrls: unexpected,
+    fetchPageBytes: unexpected,
     fetchPage: unexpected,
     fetchCover: unexpected,
   };

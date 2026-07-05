@@ -4,7 +4,6 @@ import type { IncomingMessage } from "node:http";
 import { createApp } from "../../src/http/app.js";
 import {
   SuwayomiError,
-  type PageRef,
   type RawPage,
   type SuwayomiClient,
 } from "../../src/services/ports/suwayomi-client.js";
@@ -123,16 +122,17 @@ function buildDeps(options: DepsOptions = {}) {
   const { repo, get, list, create } = makeRepo(options.repoSeed);
   const { store, save, read } = makeStore(options.storeSeed);
 
-  // fetchPage returns bytes tagged with the page index so we can prove the
-  // service walks pages in chapter order; getChapterPageCount bounds the walk.
-  const getChapterPageCount = vi.fn(async (_chapterId: string) => {
+  // The chapter's page URLs are resolved once; each URL encodes its index so
+  // fetchPageBytes can tag its bytes and the built page order stays checkable.
+  const pageUrl = (index: number) => `url-${index}`;
+  const fetchPageUrls = vi.fn(async (_chapterId: string): Promise<string[]> => {
     if (options.fetchError !== undefined) throw options.fetchError;
-    return options.pageCount ?? PAGE_COUNT;
+    const count = options.pageCount ?? PAGE_COUNT;
+    return Array.from({ length: count }, (_v, i) => pageUrl(i));
   });
-  const fetchPage = vi.fn(async (ref: PageRef): Promise<RawPage> => {
-    if (options.fetchError !== undefined) throw options.fetchError;
+  const fetchPageBytes = vi.fn(async (url: string): Promise<RawPage> => {
     return {
-      bytes: Buffer.from(`raw-${ref.pageIndex}`),
+      bytes: Buffer.from(`raw-${url.replace("url-", "")}`),
       contentType: "image/jpeg",
     };
   });
@@ -145,8 +145,10 @@ function buildDeps(options: DepsOptions = {}) {
     getMangaDetails: unexpected,
     listChapters: unexpected,
     fetchChapters: unexpected,
-    getChapterPageCount,
-    fetchPage,
+    getChapterPageCount: unexpected,
+    fetchPageUrls,
+    fetchPageBytes,
+    fetchPage: unexpected,
     fetchCover: unexpected,
   };
 
@@ -186,8 +188,8 @@ function buildDeps(options: DepsOptions = {}) {
       downloadStore: store,
       downloadsRepository: repo,
     },
-    getChapterPageCount,
-    fetchPage,
+    fetchPageUrls,
+    fetchPageBytes,
     process,
     capturedProfiles,
     build,
@@ -214,14 +216,13 @@ describe("POST /api/chapter/:id/download", () => {
 
     expect(res.status).toBe(200);
 
-    // Every page of the chapter is fetched in order, then processed.
-    expect(d.getChapterPageCount).toHaveBeenCalledWith(CHAPTER_ID);
-    expect(d.fetchPage).toHaveBeenCalledTimes(PAGE_COUNT);
+    // Page URLs are resolved exactly once for the whole chapter (no N+1), then
+    // each page's bytes are fetched by URL in chapter order, then processed.
+    expect(d.fetchPageUrls).toHaveBeenCalledTimes(1);
+    expect(d.fetchPageUrls).toHaveBeenCalledWith(CHAPTER_ID);
+    expect(d.fetchPageBytes).toHaveBeenCalledTimes(PAGE_COUNT);
     for (let i = 0; i < PAGE_COUNT; i++) {
-      expect(d.fetchPage).toHaveBeenNthCalledWith(i + 1, {
-        chapterId: CHAPTER_ID,
-        pageIndex: i,
-      });
+      expect(d.fetchPageBytes).toHaveBeenNthCalledWith(i + 1, `url-${i}`);
     }
     expect(d.process).toHaveBeenCalledTimes(PAGE_COUNT);
 
@@ -291,7 +292,8 @@ describe("POST /api/chapter/:id/download", () => {
     // Returns the already-stored record, untouched.
     expect(res.body).toEqual({ data: existing });
     // No rebuild, no re-store, no duplicate record.
-    expect(d.fetchPage).not.toHaveBeenCalled();
+    expect(d.fetchPageUrls).not.toHaveBeenCalled();
+    expect(d.fetchPageBytes).not.toHaveBeenCalled();
     expect(d.process).not.toHaveBeenCalled();
     expect(d.build).not.toHaveBeenCalled();
     expect(d.save).not.toHaveBeenCalled();
@@ -311,7 +313,7 @@ describe("POST /api/chapter/:id/download", () => {
       error: { code: "BAD_REQUEST", message: expect.any(String) },
     });
     // Nothing downstream is touched.
-    expect(d.getChapterPageCount).not.toHaveBeenCalled();
+    expect(d.fetchPageUrls).not.toHaveBeenCalled();
     expect(d.repoCreate).not.toHaveBeenCalled();
   });
 
@@ -326,7 +328,7 @@ describe("POST /api/chapter/:id/download", () => {
     expect(res.body).toEqual({
       error: { code: "BAD_REQUEST", message: expect.any(String) },
     });
-    expect(d.getChapterPageCount).not.toHaveBeenCalled();
+    expect(d.fetchPageUrls).not.toHaveBeenCalled();
   });
 
   it("propagates an upstream failure as the 502 error envelope", async () => {

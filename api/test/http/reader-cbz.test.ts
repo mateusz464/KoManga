@@ -4,7 +4,6 @@ import type { IncomingMessage } from "node:http";
 import { createApp } from "../../src/http/app.js";
 import {
   SuwayomiError,
-  type PageRef,
   type RawPage,
   type SuwayomiClient,
 } from "../../src/services/ports/suwayomi-client.js";
@@ -144,14 +143,17 @@ function buildDeps(options: DepsOptions = {}) {
   const { store, save, read } = makeStore(options.storeSeed);
   const { cache, get: cacheGet, set: cacheSet } = makeCache();
 
-  const getChapterPageCount = vi.fn(async (_chapterId: string) => {
+  // A page URL encodes its index so fetchPageBytes can tag its bytes and the
+  // built page order stays checkable; the resolution runs once per build.
+  const pageUrl = (index: number) => `url-${index}`;
+  const fetchPageUrls = vi.fn(async (_chapterId: string): Promise<string[]> => {
     if (options.fetchError !== undefined) throw options.fetchError;
-    return options.pageCount ?? PAGE_COUNT;
+    const count = options.pageCount ?? PAGE_COUNT;
+    return Array.from({ length: count }, (_v, i) => pageUrl(i));
   });
-  const fetchPage = vi.fn(async (ref: PageRef): Promise<RawPage> => {
-    if (options.fetchError !== undefined) throw options.fetchError;
+  const fetchPageBytes = vi.fn(async (url: string): Promise<RawPage> => {
     return {
-      bytes: Buffer.from(`raw-${ref.pageIndex}`),
+      bytes: Buffer.from(`raw-${url.replace("url-", "")}`),
       contentType: "image/jpeg",
     };
   });
@@ -164,8 +166,10 @@ function buildDeps(options: DepsOptions = {}) {
     getMangaDetails: unexpected,
     listChapters: unexpected,
     fetchChapters: unexpected,
-    getChapterPageCount,
-    fetchPage,
+    getChapterPageCount: unexpected,
+    fetchPageUrls,
+    fetchPageBytes,
+    fetchPage: unexpected,
     fetchCover: unexpected,
   };
 
@@ -200,8 +204,8 @@ function buildDeps(options: DepsOptions = {}) {
       downloadStore: store,
       downloadsRepository: repo,
     },
-    getChapterPageCount,
-    fetchPage,
+    fetchPageUrls,
+    fetchPageBytes,
     process,
     capturedProfiles,
     build,
@@ -246,13 +250,13 @@ describe("GET /api/chapter/:id/cbz (transient reader path)", () => {
 
     await readCbz(d.deps);
 
-    expect(d.getChapterPageCount).toHaveBeenCalledWith(CHAPTER_ID);
-    expect(d.fetchPage).toHaveBeenCalledTimes(PAGE_COUNT);
+    // Page URLs are resolved exactly once for the whole chapter (no N+1), then
+    // each page's bytes are fetched by URL in chapter order.
+    expect(d.fetchPageUrls).toHaveBeenCalledTimes(1);
+    expect(d.fetchPageUrls).toHaveBeenCalledWith(CHAPTER_ID);
+    expect(d.fetchPageBytes).toHaveBeenCalledTimes(PAGE_COUNT);
     for (let i = 0; i < PAGE_COUNT; i++) {
-      expect(d.fetchPage).toHaveBeenNthCalledWith(i + 1, {
-        chapterId: CHAPTER_ID,
-        pageIndex: i,
-      });
+      expect(d.fetchPageBytes).toHaveBeenNthCalledWith(i + 1, `url-${i}`);
     }
     // Profile-negotiated: every page is processed under eink (RFC §6).
     expect(d.capturedProfiles).toEqual(["eink", "eink", "eink"]);
@@ -308,7 +312,8 @@ describe("GET /api/chapter/:id/cbz (transient reader path)", () => {
 
     // The second read is a cache hit: no refetch, reprocess or rebuild.
     expect(d.build).toHaveBeenCalledTimes(1);
-    expect(d.fetchPage).toHaveBeenCalledTimes(PAGE_COUNT);
+    expect(d.fetchPageUrls).toHaveBeenCalledTimes(1);
+    expect(d.fetchPageBytes).toHaveBeenCalledTimes(PAGE_COUNT);
     expect(d.process).toHaveBeenCalledTimes(PAGE_COUNT);
     expect(d.cacheGet).toHaveBeenCalled();
   });
@@ -324,7 +329,7 @@ describe("GET /api/chapter/:id/cbz (transient reader path)", () => {
     expect(res.body).toEqual({
       error: { code: "BAD_REQUEST", message: expect.any(String) },
     });
-    expect(d.getChapterPageCount).not.toHaveBeenCalled();
+    expect(d.fetchPageUrls).not.toHaveBeenCalled();
     expect(d.build).not.toHaveBeenCalled();
   });
 

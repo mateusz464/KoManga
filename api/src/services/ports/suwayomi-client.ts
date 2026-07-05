@@ -77,6 +77,17 @@ export interface SuwayomiClient {
   fetchChapters(mangaId: string): Promise<Chapter[]>;
   /** Page count only (no image data); rejects {@link NotFoundError} on unknown id. */
   getChapterPageCount(chapterId: string): Promise<number>;
+  /**
+   * Resolves a chapter's page image URLs in a single upstream call, in reading
+   * order. Building a CBZ needs every page, so callers resolve the list once
+   * here and fetch each via {@link fetchPageBytes} — avoiding the N+1 that
+   * per-page {@link fetchPage} triggers across a whole chapter (each of those
+   * re-runs Suwayomi's page resolution). Rejects {@link NotFoundError} on an
+   * unknown chapter, {@link SuwayomiError} on upstream failure.
+   */
+  fetchPageUrls(chapterId: string): Promise<string[]>;
+  /** Fetches the image bytes for a page URL returned by {@link fetchPageUrls}. */
+  fetchPageBytes(url: string): Promise<RawPage>;
   fetchPage(ref: PageRef): Promise<RawPage>;
   /**
    * Fetches the manga's cover image bytes from Suwayomi. Mirrors

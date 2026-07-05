@@ -232,13 +232,27 @@ export class SuwayomiGraphQLClient implements SuwayomiClient {
     return pages.length;
   }
 
+  async fetchPageUrls(chapterId: string): Promise<string[]> {
+    const pages = await this.fetchRawPageUrls(chapterId);
+    return pages.map((url) => {
+      if (typeof url !== "string") {
+        throw new SuwayomiError();
+      }
+      return this.resolveUrl(url);
+    });
+  }
+
+  fetchPageBytes(url: string): Promise<RawPage> {
+    return this.fetchBytes(url);
+  }
+
   async fetchPage(ref: PageRef): Promise<RawPage> {
-    const pages = await this.fetchPageUrls(ref.chapterId);
-    const url = pages[ref.pageIndex];
-    if (typeof url !== "string") {
+    const urls = await this.fetchPageUrls(ref.chapterId);
+    const url = urls[ref.pageIndex];
+    if (url === undefined) {
       throw new SuwayomiError();
     }
-    return this.fetchBytes(this.resolveUrl(url));
+    return this.fetchBytes(url);
   }
 
   // Resolves the manga's cover the same way as a page: read its (Suwayomi-
@@ -257,10 +271,10 @@ export class SuwayomiGraphQLClient implements SuwayomiClient {
     return this.fetchBytes(this.resolveUrl(url));
   }
 
-  // Single source of a chapter's pages — both the count and individual fetches
-  // derive from its `pages` array (CLAUDE.md §13). An unknown chapter comes back
-  // as a "Collection is empty." error, mapped to 404 not 502 (live, API-402).
-  private async fetchPageUrls(chapterId: string): Promise<unknown[]> {
+  // Single source of a chapter's pages — count, URL list and individual fetches
+  // all derive from its `pages` array (CLAUDE.md §13). An unknown chapter comes
+  // back as a "Collection is empty." error, mapped to 404 not 502 (live, API-402).
+  private async fetchRawPageUrls(chapterId: string): Promise<unknown[]> {
     let data: { fetchChapterPages?: { pages?: unknown } };
     try {
       data = (await this.transport.request(FETCH_CHAPTER_PAGES, {

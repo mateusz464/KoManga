@@ -61,6 +61,8 @@ function clientReturning(options: {
     listChapters,
     fetchChapters,
     getChapterPageCount: unexpected,
+    fetchPageUrls: unexpected,
+    fetchPageBytes: unexpected,
     fetchPage: unexpected,
     fetchCover: unexpected,
   };

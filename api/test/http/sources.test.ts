@@ -30,6 +30,8 @@ function clientListing(sources: Source[]): {
     listChapters: unexpected,
     fetchChapters: unexpected,
     getChapterPageCount: unexpected,
+    fetchPageUrls: unexpected,
+    fetchPageBytes: unexpected,
     fetchPage: unexpected,
     fetchCover: unexpected,
   };
@@ -49,6 +51,8 @@ function clientFailing(error: unknown): SuwayomiClient {
     listChapters: unexpected,
     fetchChapters: unexpected,
     getChapterPageCount: unexpected,
+    fetchPageUrls: unexpected,
+    fetchPageBytes: unexpected,
     fetchPage: unexpected,
     fetchCover: unexpected,
   };

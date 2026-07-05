@@ -107,6 +107,8 @@ function buildDeps(options: {
     listChapters: unexpected,
     fetchChapters: unexpected,
     getChapterPageCount: unexpected,
+    fetchPageUrls: unexpected,
+    fetchPageBytes: unexpected,
     fetchPage,
     fetchCover: unexpected,
   };

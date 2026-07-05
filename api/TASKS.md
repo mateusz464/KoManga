@@ -637,6 +637,17 @@
 
 **Notes (2026-07-05):** Filled the API-913 stub in **`src/services/library-refresh.ts`** — a worker-pool over `library.list()` draining a shared queue, so at most `concurrency` (default 4) `fetchChapters` scrapes are in flight; each is wrapped in try/catch that logs `{ mangaId, error }` and continues, so one bad entry never aborts the pass or rejects (turns the 4 API-913 reds green; all 5 pass). Added the timer in a **thin** separable module **`src/services/library-refresh-scheduler.ts`** — `scheduleFollowedChapterRefresh(library, suwayomi, { intervalMs, runOnStart?, concurrency?, logger? })` returns a `{ stop() }` handle; each tick is fire-and-forget with a `.catch` that logs (covers a synchronous `list()` throw too), and the `setInterval` is `unref()`'d so the timer alone never keeps the loop alive. Config knob **`LIBRARY_REFRESH_INTERVAL_SECONDS`** (default `86400` = once a day) via a new `nonNegativeInt` loader so `0` is valid and **disables** the pass; wired at the composition root in `index.ts` after `listen` (non-blocking; `runOnStart: true`) or logs "disabled" when `0`. Because `fetchChapters` populates Suwayomi's stored list that `listChapters` reads, a refreshed manga surfaces new chapters in `GET /api/library`'s continue/caught-up (API-912) without a manual open. Skipped the optional `POST /api/library/refresh` manual trigger (not in the acceptance criteria). New tests: **`test/services/library-refresh-scheduler.test.ts`** (fake timers: runs-on-start, no-run-without-runOnStart, per-tick, stop halts, throwing pass logs & never rejects) + `LIBRARY_REFRESH_INTERVAL_SECONDS` cases in `config.test.ts` (default > 0, override, `0` accepted/disabled, negative rejected). Full suite **245 passing**; `tsc --noEmit` + lint + format clean; `.env.example` documents the knob.
 
+### API-915 — CBZ build resolves chapter page URLs once (eliminate N+1 fetchChapterPages) — **Done**
+**Description:** On a cold read, `GET /api/chapter/:id/cbz` stalled ~60s and failed at the plugin's luasocket timeout because the server-side CBZ build issued **N+1** `fetchChapterPages` mutation round-trips to Suwayomi: `ReaderService.readCbz`/`DownloadService.download` called `getChapterPageCount` (one `fetchPageUrls`) up front, then `fetchPage` per page — and every `fetchPage` re-ran `fetchPageUrls`. Resolve the page-URL list **once** and index into it.
+**Acceptance criteria:**
+- Page-URL resolution runs **exactly once** per chapter build (not N+1) for both `ReaderService` and `DownloadService` — pinned by a fake Suwayomi client counting the resolution call = 1.
+- Existing reader/download specs stay green; archive page order preserved.
+- ESLint + type-check clean.
+**Surfaced by:** on-device cold-read failure ("Preparing chapter…" → 60s timeout).
+**Blocked by:** none (fix to already-Done API-408/506/910).
+**Estimate:** M
+**Notes (2026-07-05):** Added `fetchPageUrls(chapterId): Promise<string[]>` (resolves a chapter's page image URLs in **one** upstream call, in reading order) and `fetchPageBytes(url): Promise<RawPage>` to the `SuwayomiClient` port; the adapter's private per-page `fetchPageUrls` became `fetchRawPageUrls`, and the public `fetchPageUrls`/`getChapterPageCount`/`fetchPage` all derive from that one `fetchChapterPages` mutation (GraphQL coupling stays in the adapter, CLAUDE.md §13). `ReaderService.readCbz` + `DownloadService.download` now resolve URLs once then loop `fetchPageBytes` per page (no more `getChapterPageCount` + per-page `fetchPage` re-resolution) — this also sets up the sibling bounded-concurrency fix (API-916) to fan out over the resolved URL array. Reworked `reader-cbz.test.ts`/`downloads.test.ts` fakes to the new port shape, asserting `fetchPageUrls` called **once** + `fetchPageBytes` once per page in chapter order (page order still `proc-raw-0..2`); added the two new methods to the placeholder mocks across the http/service specs + `stub-suwayomi`. Server-side only; no API-contract or client change. Full suite **245 passing**; `tsc --noEmit` + lint + format clean.
+
 ---
 
 ## Suggested build order (respecting strict deps)
@@ -649,7 +660,7 @@
 6. **Progress:** 601/602, 603/604
 7. **Auth/Security:** 701/702 → 703/704 (can start once 105 done; apply globally before deploy)
 8. **Deploy:** 801 → 802 → 803 ; **Observability:** 804 → 805 (independent — needs only 103/105/702, can be picked up any time)
-9. **Bug fixes (9xx):** 901 → 902, 903 → 904, 905 → 906, 907 → 908, 909 → 910, 911 → 912, 913 → 914 (independent of the above; can be picked up any time)
+9. **Bug fixes (9xx):** 901 → 902, 903 → 904, 905 → 906, 907 → 908, 909 → 910, 911 → 912, 913 → 914, 915 (independent of the above; can be picked up any time)
 
 > Note: Auth (7xx) only depends on the bootstrap layer, so it can be built early in parallel even though it's listed late. Everything funnels into API-801 for deployment.
 > Note: 9xx are post-hoc fixes/reconciliations (e.g. from the device spike), not part of the original feature build order.

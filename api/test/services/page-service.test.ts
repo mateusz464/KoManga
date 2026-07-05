@@ -104,6 +104,8 @@ function buildSuwayomi(
     listChapters: unexpected,
     fetchChapters: unexpected,
     getChapterPageCount: vi.fn(async (_chapterId: string) => pageCount),
+    fetchPageUrls: unexpected,
+    fetchPageBytes: unexpected,
     fetchPage,
     fetchCover: unexpected,
   };
