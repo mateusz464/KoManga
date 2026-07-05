@@ -83,6 +83,18 @@ function Details:getReadingDirection()
     return self.reading_direction
 end
 
+-- The chapter number for a chapter id from the loaded list, or nil. Lets a caller
+-- that only knows the id (the resume/continue path threads just { id }) label an
+-- offline download without another lookup (KRP-804).
+function Details:chapterNumberFor(chapterId)
+    for _, chapter in ipairs(self.chapters or {}) do
+        if chapter.id == chapterId then
+            return chapter.chapterNumber
+        end
+    end
+    return nil
+end
+
 -- --- Last-read position --------------------------------------------------------
 
 function Details:fetchProgress()

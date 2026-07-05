@@ -16,6 +16,7 @@ local Details = require("state/details")
 local Covers = require("state/covers")
 local Reader = require("state/reader")
 local Library = require("state/library")
+local Downloads = require("state/downloads")
 local Config = require("config")
 local CredentialPrompt = require("ui/credential_prompt")
 local SourceBrowser = require("ui/source_browser")
@@ -98,6 +99,7 @@ function Komanga:addToMainMenu(menu_items)
             net = self.net,
             api = self.api,
             auth = self.auth,
+            downloads = Downloads.open(),
         }
         if entry then
             menu_items.komanga = entry
@@ -277,13 +279,18 @@ end
 
 -- Open a chapter in KOReader's native reader (KRP-502). A fresh Reader per chapter;
 -- the launcher drives it through net (wifi-gated, non-blocking) and honours the
--- manga's reading direction (RTL/LTR) from the loaded details.
+-- manga's reading direction (RTL/LTR) from the loaded details. Title / chapter number
+-- / direction are threaded from the loaded details so the in-reader "download for
+-- offline" action (KRP-804) can label the offline entry without a network call.
 function Komanga:openReader(details_state, chapter)
+    local manga = details_state:getManga()
     ReaderLauncher.open{
         reader = Reader.new(self.api, details_state:getMangaId(), chapter.id),
         chapter_id = chapter.id,
         manga_id = details_state:getMangaId(),
-        rtl = details_state:getReadingDirection() == "rtl",
+        title = manga and manga.title,
+        chapter_number = chapter.chapterNumber or details_state:chapterNumberFor(chapter.id),
+        direction = details_state:getReadingDirection(),
         net = self.net,
         auth = self.auth,
     }

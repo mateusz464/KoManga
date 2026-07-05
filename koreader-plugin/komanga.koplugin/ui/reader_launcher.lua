@@ -52,23 +52,30 @@ end
 --     which is what a manga reader wants (KM-99).
 local function apply_reader_settings(opts)
     local doc_settings = DocSettings:open(opts.path)
-    doc_settings:saveSetting("inverse_reading_order", opts.rtl == true)
+    doc_settings:saveSetting("inverse_reading_order", opts.direction == "rtl")
     doc_settings:saveSetting("zoom_mode", "page")
     doc_settings:saveSetting("kopt_page_scroll", 0)
-    -- Stash the KoManga chapter identity so the in-reader menu (ui/reader_menu.lua,
-    -- KRP-506) can offer chapter actions for this document, and so it still knows
-    -- the chapter when the CBZ is reopened later from the file manager. Written to
-    -- the sidecar KOReader reads at open (same mechanism as the display settings).
+    -- Stash the KoManga chapter identity + display metadata so the in-reader menu
+    -- (ui/reader_menu.lua, KRP-506/804) can offer chapter actions for this document
+    -- and download it for offline with its title / chapter number / direction
+    -- WITHOUT a network call, and so it all survives the CBZ being reopened later from
+    -- the file manager. Written to the sidecar KOReader reads at open (same mechanism
+    -- as the display settings).
     doc_settings:saveSetting("komanga_chapter_id", opts.chapter_id)
     if opts.manga_id ~= nil then
         doc_settings:saveSetting("komanga_manga_id", opts.manga_id)
     end
+    doc_settings:saveSetting("komanga_title", opts.title)
+    doc_settings:saveSetting("komanga_chapter_number", opts.chapter_number)
+    doc_settings:saveSetting("komanga_direction", opts.direction)
     doc_settings:flush()
 end
 
 -- Open a chapter in KOReader's native reader.
---   opts = { reader, chapter_id, manga_id, rtl, net, auth? }
--- `reader` is a state/reader.lua instance; `rtl` true for right-to-left manga.
+--   opts = { reader, chapter_id, manga_id, title, chapter_number, direction, net, auth? }
+-- `reader` is a state/reader.lua instance; `direction` is "rtl"/"ltr" (RTL inverts the
+-- page-turn order). title/chapter_number are stashed for the in-reader offline
+-- download action (KRP-804).
 function ReaderLauncher.open(opts)
     local path = cbz_path(opts.chapter_id)
     -- Acquire the eink CBZ via the transient read path (no persisted download),
@@ -93,9 +100,11 @@ function ReaderLauncher.open(opts)
             end
             apply_reader_settings{
                 path = saved_path,
-                rtl = opts.rtl,
+                direction = opts.direction,
                 chapter_id = opts.chapter_id,
                 manga_id = opts.manga_id,
+                title = opts.title,
+                chapter_number = opts.chapter_number,
             }
             ReaderUI:showReader(saved_path)
         end,

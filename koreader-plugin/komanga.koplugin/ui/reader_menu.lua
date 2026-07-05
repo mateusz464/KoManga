@@ -14,12 +14,17 @@
 local InfoMessage = require("ui/widget/infomessage")
 local UIManager = require("ui/uimanager")
 local Retry = require("ui/retry")
+local DownloadCoordinator = require("state/download_coordinator")
 local _ = require("gettext")
 
 local ReaderMenu = {}
 
--- The KoManga chapter identity stashed in the open document's DocSettings sidecar at
--- launch, or nil when the open document isn't a KoManga chapter.
+-- The KoManga chapter descriptor stashed in the open document's DocSettings sidecar
+-- at launch, or nil when the open document isn't a KoManga chapter. Field names match
+-- the download coordinator's `chapter` contract (KRP-804) so it can be passed straight
+-- through. The display metadata (title / chapterNumber / direction) lets the offline
+-- entry be labelled without a network call, and survives the CBZ being reopened later
+-- from the file manager.
 local function chapter_context(ui)
     if not (ui and ui.doc_settings) then
         return nil
@@ -29,51 +34,40 @@ local function chapter_context(ui)
         return nil
     end
     return {
-        chapter_id = chapter_id,
-        manga_id = ui.doc_settings:readSetting("komanga_manga_id"),
+        chapterId = chapter_id,
+        mangaId = ui.doc_settings:readSetting("komanga_manga_id"),
+        title = ui.doc_settings:readSetting("komanga_title"),
+        chapterNumber = ui.doc_settings:readSetting("komanga_chapter_number"),
+        direction = ui.doc_settings:readSetting("komanga_direction"),
     }
 end
 
--- Reflect the server's download-record status on the panel (KRP-506 acceptance #2:
--- "Download chapter triggers the API download endpoint and reflects status").
-local function reflect_status(data)
-    local status = data and data.status
-    if status == "completed" then
-        UIManager:show(InfoMessage:new{ text = _("Chapter saved for offline reading.") })
-    else
-        -- The server builds synchronously today, so a non-completed status is a
-        -- safety net rather than an expected path (mirrors reader_launcher).
-        UIManager:show(InfoMessage:new{
-            text = _("Chapter is still being prepared — try again shortly."),
-        })
-    end
-end
-
--- POST the chapter download and reflect status, with the shared loading/retry state
--- (ui/retry.lua). A `failed` build comes back as a 2xx record, so it is surfaced as
--- a retryable build error through the task's (data, err) contract, letting Retry
--- offer a re-attempt uniformly (mirrors reader_launcher's open flow).
+-- Download the chapter to the device (RFC §5.4) via the KRP-804 coordinator, with the
+-- shared loading/retry state (ui/retry.lua). This is the DEVICE-LOCAL path: it streams
+-- the transient eink CBZ straight to the on-device store and records the offline index
+-- — it never hits the server-side POST /download. The fetch runs off-thread in
+-- net.lua's fork (safe — it mutates no index); the index entry is recorded parent-side
+-- in on_success (KRP-305).
 local function download_chapter(opts, ctx)
+    local coordinator = DownloadCoordinator.new(opts.api, opts.downloads)
+    opts.downloads:ensureDir()
     Retry.run{
         net = opts.net,
         auth = opts.auth,
         text = _("Saving chapter for offline…"),
         task = function()
-            local data, err = opts.api:downloadChapter(ctx.chapter_id, ctx.manga_id)
-            if err then
-                return nil, err
-            end
-            if data and data.status == "failed" then
-                return nil, { kind = "build", status = "failed" }
-            end
-            return data, nil
+            return coordinator:fetchCbz(ctx)
         end,
-        on_success = reflect_status,
+        on_success = function(path)
+            coordinator:record(ctx, path)
+            UIManager:show(InfoMessage:new{ text = _("Chapter saved for offline reading.") })
+        end,
     }
 end
 
 -- Build the reader-menu entry for the open document, or nil when it isn't a KoManga
--- chapter (so a non-KoManga book shows no KoManga menu). opts = { ui, net, api, auth }.
+-- chapter (so a non-KoManga book shows no KoManga menu).
+-- opts = { ui, net, api, auth, downloads }.
 -- sorting_hint drops the entry into the reader menu's "More tools" submenu (the
 -- idiomatic home for plugin actions), so no edit to KOReader's menu order is needed.
 function ReaderMenu.build(opts)
