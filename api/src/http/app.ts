@@ -15,6 +15,7 @@ import { ChapterService } from "../services/chapter-service.js";
 import { PageService } from "../services/page-service.js";
 import { CoverService } from "../services/cover-service.js";
 import { DownloadService } from "../services/download-service.js";
+import { ReaderService } from "../services/reader-service.js";
 import { ProgressService } from "../services/progress-service.js";
 import { LibraryService } from "../services/library-service.js";
 import { sourcesRouter } from "../routes/sources.js";
@@ -24,6 +25,7 @@ import { chapterRouter } from "../routes/chapter.js";
 import { pageRouter } from "../routes/page.js";
 import { coverRouter } from "../routes/cover.js";
 import { downloadsRouter } from "../routes/downloads.js";
+import { readerRouter } from "../routes/reader.js";
 import { progressRouter } from "../routes/progress.js";
 import { libraryRouter } from "../routes/library.js";
 import { createErrorHandler, notFoundHandler } from "./error-handler.js";
@@ -108,6 +110,23 @@ export function createApp(deps: AppDependencies): express.Express {
       "/api",
       coverRouter(
         new CoverService(deps.suwayomi, deps.imageProcessor, deps.sessionCache),
+      ),
+    );
+  }
+
+  // Transient reader CBZ (RFC §5.2): ephemeral, never persisted. Needs only the
+  // image processor, CBZ builder and session cache — mounted independently of
+  // the persistent download store so reading doesn't record a download.
+  if (deps.imageProcessor && deps.cbzBuilder && deps.sessionCache) {
+    app.use(
+      "/api",
+      readerRouter(
+        new ReaderService(
+          deps.suwayomi,
+          deps.imageProcessor,
+          deps.cbzBuilder,
+          deps.sessionCache,
+        ),
       ),
     );
   }
