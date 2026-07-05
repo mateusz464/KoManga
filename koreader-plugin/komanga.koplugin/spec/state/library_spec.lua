@@ -52,11 +52,14 @@ local FakeApi = require("spec.support.fake_api")
 
 -- The followed-manga list, in the added_at ASC order the API serves. Each entry
 -- carries a display title (API-908), except m1 — a pre-title row exercising the
--- mangaId fallback.
+-- mangaId fallback. Entries also carry the API's continue target (API-912/KRP-607):
+-- m3 has a next chapter to read, m7 is caught up, m1 (an older-API row) omits both.
 local function LIBRARY()
     return {
-        { mangaId = "m3", addedAt = 1, title = "Berserk" },
-        { mangaId = "m7", addedAt = 2, title = "Vinland Saga" },
+        { mangaId = "m3", addedAt = 1, title = "Berserk",
+          nextChapter = { id = "c10", number = 41 }, caughtUp = false },
+        { mangaId = "m7", addedAt = 2, title = "Vinland Saga",
+          nextChapter = nil, caughtUp = true },
         { mangaId = "m1", addedAt = 3 },
     }
 end
@@ -120,6 +123,17 @@ describe("library / home view state", function()
             -- Absent, empty, or non-string title → fall back to the raw mangaId.
             assert.are.equal("m1", Library.entryTitle({ mangaId = "m1" }))
             assert.are.equal("m1", Library.entryTitle({ mangaId = "m1", title = "" }))
+        end)
+
+        it("carries the API's continue target on each followed entry", function()
+            local api = FakeApi.new{ listLibrary = LIBRARY }
+            local library = Library.new(api)
+
+            library:loadLibrary()
+
+            local entries = library:getEntries()
+            assert.are.same({ id = "c10", number = 41 }, entries[1].nextChapter)
+            assert.is_true(entries[2].caughtUp)
         end)
 
         it("treats an empty library as the empty state, not an error", function()
@@ -186,6 +200,42 @@ describe("library / home view state", function()
             library:loadLibrary()
             assert.is_nil(library:getError())
             assert.are.same({ "m3", "m7", "m1" }, pluck(library:getEntries(), "mangaId"))
+        end)
+    end)
+
+    describe("continue label (KRP-607)", function()
+        it("shows the next chapter number and opens that chapter", function()
+            local label = Library.continueLabel({
+                mangaId = "m3", nextChapter = { id = "c10", number = 41 }, caughtUp = false,
+            })
+            assert.are.equal("Continue (41)", label.text)
+            assert.are.equal("c10", label.chapterId)
+        end)
+
+        it("shows 'Caught Up' with nothing to open when caught up", function()
+            local label = Library.continueLabel({ mangaId = "m7", caughtUp = true })
+            assert.are.equal("Caught Up", label.text)
+            assert.is_nil(label.chapterId)
+        end)
+
+        it("falls back to a bare 'Continue' when the API omits the target", function()
+            local label = Library.continueLabel({ mangaId = "m1" })
+            assert.are.equal("Continue", label.text)
+            assert.is_nil(label.chapterId)
+        end)
+
+        it("renders a decimal chapter number exactly, no rounding", function()
+            local label = Library.continueLabel({
+                mangaId = "m5", nextChapter = { id = "c3", number = 40.5 },
+            })
+            assert.are.equal("Continue (40.5)", label.text)
+        end)
+
+        it("trims only a trailing .0 from an integral chapter number", function()
+            assert.are.equal("41", Library.formatChapterNumber(41.0))
+            assert.are.equal("41", Library.formatChapterNumber(41))
+            assert.are.equal("40.5", Library.formatChapterNumber(40.5))
+            assert.are.equal("40.05", Library.formatChapterNumber(40.05))
         end)
     end)
 

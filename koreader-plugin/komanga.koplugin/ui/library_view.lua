@@ -32,7 +32,7 @@ local LibraryView = Menu:extend{
     library = nil,          -- state/library.lua instance
     net = nil,              -- net.lua wrapper (the single network path)
     auth = nil,             -- state/auth.lua (optional — routes a 401 to the prompt)
-    continue_reading = nil, -- function(mangaId): resume/open a followed manga (KRP-602)
+    continue_reading = nil, -- function(entry): open a followed manga's continue target (KRP-607)
     open_download = nil,    -- function(download): open a completed downloaded chapter
 }
 
@@ -123,17 +123,17 @@ function LibraryView:render()
     elseif self.library:isEmpty() then
         item_table[#item_table + 1] = { text = _("Your library is empty.") }
     else
-        -- Hoisted out of the loop: `_` (gettext) must not be the loop variable, and
-        -- there's no need to re-translate the same label per row.
-        local continue_label = _("Continue")
         for _, entry in ipairs(self.library:getEntries()) do
-            local manga_id = entry.mangaId
+            -- The mandatory shows the next chapter to read (e.g. "Continue (41)"),
+            -- "Caught Up", or a bare "Continue" fallback (state/library.lua, KRP-607);
+            -- main.lua decides where the tap goes from the entry's continue target.
+            local label = self.library.continueLabel(entry)
             item_table[#item_table + 1] = {
                 text = self.library.entryTitle(entry),
-                mandatory = continue_label,
+                mandatory = label.text,
                 callback = function()
                     if self.continue_reading then
-                        self.continue_reading(manga_id)
+                        self.continue_reading(entry)
                     end
                 end,
             }

@@ -140,8 +140,8 @@ function Komanga:showLibrary()
         library = library_state,
         net = self.net,
         auth = self.auth,
-        continue_reading = function(manga_id)
-            self:continueReading(library_state, manga_id)
+        continue_reading = function(entry)
+            self:continueReading(library_state, entry)
         end,
         open_download = function(download)
             self:resumeReader(download.mangaId, download.chapterId)
@@ -154,11 +154,30 @@ function Komanga:showLibrary()
     home:start()
 end
 
--- Resolve a followed manga's last-read position and act on it (KRP-604). A resolved
--- target jumps into the reader at that chapter (resume-seek happens on open, KRP-602);
--- a never-read manga has no target, so we open its details so the user can pick a
--- chapter. The progress lookup runs through net (wifi-gated, non-blocking).
-function Komanga:continueReading(library_state, manga_id)
+-- Act on a followed row's "continue" tap (KRP-607). The API hands each entry its
+-- continue target (nextChapter/caughtUp — API-912), so a normal row opens that
+-- chapter directly (resume-seek happens on open, KRP-602; reading direction is loaded
+-- in resumeReader). A caught-up row has nothing new, so open its details; a row the
+-- API left without a target (older API / no stored chapters) falls back to resolving
+-- the last-read position via a progress lookup.
+function Komanga:continueReading(library_state, entry)
+    local label = Library.continueLabel(entry)
+    if label.chapterId then
+        self:resumeReader(entry.mangaId, label.chapterId)
+        return
+    end
+    if entry.caughtUp then
+        self:showDetails({ id = entry.mangaId })
+        return
+    end
+    self:continueViaProgress(library_state, entry.mangaId)
+end
+
+-- Fallback for a row without an API continue target: resolve the last-read position
+-- via a progress lookup and act on it — jump into the reader at that chapter, or open
+-- details when the manga was never read. The lookup runs through net (wifi-gated,
+-- non-blocking).
+function Komanga:continueViaProgress(library_state, manga_id)
     self.net:run(function()
         return library_state:fetchProgress(manga_id)
     end, {

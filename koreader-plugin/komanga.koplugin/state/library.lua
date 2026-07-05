@@ -81,6 +81,34 @@ function Library.entryTitle(entry)
     return entry.mangaId
 end
 
+-- Render a decimal chapter number exactly — trimming only a trailing ".0"
+-- (41.0 → "41", 40.5 → "40.5"); no rounding. LuaJIT prints an integral float
+-- without a fraction already; the gsub also covers a Lua 5.3 "41.0".
+function Library.formatChapterNumber(number)
+    return (tostring(number):gsub("%.0$", ""))
+end
+
+-- KRP-607 — a followed row's "continue" mandatory: which chapter to read next.
+-- The API (API-912) computes the continue target and hands each entry a
+-- `nextChapter { id, number }` (nil when caught up or unknown) plus a `caughtUp`
+-- flag; the plugin only renders it — it cannot compute the target without a per-row
+-- progress + chapter-list fan-out (CLAUDE.md §6/§8). Returns the mandatory text and
+-- the chapterId to open, which is nil when there is nothing new to open (a caught-up
+-- row, or an older-API / no-stored-chapters row that falls back to a bare Continue).
+function Library.continueLabel(entry)
+    if entry.caughtUp then
+        return { text = "Caught Up", chapterId = nil }
+    end
+    local next_chapter = entry.nextChapter
+    if next_chapter and next_chapter.id then
+        return {
+            text = "Continue (" .. Library.formatChapterNumber(next_chapter.number) .. ")",
+            chapterId = next_chapter.id,
+        }
+    end
+    return { text = "Continue", chapterId = nil }
+end
+
 -- True only after a successful load returned zero entries (the empty state). False
 -- before any load, when entries are present, and when an error is outstanding.
 function Library:isEmpty()
