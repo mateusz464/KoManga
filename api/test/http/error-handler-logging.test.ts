@@ -5,8 +5,6 @@ import { createErrorHandler } from "../../src/http/error-handler.js";
 import { BadRequestError } from "../../src/http/errors.js";
 import type { Logger } from "../../src/services/ports/logger.js";
 
-// A mock at the port boundary (CLAUDE.md §4) — the error handler depends on the
-// Logger interface, never on pino.
 function fakeLogger(): Logger {
   return {
     debug: vi.fn(),
@@ -16,8 +14,6 @@ function fakeLogger(): Logger {
   };
 }
 
-// Throwaway app whose only route throws `err`, with the logger-aware error
-// handler mounted last (mirrors error-handler.test.ts).
 function appThrowing(err: unknown, logger: Logger): express.Express {
   const app = express();
   app.get("/boom", () => {
@@ -36,9 +32,8 @@ describe("createErrorHandler", () => {
       "/boom",
     );
 
-    // The unexpected error is logged server-side via the injected Logger...
     expect(logger.error).toHaveBeenCalledTimes(1);
-    // ...while the client still gets the existing safe envelope with no leak.
+    // The client gets the safe envelope with no secret or stack trace leaked.
     expect(res.status).toBe(500);
     expect(res.body).toEqual({
       error: { code: "INTERNAL", message: "Internal Server Error" },

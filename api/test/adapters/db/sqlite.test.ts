@@ -27,19 +27,10 @@ import type {
   LibraryRepository,
 } from "../../../src/services/ports/library-repository.js";
 
-// Contract test for the SQLite data layer (API-501): migrations + repository
-// CRUD behind the port interfaces (RFC §7, CLAUDE.md §8). Per CLAUDE.md §4.4
-// the adapter is exercised against the REAL `better-sqlite3` library on a temp
-// on-disk DB (not a mock). The real connection + CRUD lands in API-502; these
-// assertions stay red until then (the stub throws).
-//
-// Contract:
-//   - migrations create the downloads/reading_progress/cache_index schema on a
-//     fresh DB, and re-running them (open again) is safe (run-on-startup)
-//   - reading_progress: get/save, device-agnostic, last-write-wins by updatedAt
-//   - downloads: get/list/create (idempotent per chapter)/updateStatus
-//   - cache_index: get/upsert/delete/list/totalBytes bookkeeping
-//   - every repository sits behind a mockable interface
+// The SQLite data layer exercised against the REAL better-sqlite3 library on a
+// temp on-disk DB: migrations are idempotent across reopens; reading_progress is
+// device-agnostic + last-write-wins; downloads create is idempotent per chapter;
+// cache_index does size/TTL bookkeeping.
 
 let tmpDir: string;
 const opened: AppDatabase[] = [];

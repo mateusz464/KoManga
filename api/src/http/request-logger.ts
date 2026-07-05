@@ -5,9 +5,8 @@ import {
   type PinoLoggerOptions,
 } from "../adapters/logging/pino-logger.js";
 
-// Edge request logging: one structured line per request (method, path, status,
-// latency). It runs on the shared pino instance so it inherits the same level
-// and redaction — the Authorization header and the token value never appear.
+// Runs on the shared pino instance so it inherits the same redaction — the
+// Authorization header and token value never appear in a request line.
 export function createRequestLogger(
   options: PinoLoggerOptions,
 ): RequestHandler {

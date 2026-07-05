@@ -7,8 +7,6 @@ export interface ServedPage {
   readonly contentType: string;
 }
 
-// The reading critical path (RFC §5/§6): session cache → on miss fetch + process
-// + store; after serving, warm the next window of pages in the background.
 export class PageService {
   constructor(
     private readonly suwayomi: SuwayomiClient,

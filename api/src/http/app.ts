@@ -32,9 +32,7 @@ import { createErrorHandler, notFoundHandler } from "./error-handler.js";
 import { requireAuth } from "./auth.js";
 import { rateLimit, type RateLimitOptions } from "./rate-limit.js";
 
-// Null-object logger so endpoint tests can build an app without wiring logging;
-// the real composition root always injects a pino-backed Logger (§3 — not a
-// global external singleton, just a no-op default).
+// Null-object logger so endpoint tests can build an app without wiring logging.
 const noop = (): void => undefined;
 const NOOP_LOGGER: Logger = {
   debug: noop,
@@ -47,38 +45,31 @@ const NOOP_LOGGER: Logger = {
 // an endpoint needs.
 export interface AppDependencies {
   readonly suwayomi: SuwayomiClient;
-  // Structured logger for the error handler. Omitted in tests → no-op.
   readonly logger?: Logger;
-  // Edge request-logging middleware (pino-http), built in the composition root.
   readonly requestLogger?: express.RequestHandler;
   readonly authToken?: string;
   readonly rateLimit?: RateLimitOptions;
   readonly imageProcessor?: ImageProcessor;
   readonly sessionCache?: SessionCache;
   readonly prefetchWindow?: number;
-  // Max pages fetched + processed concurrently when building a chapter's CBZ
-  // (API-916). Omitted in tests → a safe default so the build stays bounded.
   readonly pageConcurrency?: number;
   readonly cbzBuilder?: CbzBuilder;
   readonly downloadStore?: DownloadStore;
   readonly downloadsRepository?: DownloadsRepository;
   readonly readingProgressRepository?: ReadingProgressRepository;
   readonly libraryRepository?: LibraryRepository;
-  // Directory of the built Kobo web client (web-client/dist). When set, the API
-  // serves it same-origin so the client calls /api/* without CORS (KWC-202).
+  // When set, the API serves the built web client same-origin (KWC-202).
   readonly clientDir?: string;
 }
 
-// Mirrors config's CBZ_PAGE_CONCURRENCY default; used when a test builds an app
-// without wiring the knob through.
+// Mirrors config's CBZ_PAGE_CONCURRENCY default, for when a test omits the knob.
 const DEFAULT_PAGE_CONCURRENCY = 6;
 
 export function createApp(deps: AppDependencies): express.Express {
   const app = express();
   const pageConcurrency = deps.pageConcurrency ?? DEFAULT_PAGE_CONCURRENCY;
 
-  // Log every request at the edge (method, path, status, latency) before any
-  // routing, so even /health and rejected requests are recorded.
+  // Before any routing, so even /health and rejected requests are logged.
   if (deps.requestLogger) {
     app.use(deps.requestLogger);
   }
@@ -87,8 +78,8 @@ export function createApp(deps: AppDependencies): express.Express {
     res.json({ status: "ok" });
   });
 
-  // Rate limiting and auth mount before the feature routers so over-limit /
-  // invalid-credential requests are rejected at the edge; /health stays public.
+  // Before the feature routers so over-limit / invalid-credential requests are
+  // rejected at the edge; /health stays public.
   if (deps.rateLimit) {
     app.use("/api", rateLimit(deps.rateLimit));
   }
@@ -122,9 +113,8 @@ export function createApp(deps: AppDependencies): express.Express {
     );
   }
 
-  // Transient reader CBZ (RFC §5.2): ephemeral, never persisted. Needs only the
-  // image processor, CBZ builder and session cache — mounted independently of
-  // the persistent download store so reading doesn't record a download.
+  // Transient reader CBZ: mounted independently of the persistent download store
+  // so reading a chapter doesn't record a download (RFC §5.2).
   if (deps.imageProcessor && deps.cbzBuilder && deps.sessionCache) {
     app.use(
       "/api",
@@ -181,10 +171,8 @@ export function createApp(deps: AppDependencies): express.Express {
     );
   }
 
-  // Serve the built web client same-origin (KWC-202). Mounted after the /api
-  // routers so it can never shadow an API route; static only resolves files that
-  // exist in dist (index.html at "/", main.js, styles.css), otherwise falls
-  // through to the JSON 404 below. This keeps /health and /api/* unchanged.
+  // After the /api routers so it can never shadow an API route; a non-file
+  // request falls through to the JSON 404 below.
   if (deps.clientDir) {
     app.use(express.static(deps.clientDir));
   }

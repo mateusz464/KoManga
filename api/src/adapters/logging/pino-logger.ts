@@ -53,9 +53,8 @@ export interface PinoLoggerOptions {
   readonly stream?: NodeJS.WritableStream;
 }
 
-// Builds the configured concrete pino instance — the only place the pino type is
-// constructed. Shared by the Logger-port adapter and the http request logger so
-// both inherit the same level + redaction.
+// Shared by the Logger-port adapter and the http request logger so both inherit
+// the same level + redaction.
 export function createPino(options: PinoLoggerOptions): PinoLogger {
   const destination = new ScrubStream(
     options.authToken,

@@ -2,9 +2,8 @@ import { describe, expect, it } from "vitest";
 import { Writable } from "node:stream";
 import { createPinoLogger } from "../../../src/adapters/logging/pino-logger.js";
 
-// Adapter-level test: exercise the REAL pino library writing to a captured
-// in-memory stream so we can assert on the exact bytes it emits (CLAUDE.md §4.4
-// — adapter tests run the real lib against controlled inputs).
+// Exercises the REAL pino library writing to a captured in-memory stream, so the
+// exact emitted bytes can be asserted.
 function collectingStream(): { stream: Writable; text: () => string } {
   const chunks: Buffer[] = [];
   const stream = new Writable({

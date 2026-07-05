@@ -10,10 +10,8 @@ function envelope(code: string, message: string): ErrorBody {
   return { error: { code, message } };
 }
 
-// The error handler takes its Logger by construction (no global singleton, §3).
-// ApiErrors are expected and map straight to the envelope; an unexpected error
-// is logged server-side through the port — with full detail — while the client
-// only ever sees the safe 500 (CLAUDE.md §6).
+// ApiErrors map straight to the envelope; an unexpected error is logged in full
+// server-side while the client only ever sees a safe 500 (CLAUDE.md §6).
 export function createErrorHandler(logger: Logger): ErrorRequestHandler {
   return (err, _req, res, _next) => {
     if (err instanceof ApiError) {

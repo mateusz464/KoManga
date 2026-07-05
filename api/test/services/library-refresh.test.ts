@@ -10,22 +10,10 @@ import type {
 } from "../../src/services/ports/suwayomi-client.js";
 import { stubSuwayomi } from "../support/stub-suwayomi.js";
 
-// Contract test for the periodic followed-manga refresh (API-913, KRP-607).
-//
-// API-911/912 compute a library entry's continue/caught-up state from Suwayomi's
-// STORED chapter list (`listChapters`), which only refreshes when a manga is
-// opened. So a caught-up manga never surfaces a newly-released chapter until the
-// user reopens it. This pass fixes that: for EACH followed manga only — the
-// `library` rows, never all Suwayomi manga — it triggers the source scrape
-// (`fetchChapters`) so the stored list stays current on its own.
-//
-// This is the one place a chapter-scrape fan-out is acceptable: a bounded
-// background job, not the per-request client fan-out rejected in API-911 (RFC
-// §13, CLAUDE.md §8). So the pass is pinned here as a pure, injectable unit —
-// it takes the library repo + Suwayomi client and is independent of any timer
-// (the scheduler in API-914 only calls it), all ports mocked at the boundary
-// (CLAUDE.md §4). The runnable is implemented in API-914 — these assertions stay
-// red (the current stub fetches nothing) until then.
+// The periodic refresh triggers the source scrape (fetchChapters) for each
+// followed manga only, so a caught-up manga surfaces newly-released chapters
+// without the user reopening it. A bounded background fan-out, unlike the
+// per-request client fan-out rejected in API-911.
 
 function makeLibraryRepo(seed: LibraryEntry[] = []) {
   const rows = new Map<string, LibraryEntry>();

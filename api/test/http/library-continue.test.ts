@@ -15,43 +15,15 @@ import type {
 } from "../../src/services/ports/suwayomi-client.js";
 import { stubSuwayomi } from "../support/stub-suwayomi.js";
 
-// Contract test for the library "continue target" enrichment (API-911).
-//
-// Each `GET /api/library` entry must carry a computed next-unread chapter so a
-// client's library/home view can render e.g. `One Piece … Continue (41)` without
-// computing it itself — a client can't, because that would need a per-row
-// progress read AND the chapter list for every followed manga, and
-// `MangaService.getManga` triggers a live source scrape per call (a whole-library
-// scrape fan-out is disallowed — RFC §13, CLAUDE.md §6/§8). The API already holds
-// both inputs: progress (SQLite, ReadingProgressRepository) and Suwayomi's
-// STORED chapter list (`listChapters` — never the live `fetchChapters` scrape).
-//
-// All ports are mocked at the boundary (CLAUDE.md §4) and injected via
-// `createApp`, so this exercises route → service → ports through Express, not any
-// adapter. The enrichment is implemented in API-912 — the continue-field
-// assertions stay red (current entries carry no `nextChapter`/`caughtUp`) until
-// then.
-//
-// Shape pinned: each entry keeps its API-908 fields (`mangaId`, `addedAt`,
-// optional `title`) and gains `nextChapter: { id, number } | null` plus
-// `caughtUp: boolean` — the client gets the decimal number to render, the id to
-// open, and a distinct caught-up state. Entries stay ordered `added_at ASC` in
-// the `{ data }` envelope.
-//
-// Semantics pinned (the plugin epic's product decision — KRP-607):
-//   - "Finished a chapter" ≙ the last page was reached: with 0-based
-//     `progress.page` and the chapter's `pageCount`, finished ≙
-//     `page >= pageCount - 1`.
-//   - Resolve against the chapter list sorted by `chapterNumber` ASC:
-//       never-read              → first chapter
-//       part-way (not finished) → that same chapter (resume)
-//       finished, later exists  → the following chapter
-//       finished the newest     → no target, `caughtUp: true`
-//   - `pageCount` unknown → finish can't be confirmed → treat as part-way.
-//   - The decimal `chapterNumber` is rendered as-is (no rounding).
-
-// A stateful in-memory LibraryRepository fake (mirrors library.test.ts): one row
-// per manga, insertion order preserved so `added_at ASC` ordering is observable.
+// Each GET /api/library entry gains a computed continue target — nextChapter and
+// caughtUp — from progress (SQLite) and Suwayomi's STORED chapter list, never a
+// live scrape. Resolved against chapters sorted by chapterNumber ASC:
+//   never-read              → first chapter
+//   part-way (not finished) → that same chapter (resume)
+//   finished, later exists  → the following chapter
+//   finished the newest     → no target, caughtUp: true
+// "Finished" ≙ 0-based page >= pageCount - 1; an unknown pageCount can't confirm
+// finish, so it resumes.
 function makeLibraryRepo(seed: LibraryEntry[] = []) {
   const rows = new Map<string, LibraryEntry>();
   for (const e of seed) rows.set(e.mangaId, e);
@@ -78,10 +50,8 @@ function makeProgressRepo(seed: ReadingProgress[] = []) {
   return { repo, get };
 }
 
-// A SuwayomiClient whose `listChapters` returns the seeded STORED chapters per
-// manga. `fetchChapters`/`getMangaDetails` throw loudly: the enrichment must read
-// only stored chapters — a live scrape or per-entry getManga would blow up the
-// test (structurally pins "no fetchChapters, no per-entry getManga").
+// listChapters returns seeded stored chapters; fetchChapters/getMangaDetails
+// throw, structurally pinning "no live scrape, no per-entry getManga".
 function makeSuwayomi(chaptersByManga: Record<string, Chapter[]>) {
   const listChapters = vi.fn(async (mangaId: string): Promise<Chapter[]> => {
     const chapters = chaptersByManga[mangaId];

@@ -2,7 +2,6 @@
 
 import Database from "better-sqlite3";
 
-// Only the db adapter sees this concrete type (CLAUDE.md §11).
 export type AppDatabase = Database.Database;
 
 // Plain SQL, run on every open; `IF NOT EXISTS` makes re-running safe.

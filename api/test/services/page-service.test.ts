@@ -17,18 +17,9 @@ import type {
   SessionCache,
 } from "../../src/services/ports/session-cache.js";
 
-// Contract test for background prefetch (API-409, RFC §5). Requesting page N
-// should warm the next configurable window of pages in the same chapter into the
-// session cache, in the background, *without blocking* page N's response — so a
-// reader advancing forward gets cache hits. Prefetch lives in the PageService
-// business logic (CLAUDE.md §3), so it is tested here at the service layer with
-// every port mocked at its boundary (CLAUDE.md §4): the Suwayomi client, the
-// image processor, and a small storing fake of the session cache. The behaviour
-// is implemented in API-410 — these assertions stay red until then (the current
-// PageService accepts the window but does not prefetch).
-//
-// Page ids are "<chapterId>:<index>" (0-based) as minted by the chapter
-// page-list endpoint (API-401/402). A chapter of 93 pages therefore has valid
+// Requesting page N warms the next `prefetchWindow` pages of the same chapter
+// into the session cache in the background, without blocking page N's response.
+// Page ids are "<chapterId>:<index>" (0-based), so a 93-page chapter has valid
 // indices 0..92.
 const CHAPTER = "77";
 const PAGE_COUNT = 93;

@@ -49,8 +49,7 @@ function target(chapter: Chapter) {
   return { id: chapter.id, number: chapter.chapterNumber };
 }
 
-// `chapters` is pre-sorted ascending by chapterNumber. Semantics pinned by
-// API-911 (KRP-607).
+// `chapters` must be pre-sorted ascending by chapterNumber.
 function continueTarget(
   chapters: Chapter[],
   chapterId: string | undefined,

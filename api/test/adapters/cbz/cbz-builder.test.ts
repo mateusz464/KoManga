@@ -17,22 +17,11 @@ import type {
   CbzPage,
 } from "../../../src/services/ports/cbz-builder.js";
 
-// Contract test for the CbzBuilder port (API-503): assemble already-processed
-// pages into a valid CBZ archive in chapter order (RFC §5, CLAUDE.md §3).
-//
-// Per CLAUDE.md §4.4 the adapter is exercised for real — the produced archive
-// is verified by the system `unzip` (a standard archive reader), not by
-// round-tripping through the same library that wrote it. That is what proves
-// "openable by a standard reader". The real builder lands in API-504; until
-// then the stub throws and every assertion below stays red.
-//
-// Contract:
-//   - the output is a valid ZIP/CBZ a standard tool accepts (`unzip -t`)
-//   - one archive entry per page; page bytes stored verbatim (no re-encode)
-//   - entries are named so a reader's lexicographic order == chapter order,
-//     including past the 9→10 boundary (zero-padding, not "1.png".."10.png")
-//   - entry file extension is derived from each page's content type
-//   - the interface is mockable for upstream tests (API-505)
+// The produced archive is verified by the system `unzip` (a standard reader),
+// not by round-tripping through the writing library — proving it opens in a
+// standard tool. Entries: one per page, bytes verbatim, zero-padded names so
+// lexicographic order matches chapter order past the 9→10 boundary, extension
+// from each page's content type.
 
 let tmpDir: string;
 

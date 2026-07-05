@@ -19,21 +19,11 @@ import type {
   SessionCache,
 } from "../../src/services/ports/session-cache.js";
 
-// Contract test for `GET /api/manga/:id/cover?profile=` (API-905). Covers are
-// served through the same profile-negotiated, cached image path as chapter
-// pages (RFC §6, CLAUDE.md §6) — what differs is the source (the manga cover,
-// fetched via the new `SuwayomiClient.fetchCover` port capability) and the
-// cache key (`cover:<mangaId>`, deliberately distinct from the
-// `<chapterId>:<index>` page ids so it can't collide). All three ports are
-// mocked at their boundaries (CLAUDE.md §4) and injected via `createApp`, so
-// this asserts the wiring, not any concrete adapter:
-//   - profile negotiation: defaults to `raw`, `eink` triggers the eink
-//     transform, anything else → 400.
-//   - cache miss → fetch + process + store; cache hit → served without refetch.
-//   - unknown manga → 404; upstream failure → 502.
-// Like the page endpoint, the response is the image *bytes* with the processed
-// content-type, not a JSON envelope. The route + the adapter's `fetchCover`
-// land in API-906 — these assertions stay red until then.
+// GET /api/manga/:id/cover?profile= serves the cover through the same
+// profile-negotiated, cached image path as pages (fetchCover source, cache key
+// `cover:<mangaId>`): profile defaults to raw, eink transforms, else 400; cache
+// miss fetches + processes + stores, hit serves without refetch; unknown manga →
+// 404, upstream failure → 502. The response is image bytes, not JSON.
 
 const MANGA_ID = "42";
 // Cover keys are namespaced so they can never collide with page ids

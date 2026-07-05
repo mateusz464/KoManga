@@ -7,10 +7,8 @@ export interface ServedCover {
   readonly contentType: string;
 }
 
-// Covers are served through the same profile-negotiated, cached image path as
-// chapter pages (RFC §5/§6): session cache → on miss fetch + process + store.
-// Entries are keyed `cover:<mangaId>` so they can never collide with the
-// `<chapterId>:<index>` page ids that share the session cache.
+// Covers share the session cache with pages, keyed `cover:<mangaId>` so they can
+// never collide with the `<chapterId>:<index>` page ids.
 export class CoverService {
   constructor(
     private readonly suwayomi: SuwayomiClient,

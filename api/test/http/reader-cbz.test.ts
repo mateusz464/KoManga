@@ -27,28 +27,9 @@ import type {
   SessionCache,
 } from "../../src/services/ports/session-cache.js";
 
-// Contract test for the transient reader-CBZ path (API-909).
-//
-// Problem being pinned: reading a chapter and explicitly downloading it both go
-// through POST /api/chapter/:id/download, which always persists a DownloadRecord
-// listed by GET /api/downloads. The KOReader reader (KRP-502) acquires its eink
-// CBZ that way, so every chapter merely *read* wrongly shows up as downloaded
-// (surfaced by KRP-604/606). The RFC (§5.2) intends a split: primary reading is
-// served from a server-built eink CBZ cached in the *ephemeral* session cache;
-// only explicit downloads are persisted + listed.
-//
-// Preferred design (pinned here):
-//   - GET  /api/chapter/:id/cbz?profile=eink — transient read path: build the
-//     eink CBZ via CbzBuilder, cache it in the SessionCache (ephemeral), serve
-//     the bytes. NEVER touches the persistent DownloadStore/DownloadsRepository,
-//     so it records nothing.
-//   - POST /api/chapter/:id/download — unchanged: the explicit, persisting,
-//     listed path.
-//
-// Everything is mocked at the port boundaries (CLAUDE.md §4) and injected via
-// createApp, so this exercises the route → service → ports wiring through
-// Express, not any concrete adapter. The transient route does not exist yet, so
-// these assertions stay red (404, route unmounted) until API-910.
+// The transient reader path: GET /api/chapter/:id/cbz builds + serves an eink CBZ
+// from the ephemeral session cache and records nothing, while POST
+// /api/chapter/:id/download stays the explicit, persisted, listed path (RFC §5.2).
 
 const CHAPTER_ID = "77";
 const MANGA_ID = "42";

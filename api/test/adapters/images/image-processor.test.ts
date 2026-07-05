@@ -6,16 +6,10 @@ import type {
   SourceImage,
 } from "../../../src/services/ports/image-processor.js";
 
-// Contract test for the ImageProcessor port (API-403). The adapter is a thin
-// wrapper over the real `sharp` library, so — per CLAUDE.md §4.4 — it is
-// exercised against real fixture images rather than a mock. The concrete
-// transform is implemented in API-404; these tests stay red until then.
-//
-// Two profiles (RFC §6, CLAUDE.md §6):
-//   raw  — lossless passthrough (source bytes unchanged).
-//   eink — greyscale, fitted within the configured target dimensions, encoded
-//          in the configured compact format. Both come from config, never
-//          hardcoded — proven by driving the adapter with different options.
+// The adapter exercised against real fixture images through the real `sharp`
+// library. Two profiles: `raw` passes source bytes through unchanged; `eink`
+// greyscales, fits within the configured target dimensions, and encodes in the
+// configured format — all driven from config, never hardcoded.
 
 const KOBO_EINK: EinkProfileOptions = {
   targetWidth: 1072,

@@ -7,33 +7,14 @@ import type {
 } from "../../src/services/ports/reading-progress-repository.js";
 import { stubSuwayomi } from "../support/stub-suwayomi.js";
 
-// Contract test for the reading-progress endpoints (API-601):
-//   - GET /api/progress/:mangaId — read the stored reading position for a manga.
-//   - PUT /api/progress/:mangaId — write the position (chapter + page + updatedAt),
-//                                  last-write-wins by `updatedAt` (RFC §7).
-//
-// The repository is mocked at the port boundary (CLAUDE.md §4) and injected via
-// `createApp`, so this exercises the route → service → port wiring through
-// Express, not the SQLite adapter. The endpoints are implemented in API-602 —
-// these assertions stay red (404, route unmounted) until then.
-//
-// Design decisions pinned here (RFC §7, §8 leaves shapes to implementation):
-//   - Progress is OWNED by this service and device-agnostic: keyed by manga only,
-//     never by a device id. `mangaId` comes from the URL; the PUT body carries
-//     only `chapterId`/`page`/`updatedAt`. Any device field in the body is
-//     ignored, never persisted.
-//   - Last-write-wins lives in the repository (API-501/502 port). The endpoints
-//     just forward to `save`/`get`; PUT returns the RESOLVED current position
-//     (save then get) so a stale write visibly returns the newer stored value.
-//   - Success uses the standard `{ data: ... }` envelope; a manga with no stored
-//     progress yet → 404 (the client then starts at the beginning).
+// Reading-progress endpoints: GET /api/progress/:mangaId reads the stored
+// position; PUT writes it and returns the RESOLVED position (save then get) so a
+// stale write visibly returns the newer stored value. Device-agnostic (keyed by
+// manga only); a manga with no stored progress → 404.
 
 const MANGA_ID = "42";
 
-// A stateful in-memory ReadingProgressRepository fake that faithfully implements
-// the API-501/502 contract — one row per manga (device-agnostic) and last-write-
-// wins by `updatedAt` — so write/read and LWW behaviour are observable across
-// calls within a test (mirrors the API-505 stateful-fake pattern).
+// Stateful and last-write-wins so write/read and LWW are observable across calls.
 function makeRepo(seed: ReadingProgress[] = []) {
   const rows = new Map<string, ReadingProgress>();
   for (const r of seed) rows.set(r.mangaId, r);

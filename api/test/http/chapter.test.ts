@@ -7,16 +7,9 @@ import {
   type SuwayomiClient,
 } from "../../src/services/ports/suwayomi-client.js";
 
-// Contract test for `GET /api/chapter/:id/pages` (API-401). The endpoint is
-// exercised through Express with the Suwayomi client mocked at the port boundary
-// (CLAUDE.md §4). It returns page metadata only — the page count plus a page id
-// per page — and never any image/binary data (RFC §6; pages are fetched one at a
-// time via `GET /api/page/:id`). The route is implemented in API-402 — these
-// assertions stay red until then.
+// GET /api/chapter/:id/pages returns page metadata only — the page count plus a
+// page id per page — never any image bytes.
 
-// A SuwayomiClient stub whose `getChapterPageCount` is controllable; every other
-// method rejects so the test fails loudly if the route reaches past the port it
-// needs.
 function clientWithPageCount(options: {
   pageCount?: number;
   error?: unknown;

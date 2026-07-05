@@ -1,10 +1,6 @@
-// Assembles processed pages into a CBZ (a ZIP of page images). Pure: returns the
-// archive bytes; storing them is the download service's concern (API-505/506).
-
 export interface CbzPage {
-  // Bytes are archived verbatim (pages are already processed); contentType only
-  // picks the entry's file extension. ProcessedImage satisfies this shape.
   readonly bytes: Buffer;
+  // Only picks the archive entry's file extension; the bytes are stored verbatim.
   readonly contentType: string;
 }
 

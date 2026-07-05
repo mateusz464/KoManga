@@ -9,22 +9,11 @@ import {
   type SuwayomiClient,
 } from "../../src/services/ports/suwayomi-client.js";
 
-// Contract test for `GET /api/manga/:id` (API-305/306, refined by API-903). The
-// endpoint is exercised through Express with the Suwayomi client mocked at the
-// port boundary (CLAUDE.md §4). It combines the manga details and the chapter
-// list into one response, presents the chapters in reading order, and carries
-// the reading-direction metadata the API owns (RFC §6).
-//
-// API-903 pins the source chapter-fetch: a freshly-searched manga has nothing
-// in Suwayomi's stored `manga.chapters.nodes` (the read-only `listChapters`
-// path) until the source is scraped via the `fetchChapters` mutation. The
-// endpoint must therefore trigger that fetch and return the fetched chapters —
-// it must not just read the (empty) stored list. These assertions stay red
-// against the current read-only `MangaService.getManga` until API-904.
+// GET /api/manga/:id combines details + chapters (ordered ascending) and carries
+// the API-owned reading direction. It must trigger the source scrape
+// (fetchChapters) rather than read Suwayomi's stored list, so a freshly-searched
+// manga returns chapters on first open.
 
-// A SuwayomiClient stub whose details / stored-chapter / source-fetch lookups
-// are controllable; every other method rejects so the test fails loudly if the
-// route reaches past the ports it needs.
 function clientReturning(options: {
   details?: MangaDetails;
   detailsError?: unknown;

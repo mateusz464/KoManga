@@ -7,27 +7,10 @@ import type {
 } from "../../src/services/ports/suwayomi-client.js";
 import { stubSuwayomi } from "../support/stub-suwayomi.js";
 
-// Contract test for the single-user auth middleware (API-701):
-//   - Every /api/* route requires a valid credential; missing/invalid → 401.
-//   - A valid credential passes through to the handler.
-//   - /health stays public (the only unauthenticated route).
-//
-// The middleware is injected through `createApp` via an `authToken` on
-// `AppDependencies` (kept optional so existing call sites stay valid; API-702
-// mounts the middleware and reads it). These assertions stay red — the
-// middleware is not mounted yet, so requests reach handlers without a credential
-// — until API-702 makes them green.
-//
-// Design decisions pinned here (RFC §9, CLAUDE.md §9; §8 leaves shapes to impl):
-//   - Scheme: `Authorization: Bearer <token>`, where the token is the single
-//     shared secret from config (Config.auth.token). A bearer token in a header
-//     carries NO device identity — any client presenting the secret is accepted,
-//     so the scheme is single-user but multi-client and does NOT assume one
-//     device (RFC §13).
-//   - Missing, malformed, or wrong credential → 401 with the standard
-//     `{ error: { code: "UNAUTHORIZED", message } }` envelope, rejected at the
-//     edge BEFORE any downstream port is touched.
-//   - /health is public and reachable with no credential.
+// Single-user auth on /api/*: `Authorization: Bearer <token>` against the shared
+// secret; missing/malformed/wrong → 401 at the edge. The bearer token carries no
+// device identity, so the scheme is single-user but multi-client. /health is
+// public.
 
 const TOKEN = "s3cr3t-single-user-token";
 
@@ -36,11 +19,7 @@ const SOURCES: Source[] = [
   { id: "src-2", name: "Mangakakalot", lang: "en" },
 ];
 
-// A controllable SuwayomiClient: only the methods the protected routes under
-// test call are spies returning known data; everything else throws. Reaching any
-// of these proves the request got PAST auth to the handler — so when a request
-// without a credential must be rejected, asserting the spy was NOT called keeps
-// the test honest (and red) until the middleware short-circuits at the edge.
+// The spies prove whether a request reached the handler (past auth).
 function controllableSuwayomi() {
   const base = stubSuwayomi();
   const listSources = vi.fn(async () => SOURCES);

@@ -7,14 +7,9 @@ import {
   type SuwayomiClient,
 } from "../../src/services/ports/suwayomi-client.js";
 
-// Contract test for `GET /api/sources` (API-301). The endpoint is exercised
-// through Express with the Suwayomi client mocked at the port boundary
-// (CLAUDE.md §4): the route must delegate to `listSources()` and shape the
-// result into the standard success envelope. The route is implemented in
-// API-302 — these assertions stay red until then.
+// GET /api/sources delegates to listSources() and shapes the result into the
+// success envelope.
 
-// A SuwayomiClient stub whose `listSources` is controllable; every other method
-// rejects so the test fails loudly if the route reaches past the port it needs.
 function clientListing(sources: Source[]): {
   suwayomi: SuwayomiClient;
   listSources: ReturnType<typeof vi.fn>;

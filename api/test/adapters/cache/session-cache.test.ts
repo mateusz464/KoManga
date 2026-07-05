@@ -8,16 +8,9 @@ import type {
   SessionCache,
 } from "../../../src/services/ports/session-cache.js";
 
-// Contract test for the SessionCache port (API-405). The cache is in-memory, so
-// — per CLAUDE.md §4.4 — the adapter is exercised directly rather than mocked.
-// The real behaviour lands in API-406; these behavioural assertions stay red
-// until then (the stub throws).
-//
-// Contract (RFC §5, CLAUDE.md §7):
-//   - keyed by page id + profile — raw and eink of one page are distinct entries
-//   - per-entry TTL — expired entries are never served
-//   - size-bound eviction — total cached bytes stay within the byte budget
-//   - exposed behind a mockable interface
+// The in-memory cache exercised directly: keyed by page id + profile (raw and
+// eink distinct); per-entry TTL, expired entries never served; size-bound
+// eviction keeps total bytes within the budget.
 
 /** A processed page of a given byte size — size is what the byte-budget counts. */
 function page(sizeBytes: number, contentType = "image/png"): CachedPage {

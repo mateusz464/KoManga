@@ -4,14 +4,11 @@
 import type { LogLevel } from "../services/ports/logger.js";
 
 // The eink panel (Kobo Clara BW) renders PNG and JPEG but not WebP/AVIF
-// (KWC-102, docs/device.md). Constrain the eink output set so a misconfiguration
-// can't silently emit a format the only eink client can't decode.
+// (KWC-102, docs/device.md), so the eink output set is constrained to those.
 export type EinkFormat = "png" | "jpeg";
 
 const EINK_FORMATS: readonly EinkFormat[] = ["png", "jpeg"];
 
-// Validated like IMAGE_EINK_FORMAT: a misconfigured level fails startup rather
-// than silently logging nothing (or too much).
 const LOG_LEVELS: readonly LogLevel[] = [
   "trace",
   "debug",
@@ -39,9 +36,8 @@ export interface Config {
     readonly window: number;
   };
   readonly cbz: {
-    // Max pages fetched + processed concurrently while building a chapter's CBZ
-    // (API-916). Bounded so a build never opens unlimited connections to
-    // Suwayomi/origin.
+    // Bounds pages in flight during a CBZ build, so it never opens unlimited
+    // connections to Suwayomi/origin.
     readonly pageConcurrency: number;
   };
   readonly libraryRefresh: {
@@ -60,8 +56,7 @@ export interface Config {
   readonly paths: {
     readonly sqliteFile: string;
     readonly cbzStore: string;
-    // Built web client (web-client/dist) to serve same-origin. Optional: when
-    // unset the API serves no static client and only exposes /health and /api/*.
+    // Unset → no static client served, only /health and /api/*.
     readonly clientDir?: string;
   };
 }

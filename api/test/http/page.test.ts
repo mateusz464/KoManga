@@ -20,21 +20,12 @@ import type {
   SessionCache,
 } from "../../src/services/ports/session-cache.js";
 
-// Contract test for `GET /api/page/:id?profile=` (API-407). The endpoint is the
-// critical path: it integrates a Suwayomi page fetch → image processing → the
-// session cache (RFC §5/§6). All three are mocked at their port boundaries
-// (CLAUDE.md §4) and injected via `createApp`, so this test asserts the wiring,
-// not any concrete adapter:
-//   - profile negotiation: defaults to `raw`, `eink` triggers the eink transform,
-//     anything else → 400.
-//   - cache miss → fetch + process + store; cache hit → served without refetch.
-//   - unknown page → 404.
-// Unlike the metadata endpoints, a page response is the image *bytes* with the
-// processed content-type, not a JSON envelope. The route is implemented in
-// API-408 — these assertions stay red until then.
+// GET /api/page/:id?profile= integrates a Suwayomi page fetch → image processing
+// → session cache: profile defaults to raw, eink transforms, else 400; cache miss
+// fetches + processes + stores, hit serves without refetch; unknown page → 404.
+// The response is image bytes, not JSON.
 
-// Page ids are `<chapterId>:<index>` (0-based), as minted by the chapter
-// page-list endpoint (API-401/402). The route must split that back into a
+// Page ids are `<chapterId>:<index>` (0-based); the route splits that into a
 // PageRef before calling the Suwayomi client.
 const PAGE_ID = "77:0";
 const PAGE_REF: PageRef = { chapterId: "77", pageIndex: 0 };

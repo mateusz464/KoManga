@@ -8,41 +8,15 @@ import type {
 import type { ReadingProgressRepository } from "../../src/services/ports/reading-progress-repository.js";
 import { stubSuwayomi } from "../support/stub-suwayomi.js";
 
-// Contract test for the library / follows endpoints (API-603):
-//   - GET    /api/library            — list the followed manga.
-//   - PUT    /api/library/:mangaId   — follow a manga (idempotent).
-//   - DELETE /api/library/:mangaId   — unfollow a manga (no-op if absent).
-//
-// The repository is mocked at the port boundary (CLAUDE.md §4) and injected via
-// `createApp`, so this exercises the route → service → port wiring through
-// Express, not the SQLite adapter. The endpoints are implemented in API-604 —
-// these assertions stay red (404, router unmounted) until then.
-//
-// Design decisions pinned here (RFC §7, §8 leaves shapes to implementation):
-//   - The library is OURS and device-agnostic: keyed by manga only, never by a
-//     device id. `mangaId` comes from the URL. An entry stores only the
-//     reference + when it was followed — never Suwayomi catalogue metadata,
-//     which is fetched on demand (CLAUDE.md §8).
-//   - `addedAt` (epoch ms) is supplied by the client in the PUT body, mirroring
-//     progress's `updatedAt` — device-agnostic and a stable sort key.
-//   - Follow is idempotent (re-following keeps one row); unfollow on an absent
-//     manga is a no-op. Both resolve to 200 with the standard `{ data: ... }`
-//     envelope; the empty library is `{ data: [] }`.
-//
-// API-907 extends the contract: a follow also captures the manga's display
-// `title` (so a client's library/home view can show the name, not the raw id —
-// KRP-604/605), persisted on the row and returned by `list()` with no per-entry
-// Suwayomi fan-out (CLAUDE.md §8). `title` is optional so an old title-less
-// follow degrades gracefully. These title assertions stay red until API-908
-// threads `title` through the route/service/repository.
+// The library / follows endpoints: GET /api/library lists, PUT
+// /api/library/:mangaId follows (idempotent, capturing `title`), DELETE
+// unfollows (no-op if absent). `addedAt` comes from the PUT body; the library is
+// device-agnostic (keyed by manga only) and stores no Suwayomi metadata.
 
 const MANGA_ID = "42";
 const TITLE = "One Piece";
 
-// A stateful in-memory LibraryRepository fake that faithfully implements the
-// API-603 contract — one row per manga (device-agnostic), idempotent add, and
-// no-op remove — so add/remove/list behaviour is observable across calls within
-// a test (mirrors the API-505/601 stateful-fake pattern).
+// Stateful so add/remove/list behaviour is observable across calls within a test.
 function makeRepo(seed: LibraryEntry[] = []) {
   const rows = new Map<string, LibraryEntry>();
   for (const e of seed) rows.set(e.mangaId, e);
@@ -60,10 +34,8 @@ function makeRepo(seed: LibraryEntry[] = []) {
   return { repo, list, add, remove, rows };
 }
 
-// API-912 enriches list() with a continue target computed from progress + the
-// STORED chapter list. These endpoints don't exercise that computation (see
-// library-continue.test.ts), so wire empty stored chapters and no progress: every
-// entry gets the neutral `{ nextChapter: null, caughtUp: false }`.
+// With no stored chapters and no progress, every entry gets this neutral
+// continue target (the computation itself is covered by library-continue.test.ts).
 const UNENRICHED = { nextChapter: null, caughtUp: false } as const;
 
 function stubProgressRepository(): ReadingProgressRepository {
@@ -106,7 +78,6 @@ describe("GET /api/library", () => {
     const res = await request(createApp(d.deps)).get("/api/library");
 
     expect(res.status).toBe(200);
-    // The { data } envelope carries the title alongside mangaId/addedAt.
     expect(res.body).toEqual({
       data: seed.map((e) => ({ ...e, ...UNENRICHED })),
     });
@@ -123,7 +94,6 @@ describe("PUT /api/library/:mangaId", () => {
 
     expect(res.status).toBe(200);
     expect(d.add).toHaveBeenCalledTimes(1);
-    // The route reads the display title from the body and persists it on the row.
     expect(d.add).toHaveBeenCalledWith({
       mangaId: MANGA_ID,
       addedAt: 1000,

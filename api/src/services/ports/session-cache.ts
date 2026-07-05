@@ -1,7 +1,3 @@
-// Ephemeral cache of processed pages, keyed by page id + profile so `raw` and
-// `eink` of one page are distinct entries (RFC §5, CLAUDE.md §7). Never touches
-// the persistent CBZ store.
-
 import type { ImageProfile } from "./image-processor.js";
 
 export interface CachedPage {
@@ -10,7 +6,7 @@ export interface CachedPage {
 }
 
 export interface SessionCache {
-  // Misses and expired entries both return undefined; expired entries are never served.
+  // Expired entries return undefined, indistinguishable from a miss.
   get(pageId: string, profile: ImageProfile): CachedPage | undefined;
   set(pageId: string, profile: ImageProfile, page: CachedPage): void;
 }

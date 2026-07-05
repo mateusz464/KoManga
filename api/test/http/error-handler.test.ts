@@ -20,9 +20,8 @@ const silentLogger: Logger = {
   error: () => undefined,
 };
 
-// Build a throwaway app whose only route throws `err`, with the centralised
-// error handler mounted last. Express forwards the throw to the error handler,
-// exactly as the real app will.
+// Throwaway app whose only route throws `err`, with the error handler mounted
+// last so Express forwards the throw to it as the real app would.
 function appThrowing(err: unknown): express.Express {
   const app = express();
   app.get("/boom", () => {

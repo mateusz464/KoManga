@@ -24,30 +24,10 @@ import type {
 } from "../../src/services/ports/downloads-repository.js";
 import type { SessionCache } from "../../src/services/ports/session-cache.js";
 
-// Contract test for the download endpoints (API-505):
-//   - POST /api/chapter/:id/download   — fetch all pages → process → build CBZ →
-//                                         store on the persistent volume → record
-//                                         in SQLite (RFC §5.2).
-//   - GET  /api/downloads              — list download records.
-//   - GET  /api/downloads/:chapterId   — serve a stored CBZ from the persistent
-//                                         store, NOT the ephemeral session cache.
-//
-// Everything is mocked at the port boundaries (CLAUDE.md §4) and injected via
-// `createApp`, so this exercises the route → service → ports wiring through
-// Express, not any concrete adapter. The endpoints are implemented in API-506 —
-// these assertions stay red (404, routes unmounted) until then.
-//
-// Design decisions pinned here (RFC §5.2/§7, §8 leaves shapes to implementation):
-//   - The download is keyed by chapter; the chapter's `mangaId` is supplied by
-//     the client as a required query param (it is browsing the manga when it
-//     triggers the download, and the existing SuwayomiClient port has no
-//     chapter→manga lookup). Missing it → 400 at the edge.
-//   - Pages are processed under a negotiable `profile` (defaults to `raw`, like
-//     the page endpoint, RFC §6); an unsupported profile → 400.
-//   - Success uses the standard `{ data: ... }` envelope; the served CBZ is the
-//     archive bytes with a comic-book-archive content type.
-//   - Re-download of an existing chapter is idempotent: the stored archive is
-//     not rebuilt and no duplicate record is created (RFC §5.2; API-501 repo).
+// Download endpoints: POST /api/chapter/:id/download builds a CBZ, stores it on
+// the persistent volume and records it; GET /api/downloads lists records; GET
+// /api/downloads/:chapterId serves a stored CBZ from the store, not the cache.
+// `mangaId` is a required query param (missing → 400); re-download is idempotent.
 
 const CHAPTER_ID = "77";
 const MANGA_ID = "42";

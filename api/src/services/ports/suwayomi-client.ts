@@ -57,54 +57,30 @@ export interface PageRef {
   readonly pageIndex: number;
 }
 
-/**
- * Every method either resolves with domain values or rejects with a
- * {@link SuwayomiError} — upstream GraphQL errors, timeouts and network failures
- * are all normalised to that single typed error.
- */
+// Every method resolves with domain values or rejects with a {@link SuwayomiError}:
+// upstream GraphQL errors, timeouts and network failures all normalise to it.
 export interface SuwayomiClient {
   listSources(): Promise<Source[]>;
   search(params: SearchParams): Promise<SearchResult>;
   getMangaDetails(mangaId: string): Promise<MangaDetails>;
   listChapters(mangaId: string): Promise<Chapter[]>;
-  /**
-   * Triggers Suwayomi's source chapter-fetch (the scrape) and resolves with the
-   * resulting chapters. Unlike {@link listChapters}, which only reads whatever
-   * Suwayomi has already stored, this populates them from the source — so a
-   * freshly-searched manga returns its chapters on first open. A source that
-   * genuinely has none resolves to `[]`, not an error.
-   */
+  // Triggers Suwayomi's source scrape and returns the resulting chapters; unlike
+  // listChapters (which only reads what Suwayomi has already stored) this
+  // populates them from the source, so a freshly-searched manga returns chapters
+  // on first open. No chapters resolves to `[]`, not an error.
   fetchChapters(mangaId: string): Promise<Chapter[]>;
-  /** Page count only (no image data); rejects {@link NotFoundError} on unknown id. */
   getChapterPageCount(chapterId: string): Promise<number>;
-  /**
-   * Resolves a chapter's page image URLs in a single upstream call, in reading
-   * order. Building a CBZ needs every page, so callers resolve the list once
-   * here and fetch each via {@link fetchPageBytes} — avoiding the N+1 that
-   * per-page {@link fetchPage} triggers across a whole chapter (each of those
-   * re-runs Suwayomi's page resolution). Rejects {@link NotFoundError} on an
-   * unknown chapter, {@link SuwayomiError} on upstream failure.
-   */
+  // Resolves a chapter's page image URLs in one upstream call, in reading order,
+  // so a CBZ build resolves once here and fetches each via fetchPageBytes rather
+  // than re-running per-page resolution (the N+1 that fetchPage would trigger).
   fetchPageUrls(chapterId: string): Promise<string[]>;
-  /** Fetches the image bytes for a page URL returned by {@link fetchPageUrls}. */
   fetchPageBytes(url: string): Promise<RawPage>;
   fetchPage(ref: PageRef): Promise<RawPage>;
-  /**
-   * Fetches the manga's cover image bytes from Suwayomi. Mirrors
-   * {@link fetchPage} — the raw thumbnail (a Suwayomi-internal URL clients can't
-   * reach) is resolved server-side so covers can be served through the same
-   * profile-negotiated, cached image path as chapter pages (RFC §6). Unknown
-   * manga rejects {@link NotFoundError}; upstream failures reject
-   * {@link SuwayomiError}.
-   */
   fetchCover(mangaId: string): Promise<RawPage>;
 }
 
-/**
- * Maps to `502 Bad Gateway`. The client-facing `message` is deliberately
- * generic; the underlying reason is attached as `cause` for server-side logging
- * only and is never surfaced to clients (CLAUDE.md §6).
- */
+// Maps to 502. The client-facing message stays generic; the real reason rides on
+// `cause` for server-side logging only, never surfaced to clients (CLAUDE.md §6).
 export class SuwayomiError extends ApiError {
   constructor(message = "Upstream Suwayomi request failed", cause?: unknown) {
     super(message, 502, "SUWAYOMI_ERROR");

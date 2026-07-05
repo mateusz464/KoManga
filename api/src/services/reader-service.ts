@@ -11,11 +11,10 @@ export interface ReaderCbz {
   readonly contentType: string;
 }
 
-// The transient reader path (RFC §5.2): builds + serves a chapter's eink CBZ for
-// reading and caches it in the *ephemeral* session cache. Records nothing — it
-// never touches the persistent download store/repository, so merely reading a
-// chapter doesn't make it appear as a download. Explicit downloads
-// (DownloadService) remain the only persisted, listed path.
+// The transient reader path (RFC §5.2): builds a chapter's eink CBZ into the
+// ephemeral session cache. It never touches the persistent download store, so
+// merely reading a chapter doesn't make it appear as a download — that stays the
+// job of DownloadService.
 export class ReaderService {
   constructor(
     private readonly suwayomi: SuwayomiClient,
@@ -26,8 +25,6 @@ export class ReaderService {
   ) {}
 
   async readCbz(chapterId: string, profile: ImageProfile): Promise<ReaderCbz> {
-    // Cache the whole archive under a chapter-scoped key + profile so a re-read
-    // is a hit (no refetch/reprocess/rebuild); raw/eink stay distinct entries.
     const cacheKey = `${chapterId}:cbz`;
     const cached = this.sessionCache.get(cacheKey, profile);
     if (cached !== undefined) {

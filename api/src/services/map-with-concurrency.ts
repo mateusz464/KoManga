@@ -1,9 +1,5 @@
-// Runs `task` over `items` with at most `limit` tasks in flight at once, keeping
-// the result in input order regardless of completion order. The CBZ build paths
-// (ReaderService, DownloadService) use it to fetch + process pages concurrently
-// instead of one-at-a-time, turning "sum of every page's latency" into roughly
-// "that sum ÷ limit" — while the bound stops us opening unlimited connections to
-// Suwayomi/origin (API-916).
+// Runs `task` over `items` with at most `limit` in flight at once, keeping the
+// result in input order regardless of completion order.
 export async function mapWithConcurrency<T, R>(
   items: readonly T[],
   limit: number,

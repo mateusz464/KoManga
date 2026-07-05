@@ -7,36 +7,16 @@ import type {
 } from "../../src/services/ports/suwayomi-client.js";
 import { stubSuwayomi } from "../support/stub-suwayomi.js";
 
-// Contract test for per-client rate limiting on /api/* (API-703):
-//   - Requests over the limit within a window → 429.
-//   - Limit + window are configurable.
-//
-// The limiter is injected through `createApp` via a `rateLimit` option on
-// `AppDependencies` (kept optional so existing call sites stay valid; API-704
-// mounts the middleware that reads it). These enforcement assertions stay red —
-// no middleware is mounted yet, so every request reaches its handler — until
-// API-704 makes them green.
-//
-// Decisions pinned here (RFC §9, CLAUDE.md §9; §8 leaves shapes to impl):
-//   - Over the limit within a window → 429 with the standard envelope
-//     `{ error: { code: "RATE_LIMITED", message } }`, rejected at the edge BEFORE
-//     the downstream port is touched.
-//   - "Per-client": counted per `clientKey(req)`, defaulting to the source IP.
-//     A custom `clientKey` lets a test prove isolation deterministically without
-//     trust-proxy gymnastics.
-//   - `clock` is injectable so window expiry is deterministic (mirrors the
-//     session cache's injectable clock).
-//   - `/health` is never rate-limited.
+// Per-client rate limiting on /api/*: over the limit within a window → 429 at the
+// edge (before the port is touched); limit/window/clock/clientKey are injectable;
+// /health is never limited.
 
 const SOURCES: Source[] = [
   { id: "src-1", name: "MangaDex", lang: "en" },
   { id: "src-2", name: "Mangakakalot", lang: "en" },
 ];
 
-// A controllable SuwayomiClient whose `listSources`/`search` are spies returning
-// known data. Reaching either proves a request got PAST the limiter to the
-// handler — so a rejected (429) request asserting the spy was NOT called keeps
-// the test honest (and red) until the middleware short-circuits at the edge.
+// The spies prove whether a request reached the handler (past the limiter).
 function controllableSuwayomi() {
   const base = stubSuwayomi();
   const listSources = vi.fn(async () => SOURCES);
@@ -48,8 +28,7 @@ function controllableSuwayomi() {
   return { suwayomi, listSources, search };
 }
 
-// A controllable time source: window expiry is asserted by advancing `now`
-// rather than sleeping, so the tests are deterministic and fast.
+// Window expiry is asserted by advancing `now` rather than sleeping.
 function controllableClock(start = 1000) {
   let now = start;
   return {

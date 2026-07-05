@@ -1,12 +1,10 @@
-// Reading-progress persistence (RFC §7, CLAUDE.md §8). Device-agnostic: keyed by
-// manga only, never by a device id, so all clients share one position. Resolution
-// is last-write-wins by updatedAt (sufficient for a single user).
-
+// Device-agnostic: keyed by manga only, never a device id, so all clients share
+// one position.
 export interface ReadingProgress {
   readonly mangaId: string;
   readonly chapterId: string;
   readonly page: number; // 0-based index within the chapter
-  readonly updatedAt: number; // epoch ms; drives last-write-wins
+  readonly updatedAt: number; // epoch ms
 }
 
 export interface ReadingProgressRepository {

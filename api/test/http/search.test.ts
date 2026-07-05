@@ -8,15 +8,9 @@ import {
   type SuwayomiClient,
 } from "../../src/services/ports/suwayomi-client.js";
 
-// Contract test for `GET /api/search?q=&source=` (API-303). The endpoint is
-// exercised through Express with the Suwayomi client mocked at the port boundary
-// (CLAUDE.md §4): the route must validate the query string, forward `q`/`source`
-// (and optional pagination) to `search()`, and shape the result into the
-// standard success envelope. The route is implemented in API-304 — these
-// assertions stay red until then.
+// GET /api/search?q=&source= validates the query string, forwards q/source (+
+// optional page) to search(), and shapes the result into the success envelope.
 
-// A SuwayomiClient stub whose `search` is controllable; every other method
-// rejects so the test fails loudly if the route reaches past the port it needs.
 function clientSearching(result: SearchResult): {
   suwayomi: SuwayomiClient;
   search: ReturnType<typeof vi.fn>;

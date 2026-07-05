@@ -648,6 +648,17 @@
 **Estimate:** M
 **Notes (2026-07-05):** Added `fetchPageUrls(chapterId): Promise<string[]>` (resolves a chapter's page image URLs in **one** upstream call, in reading order) and `fetchPageBytes(url): Promise<RawPage>` to the `SuwayomiClient` port; the adapter's private per-page `fetchPageUrls` became `fetchRawPageUrls`, and the public `fetchPageUrls`/`getChapterPageCount`/`fetchPage` all derive from that one `fetchChapterPages` mutation (GraphQL coupling stays in the adapter, CLAUDE.md §13). `ReaderService.readCbz` + `DownloadService.download` now resolve URLs once then loop `fetchPageBytes` per page (no more `getChapterPageCount` + per-page `fetchPage` re-resolution) — this also sets up the sibling bounded-concurrency fix (API-916) to fan out over the resolved URL array. Reworked `reader-cbz.test.ts`/`downloads.test.ts` fakes to the new port shape, asserting `fetchPageUrls` called **once** + `fetchPageBytes` once per page in chapter order (page order still `proc-raw-0..2`); added the two new methods to the placeholder mocks across the http/service specs + `stub-suwayomi`. Server-side only; no API-contract or client change. Full suite **245 passing**; `tsc --noEmit` + lint + format clean.
 
+### API-916 — CBZ build fetches + processes pages with bounded concurrency — **Done**
+**Description:** Even after the N+1 fix (API-915), the build loop in `ReaderService.readCbz`/`DownloadService.download` fetched + processed pages **fully serially** (`await fetchPageBytes` then `await process`, one page at a time), so total build time summed every page's origin latency (~30 pages × ~1–2s) and still blew the client's 60s socket timeout on a cold read. Fan the fetch+process out with bounded concurrency.
+**Acceptance criteria:**
+- Both build paths fetch + process pages concurrently with **at most N in flight** (configurable, sensible default), assembling the archive in **source page order** regardless of completion order — pinned by a gated fake Suwayomi client recording peak concurrency and out-of-order completion.
+- Concurrency stays within the configured bound.
+- Existing reader/download specs stay green; ESLint + type-check clean.
+**Surfaced by:** on-device cold-read failure ("Preparing chapter…" → 60s timeout).
+**Blocked by:** none (best built on API-915, which is Done).
+**Estimate:** L
+**Notes (2026-07-05):** Extracted a generic `mapWithConcurrency(items, limit, task)` helper (**`src/services/map-with-concurrency.ts`**) — a worker pool draining a shared index so at most `limit` tasks run at once while results land in input order; both build paths now call it over the resolved URL array (`fetch → process` per page) in place of the serial `for`-loop. New config knob **`CBZ_PAGE_CONCURRENCY`** (default `6`, `positiveInt`) → `config.cbz.pageConcurrency`, threaded through `AppDependencies.pageConcurrency` into both service constructors (composition root in `index.ts`; `app.ts` falls back to the same default when a test omits it). New **`test/services/cbz-build-concurrency.test.ts`**: a gated Suwayomi fake blocks each page fetch on a per-index deferred so the tests prove peak in-flight hits the bound and never exceeds it, and that draining in reverse start order still yields `proc-raw-0..5` in source order — for both `ReaderService` and `DownloadService`; plus `CBZ_PAGE_CONCURRENCY` cases in `config.test.ts`. Server-side only; no API-contract or client change. Full suite **249 passing**; `tsc --noEmit` + lint + format clean; `.env.example` documents the knob.
+
 ---
 
 ## Suggested build order (respecting strict deps)
@@ -660,7 +671,7 @@
 6. **Progress:** 601/602, 603/604
 7. **Auth/Security:** 701/702 → 703/704 (can start once 105 done; apply globally before deploy)
 8. **Deploy:** 801 → 802 → 803 ; **Observability:** 804 → 805 (independent — needs only 103/105/702, can be picked up any time)
-9. **Bug fixes (9xx):** 901 → 902, 903 → 904, 905 → 906, 907 → 908, 909 → 910, 911 → 912, 913 → 914, 915 (independent of the above; can be picked up any time)
+9. **Bug fixes (9xx):** 901 → 902, 903 → 904, 905 → 906, 907 → 908, 909 → 910, 911 → 912, 913 → 914, 915 → 916 (independent of the above; can be picked up any time)
 
 > Note: Auth (7xx) only depends on the bootstrap layer, so it can be built early in parallel even though it's listed late. Everything funnels into API-801 for deployment.
 > Note: 9xx are post-hoc fixes/reconciliations (e.g. from the device spike), not part of the original feature build order.
