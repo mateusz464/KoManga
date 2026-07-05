@@ -1,4 +1,5 @@
 -- KRP-603 — [TEST] Library / home view (logic).
+-- KRP-805 — Downloaded section repointed at the device-local index (offline).
 --
 -- Defines the contract for state/library.lua (implemented alongside the UI in
 -- KRP-604): the pure state behind the library / home view — the followed-manga
@@ -17,27 +18,30 @@
 --      state (no target), NOT an error. The reader/progress-sync (KRP-602) seeks
 --      the actual page on open, so the target only needs the chapter to open; the
 --      raw last-read page is carried for the "last-read render".
---   3. Downloaded chapters: load the downloads list and expose which are OPENABLE
---      — only a `completed` build can be opened; `pending`/`failed` rows are not.
+--   3. Downloaded chapters (KRP-805): read the DEVICE-LOCAL index (state/downloads.lua,
+--      KRP-802) — NOT the API — so the list renders with wifi off. Every indexed
+--      entry is a completed on-device CBZ (all openable), labelled by the manga title
+--      + chapter number captured at download time (no network lookup).
 --
--- Each list-load mirrors state/browse.lua's split into a pure `fetch*` (the
--- blocking API call, returning api/client.lua's (data, err)) and an `apply*` (that
--- mutates this state); the synchronous load methods the specs drive are their
+-- The followed list mirrors state/browse.lua's split into a pure `fetchLibrary` (the
+-- blocking API call, returning api/client.lua's (data, err)) and an `applyLibrary`
+-- (that mutates this state); the synchronous `loadLibrary` the specs drive is their
 -- composition. The split exists because net.lua runs the fetch in a forked
 -- sub-process (KRP-305) which can't mutate this table across the fork, so the UI
 -- runs the fetch through net and applies the result in the parent (KRP-604). The
--- continue-reading resolver returns its target instead of mutating (like
--- state/progress.lua's applyResume) because it is a per-manga, per-row lookup, not
--- shared list state.
+-- Downloaded list needs none of this: it is a local read of the injected device index
+-- (no network, no fork), so it is exposed directly. The continue-reading resolver
+-- returns its target instead of mutating (like state/progress.lua's applyResume)
+-- because it is a per-manga, per-row lookup, not shared list state.
 --
 -- Wire shapes are the unwrapped { data } envelopes api/client.lua returns
 -- (KRP-302), per the shared API contract (RFC §6/§7):
 --   listLibrary()   -> ({ {mangaId,addedAt}, ... } (added_at ASC), nil) | (nil, err)
 --   getProgress(id) -> ({ mangaId,chapterId,page,updatedAt }, nil) | (nil, err)
 --                      -- a 404 means "never read yet", not a hard error.
---   listDownloads() -> ({ {chapterId,mangaId,cbzPath,status,createdAt}, ... }, nil)
---                      | (nil, err) -- status ∈ "pending"|"completed"|"failed".
--- Errors are the typed table api/client.lua maps (KRP-301): { kind, status?, ... }.
+-- The Downloaded list is NOT a wire shape — it is the device index (KRP-802), each
+-- entry { chapterId, mangaId, title, chapterNumber, direction, fileName, size,
+-- createdAt }. Errors are the typed table api/client.lua maps (KRP-301).
 --
 -- NOTE: each library entry carries a display `title` captured at follow time
 -- (API-908/KRP-605), alongside its mangaId. The title is optional — a row followed
@@ -45,7 +49,11 @@
 -- denormalised title on the entry, not a per-row getManga fan-out (CLAUDE.md §6/§8).
 
 local Library = require("state.library")
+local Downloads = require("state.downloads")
 local FakeApi = require("spec.support.fake_api")
+local FakeStore = require("spec.support.fake_store")
+
+local DOWNLOAD_DIR = "/data/komanga/downloads"
 
 -- Builders (not constants) so every call hands back a FRESH table — an impl that
 -- mutates a returned list can't corrupt a value a later test reuses.
@@ -68,15 +76,33 @@ local function PROGRESS()
     return { mangaId = "m7", chapterId = "c2", page = 4, updatedAt = 1700 }
 end
 
--- A downloads list mixing every status, so "openable = completed only" is
--- assertable and order preservation is visible.
-local function DOWNLOADS()
-    return {
-        { chapterId = "c1", mangaId = "m7", cbzPath = "/d/c1.cbz", status = "completed", createdAt = 10 },
-        { chapterId = "c2", mangaId = "m7", cbzPath = "/d/c2.cbz", status = "pending",   createdAt = 20 },
-        { chapterId = "c9", mangaId = "m3", cbzPath = "/d/c9.cbz", status = "completed", createdAt = 30 },
-        { chapterId = "c8", mangaId = "m1", cbzPath = "",          status = "failed",    createdAt = 40 },
+-- A device-local download index entry (KRP-802 shape); `over` patches fields. fileName
+-- is derived from the chapterId, exactly as the coordinator records it (KRP-803).
+local function dl_entry(over)
+    over = over or {}
+    local chapter_id = over.chapterId or "c1"
+    local e = {
+        chapterId = chapter_id,
+        mangaId = "m1",
+        title = "Berserk",
+        chapterNumber = 41,
+        direction = "rtl",
+        fileName = Downloads.fileNameFor(chapter_id),
+        size = 2048,
+        createdAt = 1000,
     }
+    for k, v in pairs(over) do e[k] = v end
+    return e
+end
+
+-- A real device index over a fake store, seeded with the given entries in order, so
+-- the Downloaded section is exercised against the actual state/downloads.lua reader.
+local function seeded_downloads(entries)
+    local downloads = Downloads.new(FakeStore.new(), DOWNLOAD_DIR)
+    for _, e in ipairs(entries or {}) do
+        downloads:add(e)
+    end
+    return downloads
 end
 
 local HTTP_ERROR = { kind = "http", status = 500, code = "INTERNAL" }
@@ -293,56 +319,63 @@ describe("library / home view state", function()
         end)
     end)
 
-    describe("downloaded chapters", function()
-        it("loads the downloads list in the order the API serves it", function()
-            local api = FakeApi.new{ listDownloads = DOWNLOADS }
-            local library = Library.new(api)
+    -- KRP-805 — the Downloaded section reads the device-local index (KRP-802), never
+    -- the API, so it renders with wifi off. No FakeApi.listDownloads is stubbed: any
+    -- call to the API here would be a bug.
+    describe("downloaded chapters (device-local index, KRP-805)", function()
+        it("reads the device index in insertion order, making no API call", function()
+            local api = FakeApi.new{}
+            local downloads = seeded_downloads{
+                dl_entry{ chapterId = "c1" },
+                dl_entry{ chapterId = "c2" },
+                dl_entry{ chapterId = "c9" },
+            }
+            local library = Library.new(api, downloads)
 
-            local ok, err = library:loadDownloads()
-
-            assert.is_true(ok)
-            assert.is_nil(err)
-            assert.are.same({ "c1", "c2", "c9", "c8" }, pluck(library:getDownloads(), "chapterId"))
-            assert.are.equal("listDownloads", api.calls[1].method)
+            assert.are.same({ "c1", "c2", "c9" }, pluck(library:getDownloads(), "chapterId"))
+            -- Offline guarantee: no network was touched to build the list.
+            assert.are.equal(0, #api.calls)
         end)
 
-        it("exposes only completed downloads as openable, in order", function()
-            local api = FakeApi.new{ listDownloads = DOWNLOADS }
-            local library = Library.new(api)
-            library:loadDownloads()
+        it("fetchDownloads reads the same device index (no network)", function()
+            local downloads = seeded_downloads{ dl_entry{ chapterId = "c1" } }
+            local library = Library.new(FakeApi.new{}, downloads)
 
+            assert.are.same({ "c1" }, pluck(library:fetchDownloads(), "chapterId"))
+        end)
+
+        it("labels a downloaded row by title + chapter number", function()
+            assert.are.equal("Berserk",
+                Library.downloadTitle(dl_entry{ title = "Berserk" }))
+            assert.are.equal("Ch. 41",
+                Library.downloadNumber(dl_entry{ chapterNumber = 41 }))
+            -- A decimal number renders exactly; an integral one trims its ".0".
+            assert.are.equal("Ch. 40.5",
+                Library.downloadNumber(dl_entry{ chapterNumber = 40.5 }))
+        end)
+
+        it("falls back to the mangaId when a row has no title", function()
+            assert.are.equal("m1", Library.downloadTitle({ mangaId = "m1" }))
+            assert.are.equal("m1", Library.downloadTitle({ mangaId = "m1", title = "" }))
+        end)
+
+        it("renders a blank number when a row carries none", function()
+            assert.are.equal("", Library.downloadNumber({ mangaId = "m1" }))
+        end)
+
+        it("treats every indexed entry as openable (a persisted local CBZ)", function()
+            local downloads = seeded_downloads{
+                dl_entry{ chapterId = "c1" },
+                dl_entry{ chapterId = "c9" },
+            }
+            local library = Library.new(FakeApi.new{}, downloads)
+
+            assert.is_true(Library.isOpenable(dl_entry{}))
             assert.are.same({ "c1", "c9" }, pluck(library:getOpenableDownloads(), "chapterId"))
         end)
 
-        it("classifies openability by build status", function()
-            assert.is_true(Library.isOpenable({ status = "completed" }))
-            assert.is_false(Library.isOpenable({ status = "pending" }))
-            assert.is_false(Library.isOpenable({ status = "failed" }))
-        end)
-
-        it("surfaces a downloads error and leaves prior downloads intact", function()
-            local boom = false
-            local api = FakeApi.new{
-                listDownloads = function()
-                    if boom then return nil, HTTP_ERROR end
-                    return DOWNLOADS()
-                end,
-            }
-            local library = Library.new(api)
-            library:loadDownloads()
-
-            boom = true
-            local ok, err = library:loadDownloads()
-
-            assert.is_false(ok)
-            assert.are.same(HTTP_ERROR, err)
-            assert.are.same(HTTP_ERROR, library:getError())
-            assert.are.same({ "c1", "c2", "c9", "c8" }, pluck(library:getDownloads(), "chapterId"))
-        end)
-
-        it("starts with no downloads before a load", function()
-            local api = FakeApi.new{}
-            local library = Library.new(api)
+        it("shows an empty downloaded list when nothing is downloaded", function()
+            local library = Library.new(FakeApi.new{}, seeded_downloads{})
 
             assert.are.same({}, library:getDownloads())
             assert.are.same({}, library:getOpenableDownloads())

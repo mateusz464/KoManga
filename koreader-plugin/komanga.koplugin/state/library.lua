@@ -9,16 +9,21 @@
 --   2. Continue reading: resolve a followed manga's last-read position into a jump
 --      target the reader can open. A "never read yet" 404 is the empty state (no
 --      target), NOT an error.
---   3. Downloaded chapters: load the downloads list and expose which are OPENABLE
---      — only a `completed` build can be opened; `pending`/`failed` rows are not.
+--   3. Downloaded chapters: read the DEVICE-LOCAL download index (state/downloads.lua,
+--      KRP-802) — NOT GET /api/downloads — so the list renders with wifi off (RFC
+--      §5.4). Every indexed entry is a completed on-device CBZ, so all are openable;
+--      each carries the manga title + chapter number captured at download time, so a
+--      row is legible without a network lookup (resolves the KRP-605 raw-id note).
 --
--- Each list-load mirrors state/browse.lua's split into a pure `fetch*` (the
--- blocking API call, returning api/client.lua's (data, err)) and an `apply*` (that
--- mutates this state). The synchronous `loadLibrary`/`loadDownloads` the specs
--- drive are their composition; the UI (KRP-604) keeps them apart, running the fetch
--- through net.lua (off the UI thread, in a forked sub-process) and applying the
--- result here in the parent, since a sub-process can't mutate this table across the
--- fork (KRP-305). The continue-reading resolver RETURNS its target instead of
+-- The followed list mirrors state/browse.lua's split into a pure `fetchLibrary` (the
+-- blocking API call, returning api/client.lua's (data, err)) and an `applyLibrary`
+-- (that mutates this state); the synchronous `loadLibrary` the specs drive is their
+-- composition, and the UI (KRP-604) keeps them apart, running the fetch through
+-- net.lua (off the UI thread, in a forked sub-process) and applying the result here
+-- in the parent, since a sub-process can't mutate this table across the fork
+-- (KRP-305). The Downloaded list needs none of this: it is a local read of the
+-- device index (no network, no fork), so it is exposed directly rather than through a
+-- fetch/apply split. The continue-reading resolver RETURNS its target instead of
 -- mutating (like state/progress.lua's applyResume) because it is a per-manga,
 -- per-row lookup, not shared list state — so a failed lookup never clobbers the
 -- shared list error.
@@ -32,13 +37,14 @@
 local Library = {}
 Library.__index = Library
 
--- api: an ApiClient (or a fake exposing listLibrary/getProgress/listDownloads).
--- Injected, not global.
-function Library.new(api)
+-- api: an ApiClient (or a fake exposing listLibrary/getProgress). downloads: a
+-- state/downloads.lua device-local index (or a fake exposing list()). Both injected,
+-- not global. The Downloaded section reads `downloads`; nothing else needs it.
+function Library.new(api, downloads)
     return setmetatable({
         api = api,
+        downloads = downloads,
         entries = {},
-        downloads = {},
         library_loaded = false,
         error = nil,
     }, Library)
@@ -146,42 +152,47 @@ function Library:continueReading(mangaId)
     return Library.continueTarget(self:fetchProgress(mangaId))
 end
 
--- --- Downloaded chapters -------------------------------------------------------
+-- --- Downloaded chapters (device-local index, KRP-805) -------------------------
 
--- Pure fetch (safe to run off-thread): returns the ApiClient (data, err).
-function Library:fetchDownloads()
-    return self.api:listDownloads()
-end
-
--- Apply a fetched downloads list. On error, prior downloads are kept and the error
--- is surfaced; on success the list is replaced and the error cleared.
-function Library:applyDownloads(data, err)
-    if err then
-        self.error = err
-        return false, err
-    end
-    self.error = nil
-    self.downloads = data
-    return true
-end
-
-function Library:loadDownloads()
-    return self:applyDownloads(self:fetchDownloads())
-end
-
+-- The device index entries, in insertion order. A pure local read (no network), so
+-- the Downloaded list renders with wifi off (RFC §5.4). The store is loaded into
+-- memory at construction, so this never blocks and never errors like an API call.
 function Library:getDownloads()
-    return self.downloads
+    return self.downloads:list()
 end
 
--- Only a `completed` build can be opened; a `pending`/`failed` row is not.
+-- Retained name for the read; identical to getDownloads now that the source is the
+-- on-device index rather than GET /api/downloads.
+Library.fetchDownloads = Library.getDownloads
+
+-- A downloaded row's display title: captured at download time (KRP-803), falling
+-- back to the mangaId when absent (mirrors entryTitle for a followed row).
+function Library.downloadTitle(download)
+    if type(download.title) == "string" and download.title ~= "" then
+        return download.title
+    end
+    return download.mangaId
+end
+
+-- The chapter-number label for a downloaded row (e.g. "Ch. 41"); blank when the
+-- entry carries no number, so the row still renders its title.
+function Library.downloadNumber(download)
+    if download.chapterNumber == nil then
+        return ""
+    end
+    return "Ch. " .. Library.formatChapterNumber(download.chapterNumber)
+end
+
+-- Every indexed entry is a completed on-device CBZ — the coordinator records it only
+-- after the bytes are persisted (KRP-803) — so a device download is always openable.
 function Library.isOpenable(download)
-    return download.status == "completed"
+    return download.fileName ~= nil
 end
 
--- The downloads that can actually be opened, in the API's serve order.
+-- The downloads that can actually be opened, in index order (all of them, offline).
 function Library:getOpenableDownloads()
     local out = {}
-    for _, download in ipairs(self.downloads) do
+    for _, download in ipairs(self:getDownloads()) do
         if Library.isOpenable(download) then
             out[#out + 1] = download
         end

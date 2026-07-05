@@ -5,13 +5,15 @@
 -- every API call through net.lua (KRP-305) so the panel never freezes and a call
 -- with wifi off prompts/enables wifi.
 --
--- One Menu holds two labelled sections — "Following" and "Downloaded" — each with
--- its own empty/loading state so a slow or empty side never leaves a blank panel
--- (CLAUDE.md §9). Tapping a followed manga resolves its last-read position and jumps
--- into the reader (or opens details when it was never read); tapping a completed
--- download opens that chapter. The heavy work — resolving the target, fetching
--- reading direction, launching the reader — lives in main.lua's injected
--- collaborators, so no business logic leaks into the view (CLAUDE.md §5).
+-- One Menu holds two labelled sections — "Following" and "Downloaded". The followed
+-- list loads over the network with its own empty/loading state so a slow or empty
+-- side never leaves a blank panel (CLAUDE.md §9); the Downloaded list reads the
+-- device-local index (KRP-805), so it renders with wifi off and needs no loading
+-- state. Tapping a followed manga resolves its last-read position and jumps into the
+-- reader (or opens details when it was never read); tapping a downloaded chapter
+-- opens its local CBZ. The heavy work — resolving the target, fetching reading
+-- direction, launching the reader — lives in main.lua's injected collaborators, so no
+-- business logic leaks into the view (CLAUDE.md §5).
 --
 -- NOTE: a followed row is labelled by the manga's display title, captured at
 -- follow time (API-908) and carried on the library entry; it falls back to the
@@ -39,10 +41,10 @@ local LibraryView = Menu:extend{
 function LibraryView:init()
     self.item_table = {}
     self.paths = {} -- single mode → back arrow disabled (Menu convention)
-    -- Track which side has come back so a section shows "Loading…" until its own
-    -- load resolves, rather than a premature "empty".
+    -- The followed side loads over the network, so it shows "Loading…" until its
+    -- fetch resolves; the Downloaded side is a local device-index read (KRP-805), so
+    -- it renders immediately with no loading state.
     self.library_ready = false
-    self.downloads_ready = false
     Menu.init(self)
 end
 
@@ -62,12 +64,12 @@ function LibraryView:handleError(err)
     return true
 end
 
--- Kick off both loads. Called by main.lua after the widget is shown. Each side
--- renders as it lands, so a slow download list never holds up the followed list.
+-- Render the screen and kick off the followed-list load. Called by main.lua after
+-- the widget is shown. The Downloaded section reads the device index straight from
+-- the first render (no network), so only the followed list needs an async load.
 function LibraryView:start()
     self:render()
     self:loadLibrary()
-    self:loadDownloads()
 end
 
 function LibraryView:loadLibrary()
@@ -86,31 +88,11 @@ function LibraryView:loadLibrary()
     })
 end
 
-function LibraryView:loadDownloads()
-    self.net:run(function()
-        return self.library:fetchDownloads()
-    end, {
-        text = _("Loading downloads…"),
-        on_result = function(data, err)
-            self.downloads_ready = true
-            self.library:applyDownloads(data, err)
-            if err then
-                self:handleError(err)
-            end
-            self:render()
-        end,
-    })
-end
-
 -- --- Rendering -----------------------------------------------------------------
 
 -- A non-selectable section heading (no callback → onMenuSelect is a no-op).
 local function heading(text)
     return { text = text }
-end
-
-local function download_label(download)
-    return download.chapterId or _("Chapter")
 end
 
 function LibraryView:render()
@@ -140,30 +122,24 @@ function LibraryView:render()
         end
     end
 
-    -- Downloaded -----------------------------------------------------------------
+    -- Downloaded (device-local index, KRP-805) -----------------------------------
+    -- Read straight from the on-device index, so it renders with wifi off; every row
+    -- is a completed local CBZ, labelled by manga title + chapter number.
     item_table[#item_table + 1] = heading(_("— Downloaded —"))
-    if not self.downloads_ready then
-        item_table[#item_table + 1] = { text = _("Loading…") }
+    local downloads = self.library:getDownloads()
+    if #downloads == 0 then
+        item_table[#item_table + 1] = { text = _("No downloaded chapters.") }
     else
-        local downloads = self.library:getDownloads()
-        if #downloads == 0 then
-            item_table[#item_table + 1] = { text = _("No downloaded chapters.") }
-        else
-            local open_label = _("Open")
-            for _, download in ipairs(downloads) do
-                local openable = self.library.isOpenable(download)
-                item_table[#item_table + 1] = {
-                    text = download_label(download),
-                    -- A non-completed build isn't openable — show its status so the
-                    -- row is never a dead, unexplained tap (CLAUDE.md §9).
-                    mandatory = openable and open_label or download.status,
-                    callback = openable and function()
-                        if self.open_download then
-                            self.open_download(download)
-                        end
-                    end or nil,
-                }
-            end
+        for _, download in ipairs(downloads) do
+            item_table[#item_table + 1] = {
+                text = self.library.downloadTitle(download),
+                mandatory = self.library.downloadNumber(download),
+                callback = function()
+                    if self.open_download then
+                        self.open_download(download)
+                    end
+                end,
+            }
         end
     end
 

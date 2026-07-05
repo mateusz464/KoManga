@@ -136,7 +136,7 @@ end
 -- the downloaded-chapters list. A fresh Library per visit; the screen drives it
 -- through net (wifi-gated, non-blocking) and kicks the loads once it is on screen.
 function Komanga:showLibrary()
-    local library_state = Library.new(self.api)
+    local library_state = Library.new(self.api, Downloads.open())
     local home
     home = LibraryView:new{
         library = library_state,
