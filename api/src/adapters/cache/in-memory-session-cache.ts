@@ -55,7 +55,6 @@ export class InMemorySessionCache implements SessionCache {
     return this.clock() - entry.storedAt >= this.options.ttlMs;
   }
 
-  // Evict oldest-first until the total byte size is within the bound.
   private evictToFit(): void {
     for (const [key, entry] of this.entries) {
       if (this.totalBytes <= this.options.maxBytes) break;

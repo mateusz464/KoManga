@@ -26,8 +26,6 @@ export class SharpImageProcessor implements ImageProcessor {
 
     const { targetWidth, targetHeight, format } = this.eink;
     const bytes = await sharp(source.bytes)
-      // Fit within the configured Kobo resolution, preserving aspect ratio and
-      // never upscaling smaller pages.
       .resize({
         width: targetWidth,
         height: targetHeight,
