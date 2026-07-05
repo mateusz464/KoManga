@@ -27,8 +27,16 @@ import { stubSuwayomi } from "../support/stub-suwayomi.js";
 //   - Follow is idempotent (re-following keeps one row); unfollow on an absent
 //     manga is a no-op. Both resolve to 200 with the standard `{ data: ... }`
 //     envelope; the empty library is `{ data: [] }`.
+//
+// API-907 extends the contract: a follow also captures the manga's display
+// `title` (so a client's library/home view can show the name, not the raw id —
+// KRP-604/605), persisted on the row and returned by `list()` with no per-entry
+// Suwayomi fan-out (CLAUDE.md §8). `title` is optional so an old title-less
+// follow degrades gracefully. These title assertions stay red until API-908
+// threads `title` through the route/service/repository.
 
 const MANGA_ID = "42";
+const TITLE = "One Piece";
 
 // A stateful in-memory LibraryRepository fake that faithfully implements the
 // API-603 contract — one row per manga (device-agnostic), idempotent add, and
@@ -76,56 +84,87 @@ describe("GET /api/library", () => {
     expect(d.list).toHaveBeenCalled();
   });
 
-  it("lists the followed manga", async () => {
+  it("lists the followed manga, each carrying its display title (API-907)", async () => {
     const seed: LibraryEntry[] = [
-      { mangaId: "1", addedAt: 1000 },
-      { mangaId: "2", addedAt: 2000 },
+      { mangaId: "1", addedAt: 1000, title: "One Piece" },
+      { mangaId: "2", addedAt: 2000, title: "Naruto" },
     ];
     const d = buildDeps(seed);
 
     const res = await request(createApp(d.deps)).get("/api/library");
 
     expect(res.status).toBe(200);
+    // The { data } envelope carries the title alongside mangaId/addedAt.
     expect(res.body).toEqual({ data: seed });
   });
 });
 
 describe("PUT /api/library/:mangaId", () => {
-  it("follows a manga keyed by the URL id and returns the entry", async () => {
+  it("follows a manga, capturing its title at follow time (API-907)", async () => {
+    const d = buildDeps();
+
+    const res = await request(createApp(d.deps))
+      .put(`/api/library/${MANGA_ID}`)
+      .send({ addedAt: 1000, title: TITLE });
+
+    expect(res.status).toBe(200);
+    expect(d.add).toHaveBeenCalledTimes(1);
+    // The route reads the display title from the body and persists it on the row.
+    expect(d.add).toHaveBeenCalledWith({
+      mangaId: MANGA_ID,
+      addedAt: 1000,
+      title: TITLE,
+    });
+    expect(res.body).toEqual({
+      data: { mangaId: MANGA_ID, addedAt: 1000, title: TITLE },
+    });
+  });
+
+  it("then GET lists the followed manga with its title (API-907)", async () => {
+    const d = buildDeps();
+    const app = createApp(d.deps);
+
+    await request(app)
+      .put(`/api/library/${MANGA_ID}`)
+      .send({ addedAt: 1000, title: TITLE });
+
+    const res = await request(app).get("/api/library");
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      data: [{ mangaId: MANGA_ID, addedAt: 1000, title: TITLE }],
+    });
+  });
+
+  it("allows a follow without a title (graceful — old/title-less clients)", async () => {
     const d = buildDeps();
 
     const res = await request(createApp(d.deps))
       .put(`/api/library/${MANGA_ID}`)
       .send({ addedAt: 1000 });
 
+    // Title is optional: a title-less follow still succeeds (no 400) and reaches
+    // the port — it just carries no title.
     expect(res.status).toBe(200);
-    expect(d.add).toHaveBeenCalledTimes(1);
     expect(d.add).toHaveBeenCalledWith({ mangaId: MANGA_ID, addedAt: 1000 });
-    expect(res.body).toEqual({ data: { mangaId: MANGA_ID, addedAt: 1000 } });
-  });
-
-  it("then GET lists the followed manga", async () => {
-    const d = buildDeps();
-    const app = createApp(d.deps);
-
-    await request(app).put(`/api/library/${MANGA_ID}`).send({ addedAt: 1000 });
-
-    const res = await request(app).get("/api/library");
-
-    expect(res.status).toBe(200);
-    expect(res.body).toEqual({ data: [{ mangaId: MANGA_ID, addedAt: 1000 }] });
   });
 
   it("is idempotent: re-following a manga does not create a duplicate", async () => {
     const d = buildDeps();
     const app = createApp(d.deps);
 
-    await request(app).put(`/api/library/${MANGA_ID}`).send({ addedAt: 1000 });
-    await request(app).put(`/api/library/${MANGA_ID}`).send({ addedAt: 2000 });
+    await request(app)
+      .put(`/api/library/${MANGA_ID}`)
+      .send({ addedAt: 1000, title: TITLE });
+    await request(app)
+      .put(`/api/library/${MANGA_ID}`)
+      .send({ addedAt: 2000, title: "Renamed" });
 
     const res = await request(app).get("/api/library");
 
-    expect(res.body).toEqual({ data: [{ mangaId: MANGA_ID, addedAt: 1000 }] });
+    expect(res.body).toEqual({
+      data: [{ mangaId: MANGA_ID, addedAt: 1000, title: TITLE }],
+    });
   });
 
   it("is device-agnostic: a device identifier in the body is ignored, never persisted", async () => {
@@ -133,11 +172,12 @@ describe("PUT /api/library/:mangaId", () => {
 
     const res = await request(createApp(d.deps))
       .put(`/api/library/${MANGA_ID}`)
-      .send({ addedAt: 1000, deviceId: "kobo-clara" });
+      .send({ addedAt: 1000, title: TITLE, deviceId: "kobo-clara" });
 
     expect(res.status).toBe(200);
     const saved = d.add.mock.calls[0][0];
-    expect(Object.keys(saved).sort()).toEqual(["addedAt", "mangaId"]);
+    // Exactly our three fields — mangaId (URL), addedAt + title (body); no deviceId.
+    expect(Object.keys(saved).sort()).toEqual(["addedAt", "mangaId", "title"]);
     expect(res.body.data).not.toHaveProperty("deviceId");
   });
 

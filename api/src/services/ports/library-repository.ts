@@ -5,6 +5,11 @@
 
 export interface LibraryEntry {
   readonly mangaId: string;
+  // Display title captured at follow time (API-907) so a client's library/home
+  // view can show the manga name without a per-entry Suwayomi fan-out on list
+  // (CLAUDE.md §8) — offline-friendly. Optional so a pre-title row degrades
+  // gracefully (nullable / backfilled).
+  readonly title?: string;
   readonly addedAt: number; // epoch ms
 }
 

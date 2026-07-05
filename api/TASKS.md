@@ -528,6 +528,48 @@
 **Estimate:** M
 **Notes (2026-06-29):** `GET /api/manga/:id/cover?profile=` wired through the layers mirroring the page endpoint (real route + service, ports injected): new `routes/cover.ts` (profile negotiation + binary response) → new `services/cover-service.ts` → injected `SuwayomiClient` + `ImageProcessor` + `SessionCache`. `CoverService.getCover` runs the same critical-path flow as `PageService.serve` — `get(cover:<mangaId>, profile)` → on hit serve and short-circuit the upstream; on miss `fetchCover(mangaId)` → `process(source, profile)` → `set` → serve — but keyed **`cover:<mangaId>`** (kept in one private `cacheKey()` helper) so cover entries can never collide with the `<chapterId>:<index>` page ids that share the `SessionCache`. Kept `CoverService` small and separate rather than overloading `PageService`, whose `serve`/`prefetch` are page-id/PageRef-shaped (no prefetch concept for a single cover). The duplicated `parseProfile` from `routes/page.ts` was extracted into a shared `src/http/image-profile.ts` (`parseImageProfile`) now used by both image-serving routes — defaults `raw`, only `raw`/`eink`, else `BadRequestError` 400 at the edge before any port is touched; no change to `raw` semantics or the colour-client path (RFC §13). The cover router mounts in the **same `imageProcessor && sessionCache` gate** as the page router in `createApp`, so the composition root already wires it (real `SharpImageProcessor` + `InMemorySessionCache`) — no `index.ts` change. New **`SuwayomiClient.fetchCover`** implemented in the API-202 adapter (`src/adapters/suwayomi/client.ts`): a `MANGA_THUMBNAIL` query rooted at `manga(id:)` read via the existing `runManga` (so an unknown id maps to `NotFoundError`, other upstream failures to `SuwayomiError`), then the (Suwayomi-internal) `thumbnailUrl` is resolved + fetched server-side via the same `resolveUrl`/`fetchBytes` path as `fetchPage` so the raw URL never leaks to a client (RFC §6); a manga with no thumbnail also maps to `NotFoundError`. All GraphQL/HTTP coupling stays in the adapter. Added 3 adapter `client.test.ts` cases at the right layer (CLAUDE.md §4.4 / DoD §12): fetchCover maps the thumbnail + forwards the id as Int, missing-manga → `NotFoundError`, no-thumbnail → `NotFoundError`. All 6 API-905 endpoint tests now green; full suite **207 passing** (was 198 + 6 red + 3 new adapter), lint + typecheck + build + format clean. (Live verification against Suwayomi not run here — the mocked API-905 contract + adapter tests cover the wiring; the thumbnail fetch uses the same unauthenticated `fetchBytes` path that API-408 verified live for pages.)
 
+### API-907 — [TEST] Library list includes manga display metadata (title) — **Done**
+**Description:** `GET /api/library` (`routes/library.ts` → `LibraryService.list()` → `SqliteLibraryRepository`) returns each followed manga as only `{ mangaId, addedAt }` — the `library` table stores just `manga_id` + `added_at`, no title. So a client's library/home view can only show the raw mangaId, not the manga name. Surfaced by the KOReader-plugin epic: **KRP-604** renders "40" instead of "One Piece"; **KRP-605** is blocked on this. Per RFC §13 / CLAUDE.md §6 the client must not reach Suwayomi directly to resolve titles, and a per-row `getManga` fan-out from the client is disallowed (CLAUDE.md §8). Add display metadata (at minimum `title`) to each library entry. **Preferred design — capture at follow time** (denormalise onto the `library` row) so `list()` returns it with no per-entry source fetch and it survives offline; hydrate-on-read (join manga-service/Suwayomi per entry) fans out one upstream call per followed manga on every library load and is rejected. Extend the follow endpoint (`PUT /api/library/:mangaId`, currently `addedAt` only) to persist the title. Write failing tests (ports mocked, injected via `createApp`).
+**Acceptance criteria:**
+- Failing test: `GET /api/library` returns each entry carrying a `title` alongside `mangaId`/`addedAt`, ordered `added_at ASC`, in the `{ data }` envelope.
+- Title captured at follow time and persisted (new `library.title` column / repository capability); `list()` does **not** fan out a Suwayomi/manga-service call per entry.
+- Schema/migration test for the new column; an existing row without a title degrades gracefully (nullable / backfilled).
+- Tests fail red against current code (no title on the entry, no column).
+**Surfaced by:** KRP-604 / KRP-605 (KOReader plugin — library view shows ids, not names).
+**Blocked by:** none (extends already-Done API-603/604 library endpoint + API-501/502 SQLite layer).
+**Estimate:** M
+**Notes (2026-07-05):** Pinned the display-title contract at the two layers a title touches — the HTTP follow/list endpoints and the real SQLite adapter — mirroring the API-905 pattern (the TEST ticket pins the new capability's shape; API-908 fills the behaviour). Minimal scaffolding: added an **optional** `title?: string` to the `LibraryEntry` port (`src/services/ports/library-repository.ts`) so the tests type-check and everything still compiles (route/service/adapter pass it through structurally without change); optional because a pre-title row must degrade gracefully (nullable/backfilled). No route/service/adapter behaviour changed, so the title assertions stay red until API-908 threads it through. **`test/http/library.test.ts`** (ports mocked, injected via `createApp`): the follow body now carries `title`, and the tests pin that `PUT` **captures the title at follow time** (`add` called with `{mangaId, addedAt, title}`), the PUT→GET round-trip lists it, re-follow keeps the original title (idempotent), and the device-agnostic saved-keys assertion is exactly `["addedAt","mangaId","title"]` (no `deviceId`) — all **red** now (the route reads only `addedAt`). Green pins alongside: `GET` carries `title` in the `{ data }` envelope for seeded entries, and a **title-less follow still succeeds** (no 400 — `title` optional, graceful for old clients). **`test/adapters/db/sqlite.test.ts`** exercises the **real `better-sqlite3` adapter** on a temp DB (CLAUDE.md §4.4): new red assertions that the `library` table **has a `title` column** (`PRAGMA table_info`), that `add`→`list` **persists + returns** the title, and that `list()` is **ordered `added_at ASC`** with titles; green pins that the `library` table exists, a **title-less row degrades gracefully** (lists without throwing, `title` nullish), and the port is **mockable**. Verified `better-sqlite3` silently ignores the extra unused `title` bind param (no throw) so the round-trip red is a clean assertion mismatch, not an error. Suite **213: 206 passing + 7 red** (exactly the intended title assertions — 4 HTTP, 3 adapter); typecheck + lint + format clean. API-908 adds the `library.title` migration (`ALTER TABLE … ADD COLUMN`, backfilled NULL), maps it in the adapter, and reads `title` from the follow body → turns all 7 green.
+
+### API-908 — Library list includes manga display metadata (impl)
+**Description:** Make API-907 pass — add `title` to `LibraryEntry` + a migration for the `library.title` column, capture the title at follow time (extend `PUT /api/library/:mangaId` and `LibraryService.follow` / the repository), and return it from `list()`. Device-agnostic and offline-friendly (no per-entry upstream fetch on list).
+**Acceptance criteria:**
+- All API-907 tests pass.
+- `GET /api/library` returns `{ mangaId, title, addedAt }` per entry, ordered `added_at ASC`, in the `{ data }` envelope.
+- Migration adds the column without breaking existing rows; lint/type-check clean.
+**Blocked by:** API-907.
+**Estimate:** M
+
+### API-909 — [TEST] Distinguish transient reader CBZ from persisted downloads
+**Description:** Reading a chapter and explicitly downloading it both go through the single `POST /api/chapter/:id/download` (`routes/downloads.ts` → `DownloadService.download()`), which **always writes a persistent `DownloadRecord`** listed by `GET /api/downloads`. The KOReader plugin's primary reader (KRP-502) acquires its eink CBZ via that same endpoint, so **every chapter merely read shows up in the downloads list**. Only chapters the user explicitly downloads for offline should be listed. Surfaced by the plugin epic: KRP-604 shows read-but-not-downloaded chapters under "Downloaded"; **KRP-606** is blocked on this. The RFC already intends this split (§5.2; `download-service.ts` comment: "primary reading uses a server-built eink CBZ … download keeps it for offline", "kept separate from the ephemeral session cache"). **Preferred design:** a distinct transient read path that builds + serves the eink CBZ **without** recording a download — e.g. `GET /api/chapter/:id/cbz?profile=eink`, built via `CbzBuilder` and cached in the `SessionCache` (ephemeral), never touching the persistent `DownloadStore`/`DownloadsRepository`. `POST /download` stays the explicit, persisting, listed path. Write failing tests (ports mocked, injected via `createApp`).
+**Acceptance criteria:**
+- Failing test: acquiring a chapter's CBZ via the transient read path does **not** create a `DownloadRecord` — `GET /api/downloads` stays empty afterwards.
+- Explicit `POST /api/chapter/:id/download` still creates and lists a record (unchanged).
+- Transient path serves eink CBZ bytes (`application/vnd.comicbook+zip`), built via `CbzBuilder` + cached via `SessionCache`, not the persistent store; profile-negotiated (eink).
+- No cross-contamination: a chapter read then explicitly downloaded is listed exactly once (via the explicit download).
+- Tests fail red against current code (no transient CBZ path; reading persists a record).
+**Surfaced by:** KRP-604 / KRP-606 (KOReader plugin — read chapters wrongly appear as downloaded).
+**Blocked by:** none (extends already-Done API-405/406 session cache + API-503/504 CBZ builder + API-505/506 download endpoints).
+**Estimate:** M
+
+### API-910 — Distinguish transient reader CBZ from persisted downloads (impl)
+**Description:** Make API-909 pass — add the read path (e.g. `GET /api/chapter/:id/cbz?profile=eink`) that builds + serves the eink CBZ via `CbzBuilder` + `SessionCache` without recording a download, leaving `POST /api/chapter/:id/download` as the explicit persisting path. After this, `GET /api/downloads` lists only explicitly-downloaded chapters.
+**Acceptance criteria:**
+- All API-909 tests pass.
+- Reading via the transient path never persists a `DownloadRecord`; explicit download still does.
+- Session-cached so a re-read doesn't rebuild; lint/type-check clean.
+**Blocked by:** API-909.
+**Estimate:** M
+
 ---
 
 ## Suggested build order (respecting strict deps)
@@ -540,7 +582,7 @@
 6. **Progress:** 601/602, 603/604
 7. **Auth/Security:** 701/702 → 703/704 (can start once 105 done; apply globally before deploy)
 8. **Deploy:** 801 → 802 → 803 ; **Observability:** 804 → 805 (independent — needs only 103/105/702, can be picked up any time)
-9. **Bug fixes (9xx):** 901 → 902, 903 → 904, 905 → 906 (independent of the above; can be picked up any time)
+9. **Bug fixes (9xx):** 901 → 902, 903 → 904, 905 → 906, 907 → 908, 909 → 910 (independent of the above; can be picked up any time)
 
 > Note: Auth (7xx) only depends on the bootstrap layer, so it can be built early in parallel even though it's listed late. Everything funnels into API-801 for deployment.
 > Note: 9xx are post-hoc fixes/reconciliations (e.g. from the device spike), not part of the original feature build order.

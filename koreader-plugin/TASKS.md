@@ -325,6 +325,26 @@ The web-client epic (`web-client/`) runs in the Kobo's Nickel browser. The devic
 **Blocked by:** KRP-603, KRP-402.
 **Estimate:** M
 **Outcome:** Implemented `state/library.lua` (the KRP-603 impl rides here) and `ui/library_view.lua` (the screen), and wired both into `main.lua`. **`state/library.lua`** is the pure, framework-free coordinator satisfying the KRP-603 contract (CLAUDE.md §5 — `state/` is pure, busted-testable; network only via an injected ApiClient). Its three jobs each mirror `state/browse.lua`'s pure `fetch*`/`apply*` split (the fetch is what net.lua runs in a forked sub-process, KRP-305; `apply*` mutates the parent's table in the `on_result` callback): (1) **followed manga** — `loadLibrary`/`fetchLibrary`/`applyLibrary` load the library list in the API's `added_at ASC` order; an empty library is `isEmpty` (empty state, not an error); a refresh error is surfaced via `getError` while the prior list is kept intact; (2) **continue reading** — `continueReading(mangaId)` / `fetchProgress` + the pure `continueTarget(data, err)` resolver map the last-read position into a `{ mangaId, chapterId, page }` jump target, a never-read 404 being nil-target/no-error and any other error returned as-is; being a per-row lookup it never clobbers the shared list error; (3) **downloaded chapters** — `loadDownloads`/`getDownloads` load in API order and `getOpenableDownloads`/`Library.isOpenable` expose that only a `completed` build is openable (`pending`/`failed` are not). Library entries carry only a `mangaId` (no title — the API has no richer library endpoint yet, RFC §14; a per-row `getManga` fan-out would be wrong, CLAUDE.md §6/§8/§10). **`ui/library_view.lua`** is a `Menu:extend` (CLAUDE.md §5/§7 — lean on KOReader widgets, no hand-rolled layout): one Menu with two labelled sections (**Following** / **Downloaded**), each with its own loading/empty state so a slow or empty side never blanks the panel (§9); a followed row taps to **continue-reading** (jump into the reader), a completed download taps to **open**, and a non-openable download shows its build status rather than a dead tap. Every API call goes through `net.lua` (wifi-gated, non-blocking, dismissable loading dialog); a 401 routes back to the credential prompt via the injected `Auth:handleError` (KRP-303/304). The heavy wiring lives in `main.lua` (no business logic in the view, §5): `Komanga:showLibrary` builds a fresh `Library` per visit behind a new **Library** menu sub-item; `Komanga:continueReading` runs the progress lookup through net, resolves the target, and either jumps into the reader (`resumeReader`) or opens details when the manga was never read; `Komanga:resumeReader` (shared by continue-reading and open-download) loads the manga first to honour reading direction (RTL/LTR) before handing off to `ui/reader_launcher.lua` (KRP-502). **busted 176 successes / 0 failures** (162 prior + KRP-603's 14 now green against the impl); **luacheck clean — 0/0 across 43 files**. Verified loading clean in the emulator (headless SDL-dummy boot, 2026-07-04): `Plugin loaded komanga` / `FM loaded plugin komanga`, no traceback — so the new `state/library` + `ui/library_view` requires resolve at boot. On-panel legibility/refresh of the home view is folded into the KRP-701 `[DEVICE]` tuning pass.
+**Follow-ups (raised 2026-07-04, from on-device testing):** (1) followed rows show the raw `mangaId` because the library API carries no title — **API-907/908** add `title` to `GET /api/library`, then **KRP-605** renders it. (2) chapters that were only *read* appear under "Downloaded" because the reader acquires its CBZ via the persisting `POST /download` — **API-909/910** add a transient reader-CBZ path, then **KRP-606** points the reader at it so only explicit downloads are listed.
+
+### KRP-605 — Show manga titles in the library view
+**Description:** The library / home view (KRP-604) renders each followed manga by its raw `mangaId` (e.g. "40") because `GET /api/library` carried no title. Once **API-908** adds `title` to each library entry, surface it: map `title` through `state/library.lua` (its entries currently expose only `mangaId`) and render it in `ui/library_view.lua`'s Following rows, falling back to `mangaId` when a title is absent. Update `spec/state/library_spec.lua` to assert the title is carried (network mocked at the `api/` boundary, CLAUDE.md §4/§5).
+**Acceptance criteria:**
+- Following rows show the manga **title**, falling back to `mangaId` if the API omits it.
+- `state/library.lua` maps the title; busted specs updated and green.
+- `luacheck` clean; loads clean in the emulator.
+**Blocked by:** API-908.
+**Estimate:** S
+
+### KRP-606 — Reader acquires chapters without persisting a download
+**Description:** The primary reader (KRP-502, `ui/reader_launcher.lua` → `ApiClient:downloadChapterCbzToFile`) acquires its eink CBZ via `POST /api/chapter/:id/download`, which persists a download record — so **every chapter read shows up under "Downloaded"** in the library view (KRP-604). Once **API-910** ships the transient read path (e.g. `GET /api/chapter/:id/cbz?profile=eink`), point the reader at it so plain reading does not create a download. Keep the explicit "Download this chapter for offline" action (KRP-506, `ui/reader_menu.lua`) on the persisting `POST /download`. Add the transient fetch to `api/client.lua` (eink only, mirrors `fetchChapterCbz`/`fetchCover`), switch `ui/reader_launcher.lua` to it, and update the `api`/`state/reader` specs (network mocked at the `api/` boundary). CBZ + `ReaderUI` stays the reading path (eink, RTL honoured).
+**Acceptance criteria:**
+- Reading a chapter does **not** add it to the downloads list; only the explicit "Download this chapter" action does.
+- The reader still opens via CBZ + `ReaderUI` (eink), reading direction honoured.
+- busted + `luacheck` clean; specs updated.
+- **[DEVICE]** confirm on the Kobo: read a chapter → it is absent from "Downloaded"; explicitly download one → it appears.
+**Blocked by:** API-910.
+**Estimate:** M
 
 ---
 
@@ -374,7 +394,7 @@ The web-client epic (`web-client/`) runs in the Kobo's Nickel browser. The devic
 3. **Networking:** 301→302, 303→304, → 305.
 4. **Browse:** 401→402, 403→404 → 405 (device pass).
 5. **Reader (CBZ first, then streaming):** 501→502 → 503 (device pass) → 504→505 → 506.
-6. **Progress & library:** 601→602, 603→604.
+6. **Progress & library:** 601→602, 603→604. *(Follow-ups 605 (needs API-908) and 606 (needs API-910) can land any time once their API blockers ship.)*
 7. **Polish:** 701 → 703, 702, → 704 (final acceptance).
 
 > Notes:

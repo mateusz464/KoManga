@@ -9,6 +9,7 @@ import {
 import { SqliteReadingProgressRepository } from "../../../src/adapters/db/reading-progress-repository.js";
 import { SqliteDownloadsRepository } from "../../../src/adapters/db/downloads-repository.js";
 import { SqliteCacheIndexRepository } from "../../../src/adapters/db/cache-index-repository.js";
+import { SqliteLibraryRepository } from "../../../src/adapters/db/library-repository.js";
 import type {
   ReadingProgress,
   ReadingProgressRepository,
@@ -21,6 +22,10 @@ import type {
   CacheIndexEntry,
   CacheIndexRepository,
 } from "../../../src/services/ports/cache-index-repository.js";
+import type {
+  LibraryEntry,
+  LibraryRepository,
+} from "../../../src/services/ports/library-repository.js";
 
 // Contract test for the SQLite data layer (API-501): migrations + repository
 // CRUD behind the port interfaces (RFC §7, CLAUDE.md §8). Per CLAUDE.md §4.4
@@ -68,7 +73,14 @@ function repos(db: AppDatabase = freshDb()) {
     progress: new SqliteReadingProgressRepository(db),
     downloads: new SqliteDownloadsRepository(db),
     cacheIndex: new SqliteCacheIndexRepository(db),
+    library: new SqliteLibraryRepository(db),
   };
+}
+
+function columnNames(db: AppDatabase, table: string): string[] {
+  return (
+    db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>
+  ).map((row) => row.name);
 }
 
 function tableNames(db: AppDatabase): string[] {
@@ -101,6 +113,12 @@ const CACHE_ENTRY: CacheIndexEntry = {
   expiresAt: 61_000,
 };
 
+const LIBRARY_ENTRY: LibraryEntry = {
+  mangaId: "40",
+  title: "One Piece",
+  addedAt: 1_000,
+};
+
 describe("SQLite data layer (API-501)", () => {
   describe("migrations", () => {
     it("creates the downloads, reading_progress and cache_index tables on a fresh DB", () => {
@@ -110,6 +128,7 @@ describe("SQLite data layer (API-501)", () => {
       expect(tables).toContain("reading_progress");
       expect(tables).toContain("downloads");
       expect(tables).toContain("cache_index");
+      expect(tables).toContain("library");
     });
 
     it("is safe to run again on an already-migrated DB and preserves data", () => {
@@ -300,6 +319,53 @@ describe("SQLite data layer (API-501)", () => {
     });
   });
 
+  // API-907: the library row denormalises the manga's display title captured at
+  // follow time so `list()` returns it with no per-entry Suwayomi fan-out
+  // (CLAUDE.md §8). These stay red until API-908 adds the `library.title` column
+  // + threads it through the adapter.
+  describe("LibraryRepository — display title (API-907)", () => {
+    it("has a title column on the library table", () => {
+      const { db } = repos();
+
+      expect(columnNames(db, "library")).toContain("title");
+    });
+
+    it("persists a title captured at follow time and returns it from list", () => {
+      const { library } = repos();
+
+      library.add(LIBRARY_ENTRY);
+
+      expect(library.list()).toEqual([LIBRARY_ENTRY]);
+    });
+
+    it("returns entries ordered by added_at ASC, each carrying its title", () => {
+      const { library } = repos();
+      const earlier: LibraryEntry = {
+        mangaId: "41",
+        title: "Naruto",
+        addedAt: 500,
+      };
+
+      library.add(LIBRARY_ENTRY); // addedAt 1000
+      library.add(earlier); // addedAt 500
+
+      expect(library.list()).toEqual([earlier, LIBRARY_ENTRY]);
+    });
+
+    it("degrades gracefully for a title-less row (nullable): lists without throwing", () => {
+      const { library } = repos();
+
+      // A follow that carries no title (pre-title / offline client) still stores.
+      library.add({ mangaId: "99", addedAt: 500 });
+
+      expect(() => library.list()).not.toThrow();
+      const entry = library.list().find((e) => e.mangaId === "99");
+      expect(entry?.addedAt).toBe(500);
+      // No title captured → nullish, never a thrown error or a bogus value.
+      expect(entry?.title ?? null).toBeNull();
+    });
+  });
+
   describe("mockability (DB access behind interfaces)", () => {
     it("ReadingProgressRepository can be satisfied by a mock", () => {
       const mock: ReadingProgressRepository = {
@@ -335,6 +401,18 @@ describe("SQLite data layer (API-501)", () => {
 
       expect(mock.totalBytes()).toBe(CACHE_ENTRY.sizeBytes);
       expect(mock.get(CACHE_ENTRY.key)).toBe(CACHE_ENTRY);
+    });
+
+    it("LibraryRepository can be satisfied by a mock", () => {
+      const mock: LibraryRepository = {
+        list: vi.fn().mockReturnValue([LIBRARY_ENTRY]),
+        add: vi.fn(),
+        remove: vi.fn(),
+      };
+
+      expect(mock.list()).toEqual([LIBRARY_ENTRY]);
+      mock.add(LIBRARY_ENTRY);
+      expect(mock.add).toHaveBeenCalledWith(LIBRARY_ENTRY);
     });
   });
 });
