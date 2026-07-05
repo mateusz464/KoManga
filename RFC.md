@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Author:** Matt
-**Last updated:** 2026-06-28
+**Last updated:** 2026-07-05
 **Scope:** Architecture & planning only. Implementation tasks tracked separately in `TASKS.md`.
 
 ---
@@ -27,11 +27,13 @@ The defining constraint is the Kobo's hardware: a slow ARM SoC, an old WebKit br
 
 ### Non-Goals (for v1 of the web-client path)
 - Multi-user accounts or sharing.
-- Offline-first client (network dependency is acceptable).
+- Offline-first client (network dependency is acceptable). *(Reconciled 2026-07-05 for the KOReader-plugin epic — that client adds device-local offline downloads; see the note below and §5.4.)*
 - Bundling/redistributing source extensions ourselves (Suwayomi handles sources).
 - Building the web/mobile clients (future epics — see §13).
 
 > **Reconciled 2026-06-28:** the original v1 scope listed "reading inside KOReader" and "native Kobo app or KOReader plugin" as non-goals — the web client was meant to render its own pages in the Nickel browser. The web-client device spike then found Nickel exposes only a 732×762 viewport on the 1072×1448 panel and surrounds it with browser chrome a page cannot hide. A **KOReader plugin client** is therefore now an **active, separate epic** (`koreader-plugin/`), sharing the same API — see §13. It *does* read inside KOReader (via KOReader's native CBZ reader). This does not change the API contract or the web-client epic.
+
+> **Reconciled 2026-07-05:** the "offline-first client" non-goal held for the **web client** (Nickel browser, always-online reading). The **KOReader plugin** is different: it exists for full-panel reading on a Kobo that is routinely used with wifi asleep or absent, so *offline reading of explicitly-downloaded chapters* is now in scope **for that client** (feature `KRP-8xx`). It stays a **client concern** — the plugin persists downloaded `eink` CBZs on the device and keeps a local index (§5.4); it needs **no new API endpoint** and does not change the contract. The system is still not "offline-first" in general (browse/search/streaming remain online); only kept downloads read offline.
 
 ---
 
@@ -115,6 +117,17 @@ Public entry point. No inbound ports on the home router; the Mac Mini originates
 - **Persistent download store:** CBZs the user explicitly chose to keep. Never auto-pruned.
 - Both keyed so the same processed page is never recomputed unnecessarily within its lifetime.
 
+### 5.4 Offline device-local downloads (KOReader plugin)
+
+The download store in §5.2 is **server-side**: the CBZ lives on the API host and is re-fetched over the network when opened, so it does not enable reading with the network down. The **KOReader plugin** additionally supports **true offline reading**, because a Kobo is routinely used with wifi asleep or absent and full-panel offline reading is the reason the epic exists. For that client:
+
+1. "Download for offline" fetches the chapter's built **`eink` CBZ** — the transient `GET /api/chapter/:id/cbz?profile=eink` (§8; already built and served from the session cache, creating **no** server-side download record) — and **persists the bytes on the device**, under KOReader's data directory.
+2. The plugin keeps a **device-local download index** (chapter id, manga id, title, chapter number, reading direction, local file path, size, timestamp) so the "Downloaded" list renders **and opens without contacting the API**.
+3. Opening a downloaded chapter reads the **local CBZ** directly through KOReader's reader — no network.
+4. The user can **delete** a downloaded chapter, freeing device storage (removes both the file and the index entry).
+
+This keeps offline behaviour a **client concern** (§13): it needs **no new API endpoint** (the transient `eink` CBZ already exists) and does not change the contract. The **server-side** persistent download store (§5.2, §7, §8) remains available for potential full-colour clients (website/mobile) but is **not** what the KOReader plugin relies on for offline reading. *(Open question: if no client ends up using the server-side store, it may be retired in a later API-epic cleanup.)*
+
 ---
 
 ## 6. Image Processing for E-Ink
@@ -133,7 +146,7 @@ This profile split is the main reason a thin client + fat server works for the K
 ## 7. Data Model (our SQLite — not Suwayomi's)
 
 - **reading_progress** — `manga_id`, `chapter_id`, `page`, `updated_at`. Device-agnostic; last-write-wins (sufficient for single user).
-- **downloads** — `chapter_id`, `manga_id`, `cbz_path`, `status`, `created_at`.
+- **downloads** — `chapter_id`, `manga_id`, `cbz_path`, `status`, `created_at`. *(This is the **server-side** download store. The KOReader plugin keeps its own **device-local** download index for offline reading — §5.4 — which is not recorded in this SQLite DB.)*
 - **cache_index** — bookkeeping for the ephemeral session cache (keys, sizes, TTLs) to drive pruning.
 
 Source/catalogue/chapter metadata is *not* duplicated here; it's queried from Suwayomi on demand (with short-lived caching where it helps).
@@ -149,8 +162,9 @@ Source/catalogue/chapter metadata is *not* duplicated here; it's queried from Su
 | `GET` | `/api/manga/:id` | Manga details + chapter list |
 | `GET` | `/api/chapter/:id/pages` | Page list (metadata only) |
 | `GET` | `/api/page/:id?profile=` | Single page image; `profile=raw` (default) or `eink` |
-| `POST` | `/api/chapter/:id/download` | Build + store CBZ |
-| `GET` | `/api/downloads` | List downloaded chapters |
+| `GET` | `/api/chapter/:id/cbz?profile=` | Built CBZ for a chapter (transient; no download record). Used for reading and for the KOReader plugin's device-local offline download (§5.4) |
+| `POST` | `/api/chapter/:id/download` | Build + store CBZ (server-side download store) |
+| `GET` | `/api/downloads` | List server-side downloaded chapters |
 | `GET`/`PUT` | `/api/progress/:mangaId` | Read/update reading progress |
 | `GET` | `/api/library` | Saved/followed manga |
 
@@ -208,7 +222,7 @@ Volumes for: Suwayomi data, our SQLite DB, the persistent CBZ download store. Th
 
 The v1 API is kept deliberately client-agnostic so additional clients slot in without a rewrite. One of these has already been promoted to an active epic (the KOReader plugin); the others remain future work.
 
-- **KOReader plugin (Kobo) — ACTIVE epic (`koreader-plugin/`, `KRP-NNN`).** A native-feel Kobo client that runs inside KOReader and uses the **full e-ink panel**, instead of the Nickel browser the web client is constrained by. It exists because the web-client device spike proved Nickel's chrome and 732×762 viewport can't be escaped from a web page (§2, reconciled). It consumes the **same API** (requests the `eink` profile; device-agnostic progress; single credential) and reads chapters through **KOReader's native CBZ reader** — the API already builds `eink` CBZs (§5.2), so the heavy reader work is inherited rather than rebuilt. On-demand streaming is a refinement on top. It does **not** change the API contract; gaps are raised as API-epic tickets.
+- **KOReader plugin (Kobo) — ACTIVE epic (`koreader-plugin/`, `KRP-NNN`).** A native-feel Kobo client that runs inside KOReader and uses the **full e-ink panel**, instead of the Nickel browser the web client is constrained by. It exists because the web-client device spike proved Nickel's chrome and 732×762 viewport can't be escaped from a web page (§2, reconciled). It consumes the **same API** (requests the `eink` profile; device-agnostic progress; single credential) and reads chapters through **KOReader's native CBZ reader** — the API already builds `eink` CBZs (§5.2), so the heavy reader work is inherited rather than rebuilt. On-demand streaming is a refinement on top. It does **not** change the API contract; gaps are raised as API-epic tickets. This epic also adds **offline reading** as a **client-side** concern: the plugin persists downloaded `eink` CBZs on the device with a local index and a delete action, so kept chapters open with the network off (§5.4) — again with no API change.
 - **Manga reading website** — a full-colour browser client. Will consume the same API; page processing may happen client-side or server-side depending on efficiency, which is exactly why page serving is profile-based (`raw` vs `eink`) rather than hardcoded to e-ink.
 - **Mobile app** — same story: consumes the same API, likely requests `raw` pages and processes/displays in full colour on-device.
 

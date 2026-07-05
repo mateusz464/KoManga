@@ -389,12 +389,12 @@ The web-client epic (`web-client/`) runs in the Kobo's Nickel browser. The devic
 **Estimate:** M
 
 ### KRP-702 — Network resilience & offline downloaded reading
-**Description:** Handle flaky/lost wifi gracefully (`NetworkMgr`) and ensure already-downloaded CBZ chapters open and read with the network off.
+**Description:** Handle flaky/lost wifi gracefully (`NetworkMgr`) and ensure already-downloaded CBZ chapters open and read with the network off. **Note (2026-07-05):** the *offline-downloaded-reading* half is now delivered by the **Offline device-local downloads (8xx)** feature — downloads persist on the device and open without the API (KRP-806, RFC §5.4). This ticket now covers only the **network-resilience** half (graceful flaky/lost wifi via `NetworkMgr`).
 **Acceptance criteria:**
 - A dropped connection shows a clear state and retry, never a hard crash.
-- A previously downloaded chapter opens and reads with wifi off.
+- ~~A previously downloaded chapter opens and reads with wifi off.~~ → moved to KRP-806 (8xx feature).
 **Blocked by:** KRP-506, KRP-604.
-**Estimate:** M
+**Estimate:** S
 
 ### KRP-703 — [DEVICE] Install & launch experience
 **Description:** Make installing/updating the plugin and launching into KoManga as smooth as KOReader allows (a documented install/update step and a sensible landing view via the menu entry / NickelMenu).
@@ -415,6 +415,75 @@ The web-client epic (`web-client/`) runs in the Kobo's Nickel browser. The devic
 
 ---
 
+# Feature: Offline device-local downloads (8xx)
+
+> **Added 2026-07-05 (RFC §5.4).** "Download for offline" becomes a **device-local** persist, not just the server-side store: the plugin fetches the chapter's built `eink` CBZ via the **transient** `GET /api/chapter/:id/cbz?profile=eink` (already built + session-cached, **no** server download record — API-910/KRP-606), writes the bytes to the Kobo under KOReader's data dir, and records a **device-local index** so the "Downloaded" list renders **and opens with wifi off**. Reading a downloaded chapter hits **no** network; the user can **delete** a download to free space. This is a **client concern** — it needs **no new API endpoint** and does not change the contract (RFC §13); the server-side download store (`POST /download`, `GET /downloads`) is left in place but the plugin no longer relies on it. Same conventions as every KRP ticket (CLAUDE.md): `state/` pure + busted-tested with the persistence store injected; all network via `api/`/`net.lua`; `eink` only; loading/error states everywhere; `[DEVICE]` tickets close only on the real Kobo.
+
+### KRP-801 — [TEST] Device-local download store & index (logic)
+**Description:** Failing `busted` specs for a pure, framework-free `state/downloads.lua` that owns the **device-local download index** — no KOReader loaded, persistence injected (a fake store, mirroring `settings.lua`'s injected-store pattern; CLAUDE.md §5/§9). Contract: `add(entry)` (idempotent per `chapterId`), `get(chapterId)`, `list()` (stable order), `has(chapterId)`, `remove(chapterId)` (returns the local file path to unlink so the caller frees storage), and pure path/layout helpers (the on-device CBZ filename/dir for a chapter). Each entry carries `{ chapterId, mangaId, title, chapterNumber, direction, fileName, size, createdAt }` so the list is legible and openable **offline**.
+**Acceptance criteria:**
+- Specs cover add/get/list/has/remove + idempotency + path layout, all failing against the absent impl, network/store mocked at the boundary.
+- No KOReader modules required to run the spec.
+**Blocked by:** KRP-506, KRP-604.
+**Estimate:** M
+
+### KRP-802 — Device-local download store & index (impl)
+**Description:** Implement `state/downloads.lua` and its persistence to make KRP-801 green: a LuaSettings-backed manifest (extend `settings.lua`, or a JSON manifest under `DataStorage`) for the index, and the on-device CBZ directory layout under KOReader's data dir. Keep KOReader/`DataStorage` coupling out of the pure module (inject paths/store), so busted still runs it. Document the device-local download location in `koreader-plugin/CLAUDE.md` (§5/§6).
+**Acceptance criteria:**
+- KRP-801 specs pass; `luacheck` clean; loads clean in the emulator.
+- Index persists across reloads; CBZ dir created lazily.
+**Blocked by:** KRP-801.
+**Estimate:** M
+
+### KRP-803 — [TEST] Download-to-device coordinator (logic)
+**Description:** Failing `busted` specs for the coordinator that performs an offline download: fetch the chapter's **transient** `eink` CBZ (`api:readChapterCbzToFile`, KRP-606) straight to the device store's path, then record the index entry (KRP-802) with `title`/`chapterNumber`/`direction`. Idempotent (already-downloaded is a no-op success); a fetch failure removes any partial file and records **nothing** (mirrors `downloadChapterCbzToFile`'s partial-file cleanup). Network mocked at the `api/` boundary; store injected.
+**Acceptance criteria:**
+- Specs assert: fetch goes through `readChapterCbzToFile` (transient, **never** `downloadChapter`/`POST /download`); success records the entry with metadata; failure leaves no file and no entry; re-download is a no-op.
+**Blocked by:** KRP-802.
+**Estimate:** M
+
+### KRP-804 — Download-to-device action; repoint "Download this chapter"
+**Description:** Implement the KRP-803 coordinator and repoint `ui/reader_menu.lua`'s "Download this chapter for offline" at it (replacing the server-side `POST /download` / `ApiClient:downloadChapter`). Capture the manga **title**, **chapter number**, and **reading direction** at download time (threaded from the reader context / loaded manga) so the offline list and reader have them without a network call. Runs through `net.lua` (wifi-gated, non-blocking) with the shared loading/`Retry` UX (KRP-305/506).
+**Acceptance criteria:**
+- "Download this chapter for offline" persists the CBZ **on the device** and records the index entry; no server-side download record is created.
+- Loading/error/retry states present; `luacheck` clean; loads clean in the emulator.
+**Blocked by:** KRP-803.
+**Estimate:** M
+
+### KRP-805 — Library "Downloaded" section from the device index (offline-capable)
+**Description:** Point the library/home "Downloaded" section at the **device-local index** (KRP-802) instead of `GET /api/downloads`, so it renders **with wifi off**. Map through `state/library.lua` (its `fetchDownloads`/`getDownloads`/`isOpenable` become device-index-backed — pure, store injected) and label each row by **manga title + chapter number** (resolves the KRP-605 note that downloaded rows show raw chapter IDs). Update `spec/state/library_spec.lua`.
+**Acceptance criteria:**
+- The Downloaded list is built from the on-device index and shows with the network off; rows show title + chapter number.
+- `state/library.lua` maps it (pure, tested); `luacheck` clean; loads clean in the emulator.
+**Blocked by:** KRP-802.
+**Estimate:** M
+
+### KRP-806 — [DEVICE] Offline reading of a downloaded chapter
+**Description:** Open a downloaded chapter from its **local CBZ** via `ReaderUI` with the network **off** — no API call on the open path — honouring the stored reading direction (RTL/LTR). Delivers the "offline downloaded reading" half moved out of KRP-702.
+**Acceptance criteria:**
+- **[DEVICE]** On the real Kobo in airplane mode: open a downloaded chapter from the library → it reads full-panel with correct RTL/LTR, no network, no blank/frozen panel.
+- The open path issues no network request when the CBZ is present locally.
+**Blocked by:** KRP-804, KRP-805.
+**Estimate:** M
+
+### KRP-807 — Delete a downloaded chapter
+**Description:** A **delete** action for a downloaded chapter — from the library "Downloaded" row and/or the in-reader KoManga menu — that removes both the local CBZ file and its index entry via `state/downloads.lua:remove` (KRP-801/802), behind a `ConfirmBox`. The Downloaded list reflects the removal; storage is freed.
+**Acceptance criteria:**
+- Deleting a download removes the file + index entry after confirmation; the list updates; `luacheck` clean.
+- Specs cover the store side (already in KRP-801); the UI wiring loads clean in the emulator.
+**Blocked by:** KRP-802, KRP-805.
+**Estimate:** S
+
+### KRP-808 — [DEVICE] On-device validation: download → offline read → delete + footprint
+**Description:** Full offline loop on the real Kobo, plus a footprint check (RFC §8 — don't retain whole chapters in memory; a sane storage story).
+**Acceptance criteria:**
+- **[DEVICE]** download a chapter → it appears under Downloaded with title + number → **airplane-mode** read it → delete it → it's gone and the space is freed.
+- Downloading/reading a chapter does not balloon memory (bytes stream to disk, per `readChapterCbzToFile`); repeated downloads are bounded and deletable.
+**Blocked by:** KRP-806, KRP-807.
+**Estimate:** M
+
+---
+
 ## Suggested build order (respecting strict deps)
 
 1. **Spike first:** KRP-101 → 102 / 103. *Do not start the scaffold until the dev loop + `docs/koreader.md` exist.*
@@ -423,7 +492,8 @@ The web-client epic (`web-client/`) runs in the Kobo's Nickel browser. The devic
 4. **Browse:** 401→402, 403→404 → 405 (device pass).
 5. **Reader (CBZ first, then streaming):** 501→502 → 503 (device pass) → 504→505 → 506.
 6. **Progress & library:** 601→602, 603→604. *(Follow-ups 605 (needs API-908) and 606 (needs API-910) can land any time once their API blockers ship; 607 (needs API-912) adds "Continue (next chapter number)" to the library view.)*
-7. **Polish:** 701 → 703, 702, → 704 (final acceptance).
+7. **Offline device-local downloads (8xx):** 801→802 → 803→804, 805 → 806 (device), 807 → 808 (device acceptance). *(Needs KRP-506 + KRP-604; no API blocker — reuses the transient `eink` CBZ endpoint from API-910/KRP-606. RFC §5.4.)*
+8. **Polish:** 701 → 703, 702, → 704 (final acceptance). *(702 is now just the network-resilience half; offline-downloaded reading moved to 806.)*
 
 > Notes:
 > - **The spike gates everything** — KOReader version, install/launch, and the emulator loop are what the rest assumes. Don't shortcut it.
