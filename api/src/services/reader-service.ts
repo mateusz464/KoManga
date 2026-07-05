@@ -1,7 +1,8 @@
 import type { ImageProcessor, ImageProfile } from "./ports/image-processor.js";
-import type { CbzBuilder, CbzPage } from "./ports/cbz-builder.js";
+import type { CbzBuilder } from "./ports/cbz-builder.js";
 import type { CachedPage, SessionCache } from "./ports/session-cache.js";
 import type { SuwayomiClient } from "./ports/suwayomi-client.js";
+import { mapWithConcurrency } from "./map-with-concurrency.js";
 
 const CBZ_CONTENT_TYPE = "application/vnd.comicbook+zip";
 
@@ -21,6 +22,7 @@ export class ReaderService {
     private readonly imageProcessor: ImageProcessor,
     private readonly cbzBuilder: CbzBuilder,
     private readonly sessionCache: SessionCache,
+    private readonly pageConcurrency: number,
   ) {}
 
   async readCbz(chapterId: string, profile: ImageProfile): Promise<ReaderCbz> {
@@ -32,16 +34,19 @@ export class ReaderService {
       return cached;
     }
 
-    // Resolve the chapter's page URLs once, then fetch + process each; re-running
-    // resolution per page would issue an upstream page-resolution round-trip per
-    // page (the N+1 that blows the client's socket timeout on a cold read).
+    // Resolve the chapter's page URLs once, then fetch + process pages with
+    // bounded concurrency. Per-page resolution would issue an upstream round-trip
+    // per page (the N+1); fetching serially would sum every page's origin latency
+    // — either blows the client's socket timeout on a cold read (API-915/916).
     const pageUrls = await this.suwayomi.fetchPageUrls(chapterId);
-
-    const pages: CbzPage[] = [];
-    for (const url of pageUrls) {
-      const source = await this.suwayomi.fetchPageBytes(url);
-      pages.push(await this.imageProcessor.process(source, profile));
-    }
+    const pages = await mapWithConcurrency(
+      pageUrls,
+      this.pageConcurrency,
+      async (url) => {
+        const source = await this.suwayomi.fetchPageBytes(url);
+        return this.imageProcessor.process(source, profile);
+      },
+    );
 
     const bytes = await this.cbzBuilder.build(pages);
     const built: CachedPage = { bytes, contentType: CBZ_CONTENT_TYPE };

@@ -1,11 +1,12 @@
 import type { ImageProcessor, ImageProfile } from "./ports/image-processor.js";
-import type { CbzBuilder, CbzPage } from "./ports/cbz-builder.js";
+import type { CbzBuilder } from "./ports/cbz-builder.js";
 import type { DownloadStore } from "./ports/download-store.js";
 import type {
   DownloadRecord,
   DownloadsRepository,
 } from "./ports/downloads-repository.js";
 import type { SuwayomiClient } from "./ports/suwayomi-client.js";
+import { mapWithConcurrency } from "./map-with-concurrency.js";
 import { NotFoundError } from "../http/errors.js";
 
 // Turns a chapter into a persisted CBZ on the download volume (RFC §5.2), kept
@@ -17,6 +18,7 @@ export class DownloadService {
     private readonly cbzBuilder: CbzBuilder,
     private readonly store: DownloadStore,
     private readonly repository: DownloadsRepository,
+    private readonly pageConcurrency: number,
   ) {}
 
   // Idempotent: an already-recorded chapter short-circuits — nothing refetched,
@@ -31,16 +33,19 @@ export class DownloadService {
       return existing;
     }
 
-    // Resolve the chapter's page URLs once, then fetch + process each; re-running
-    // resolution per page would issue an upstream page-resolution round-trip per
-    // page (the same N+1 the transient reader path avoids).
+    // Resolve the chapter's page URLs once, then fetch + process pages with
+    // bounded concurrency — same pipeline as the transient reader path, avoiding
+    // both the per-page resolution N+1 and the serial sum-of-latencies build
+    // (API-915/916).
     const pageUrls = await this.suwayomi.fetchPageUrls(chapterId);
-
-    const pages: CbzPage[] = [];
-    for (const url of pageUrls) {
-      const source = await this.suwayomi.fetchPageBytes(url);
-      pages.push(await this.imageProcessor.process(source, profile));
-    }
+    const pages = await mapWithConcurrency(
+      pageUrls,
+      this.pageConcurrency,
+      async (url) => {
+        const source = await this.suwayomi.fetchPageBytes(url);
+        return this.imageProcessor.process(source, profile);
+      },
+    );
 
     const cbz = await this.cbzBuilder.build(pages);
     const cbzPath = await this.store.save(chapterId, cbz);

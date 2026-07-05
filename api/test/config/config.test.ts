@@ -23,6 +23,7 @@ describe("loadConfig", () => {
     expect(config.cache.maxBytes).toBeGreaterThan(0);
     expect(config.cache.ttlSeconds).toBeGreaterThan(0);
     expect(config.prefetch.window).toBeGreaterThan(0);
+    expect(config.cbz.pageConcurrency).toBeGreaterThan(0);
     expect(config.libraryRefresh.intervalSeconds).toBeGreaterThan(0);
     expect(config.image.targetWidth).toBeGreaterThan(0);
     expect(config.image.targetHeight).toBeGreaterThan(0);
@@ -38,6 +39,7 @@ describe("loadConfig", () => {
       CACHE_MAX_BYTES: "1048576",
       CACHE_TTL_SECONDS: "120",
       PREFETCH_WINDOW: "5",
+      CBZ_PAGE_CONCURRENCY: "8",
       LIBRARY_REFRESH_INTERVAL_SECONDS: "3600",
       IMAGE_TARGET_WIDTH: "1264",
       IMAGE_TARGET_HEIGHT: "1680",
@@ -50,6 +52,7 @@ describe("loadConfig", () => {
     expect(config.cache.maxBytes).toBe(1048576);
     expect(config.cache.ttlSeconds).toBe(120);
     expect(config.prefetch.window).toBe(5);
+    expect(config.cbz.pageConcurrency).toBe(8);
     expect(config.libraryRefresh.intervalSeconds).toBe(3600);
     expect(config.image.targetWidth).toBe(1264);
     expect(config.image.targetHeight).toBe(1680);

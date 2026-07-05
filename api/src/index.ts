@@ -57,6 +57,7 @@ const app = createApp({
   imageProcessor,
   sessionCache,
   prefetchWindow: config.prefetch.window,
+  pageConcurrency: config.cbz.pageConcurrency,
   cbzBuilder,
   downloadStore,
   downloadsRepository,

@@ -38,6 +38,12 @@ export interface Config {
   readonly prefetch: {
     readonly window: number;
   };
+  readonly cbz: {
+    // Max pages fetched + processed concurrently while building a chapter's CBZ
+    // (API-916). Bounded so a build never opens unlimited connections to
+    // Suwayomi/origin.
+    readonly pageConcurrency: number;
+  };
   readonly libraryRefresh: {
     // 0 disables the periodic followed-manga refresh (API-914).
     readonly intervalSeconds: number;
@@ -72,6 +78,7 @@ const DEFAULTS = {
   CACHE_MAX_BYTES: 256 * 1024 * 1024,
   CACHE_TTL_SECONDS: 60 * 60,
   PREFETCH_WINDOW: 3,
+  CBZ_PAGE_CONCURRENCY: 6,
   LIBRARY_REFRESH_INTERVAL_SECONDS: 24 * 60 * 60,
   RATE_LIMIT: 100,
   RATE_LIMIT_WINDOW_MS: 60 * 1000,
@@ -171,6 +178,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     },
     prefetch: {
       window: positiveInt("PREFETCH_WINDOW", DEFAULTS.PREFETCH_WINDOW),
+    },
+    cbz: {
+      pageConcurrency: positiveInt(
+        "CBZ_PAGE_CONCURRENCY",
+        DEFAULTS.CBZ_PAGE_CONCURRENCY,
+      ),
     },
     libraryRefresh: {
       intervalSeconds: nonNegativeInt(

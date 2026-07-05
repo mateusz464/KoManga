@@ -56,6 +56,9 @@ export interface AppDependencies {
   readonly imageProcessor?: ImageProcessor;
   readonly sessionCache?: SessionCache;
   readonly prefetchWindow?: number;
+  // Max pages fetched + processed concurrently when building a chapter's CBZ
+  // (API-916). Omitted in tests → a safe default so the build stays bounded.
+  readonly pageConcurrency?: number;
   readonly cbzBuilder?: CbzBuilder;
   readonly downloadStore?: DownloadStore;
   readonly downloadsRepository?: DownloadsRepository;
@@ -66,8 +69,13 @@ export interface AppDependencies {
   readonly clientDir?: string;
 }
 
+// Mirrors config's CBZ_PAGE_CONCURRENCY default; used when a test builds an app
+// without wiring the knob through.
+const DEFAULT_PAGE_CONCURRENCY = 6;
+
 export function createApp(deps: AppDependencies): express.Express {
   const app = express();
+  const pageConcurrency = deps.pageConcurrency ?? DEFAULT_PAGE_CONCURRENCY;
 
   // Log every request at the edge (method, path, status, latency) before any
   // routing, so even /health and rejected requests are recorded.
@@ -126,6 +134,7 @@ export function createApp(deps: AppDependencies): express.Express {
           deps.imageProcessor,
           deps.cbzBuilder,
           deps.sessionCache,
+          pageConcurrency,
         ),
       ),
     );
@@ -146,6 +155,7 @@ export function createApp(deps: AppDependencies): express.Express {
           deps.cbzBuilder,
           deps.downloadStore,
           deps.downloadsRepository,
+          pageConcurrency,
         ),
       ),
     );
