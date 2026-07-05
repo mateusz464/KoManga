@@ -25,7 +25,9 @@ describe("serving the web client (clientDir)", () => {
   });
 
   it("serves index.html at the root", async () => {
-    const res = await request(createApp({ suwayomi: stubSuwayomi(), clientDir }))
+    const res = await request(
+      createApp({ suwayomi: stubSuwayomi(), clientDir }),
+    )
       .get("/")
       .expect(200);
 
@@ -34,7 +36,9 @@ describe("serving the web client (clientDir)", () => {
   });
 
   it("serves static client assets", async () => {
-    const res = await request(createApp({ suwayomi: stubSuwayomi(), clientDir }))
+    const res = await request(
+      createApp({ suwayomi: stubSuwayomi(), clientDir }),
+    )
       .get("/main.js")
       .expect(200);
 

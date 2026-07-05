@@ -1,6 +1,7 @@
 import { Router, json } from "express";
 import { BadRequestError } from "../http/errors.js";
 import type { LibraryService } from "../services/library-service.js";
+import type { LibraryEntry } from "../services/ports/library-repository.js";
 
 export function libraryRouter(service: LibraryService): Router {
   const router = Router();
@@ -18,8 +19,14 @@ export function libraryRouter(service: LibraryService): Router {
     }
 
     // Device-agnostic: build from our fields only, so any deviceId is dropped.
-    const entry = service.follow({ mangaId: req.params.mangaId, addedAt });
-    res.json({ data: entry });
+    // Capture the display title at follow time (API-908) when the client sends
+    // one; it is optional, so a title-less follow still succeeds.
+    const title = body.title;
+    const entry: LibraryEntry =
+      typeof title === "string"
+        ? { mangaId: req.params.mangaId, addedAt, title }
+        : { mangaId: req.params.mangaId, addedAt };
+    res.json({ data: service.follow(entry) });
   });
 
   router.delete("/library/:mangaId", (req, res) => {
