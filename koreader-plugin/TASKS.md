@@ -400,11 +400,22 @@ The web-client epic (`web-client/`) runs in the Kobo's Nickel browser. The devic
 **Estimate:** S
 
 ### KRP-703 — [DEVICE] Install & launch experience
-**Description:** Make installing/updating the plugin and launching into KoManga as smooth as KOReader allows (a documented install/update step and a sensible landing view via the menu entry / NickelMenu).
+**Description:** Make installing/updating the plugin as smooth as KOReader allows for an open-source audience. **Decision (2026-07-06):** end users install by **drag-and-drop** — download a release zip and drop `komanga.koplugin` into `.adds/koreader/plugins/` (works on any OS, no toolchain); a script installer was deliberately not built. `scripts/package.sh` produces the release zip (runtime files only); `scripts/deploy.sh` stays the **dev-only** deploy tool. `INSTALL.md` is the user-facing install/update/config doc (covers the API too). To keep the *update* path safe (overwriting the plugin folder must not wipe config), the API base URL is now settable in-app and persisted in settings — **KRP-706**. The original "lands on the library/home view" criterion was **dropped** — the existing KoManga menu (Library / Browse / Set credential / Set server URL) is retained as the landing.
 **Acceptance criteria:**
-- A documented, repeatable install/update path on-device.
-- Opening KoManga lands on the library/home view, loading acceptably.
-**Blocked by:** KRP-701.
+- A documented, repeatable install/update path on-device (`INSTALL.md` + `scripts/package.sh` release zip; settings survive a folder-overwrite update via KRP-706).
+- ~~Opening KoManga lands on the library/home view.~~ → dropped 2026-07-06; current menu retained.
+- **On-device (remaining):** install the release zip, update over it, confirm the KoManga menu loads and the saved server URL + credential persist across the update.
+**Blocked by:** KRP-701, KRP-706.
+**Estimate:** S
+
+### KRP-706 — Set API server URL in-app
+**Status:** Done
+**Description:** Add an in-app **"Set server URL"** entry (alongside "Set credential" in the KoManga menu) so the API base URL is set from the device and persists in `LuaSettings` — no hand-editing `config.lua`. Persisting in settings keeps the value out of the plugin folder, so a plugin update (overwriting the folder, KRP-703) can't wipe it. The settings logic (`getApiBaseUrl`/`setApiBaseUrl`) already exists and is tested (KRP-202); this adds the UI prompt (`ui/server_url_prompt.lua`, mirroring `ui/credential_prompt.lua`, KRP-304) and wires the menu entry, rebuilding the API client so the new base takes effect. `join_url` already strips a trailing slash, so no URL normalisation is needed.
+**Acceptance criteria:**
+- A "Set server URL" menu entry opens an `InputDialog` seeded with the current base URL; saving persists it (survives a KOReader restart) and it takes effect for subsequent API calls.
+- The value survives a plugin update (plugin-folder overwrite) because it lives in `LuaSettings`, not `config.lua`.
+- `luacheck` clean; network only via `api/`/`net.lua`; no new API endpoint.
+**Blocked by:** KRP-202, KRP-304.
 **Estimate:** S
 
 ### KRP-704 — [DEVICE] Full end-to-end on-device acceptance

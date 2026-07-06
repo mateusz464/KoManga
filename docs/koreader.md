@@ -298,3 +298,34 @@ koreader-plugin/komanga.koplugin/spec/lint.sh main.lua   # ...or specific files
 `.luacheckrc` mirrors KOReader's own (`std=luajit`, `unused_args=false`,
 `self=false`) so widget-callback idioms don't read as warnings; `spec/` adds
 busted globals. Expected output: `0 warnings / 0 errors`.
+
+## KRP-703 — install & update experience (end users)
+
+`scripts/deploy.sh` (KRP-203) is a **macOS developer** tool wired into the
+emulator/`kodev` loop — not the end-user installer. For the open-source install
+story we lean on the KOReader-plugin community norm: **drag-and-drop**, which is
+cross-platform with no toolchain and produces a clean install (a freshly
+extracted zip carries none of the macOS `._*` xattr junk `deploy.sh` has to
+scrub).
+
+- **Release artifact:** `scripts/package.sh` zips `komanga.koplugin` (runtime Lua
+  only — `spec/`, `.busted`, `.luacheckrc`, logs, and `.gitkeep`s excluded) to
+  `dist/komanga.koplugin-<rev>.zip`. This runs on the maintainer's machine to cut
+  a release; it isn't shipped in the plugin. The zip extracts to
+  `komanga.koplugin/…`, ready to drop into `plugins/`.
+- **User doc:** `koreader-plugin/INSTALL.md` is the canonical install / update /
+  configure guide, including standing up the API (root `docker-compose.yml` +
+  `docs/cloudflare-tunnel.md`) since the plugin is useless without it.
+- **Update safety:** installing/updating overwrites the plugin folder, so config
+  must **not** live in it. The API base URL and credential persist in KOReader's
+  settings dir (`settings/komanga.lua`, via `settings.lua`), set in-app under
+  **KoManga → Set server URL / Set credential** (the URL entry is KRP-706). An
+  update therefore keeps a user's server + credential.
+- **Landing view:** intentionally left as the existing KoManga menu (Library /
+  Browse / Set credential / Set server URL) — the "open straight into Library"
+  idea was dropped (2026-07-06).
+
+**On-device (the `[DEVICE]` acceptance, not closable from the emulator):** copy a
+release zip onto the Kobo, restart KOReader, set the server URL + credential;
+then update over the top with a newer zip and confirm the menu loads and both
+settings survive.
