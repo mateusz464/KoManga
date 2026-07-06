@@ -1,20 +1,9 @@
--- KRP-804 — Download-to-device coordinator (impl). The pure, framework-free state
--- behind the "Download this chapter for offline" action (RFC §5.4): it fetches a
--- chapter's TRANSIENT eink CBZ (ApiClient:readChapterCbzToFile, KRP-606 — GET
--- /api/chapter/:id/cbz, built + session-cached with NO server download record)
--- straight to the device store's path (state/downloads.lua's pathFor, KRP-802), then
--- records the device-local index entry with the metadata the offline list + reader
--- need (title / chapterNumber / direction) so the "Downloaded" list is legible and
--- opens with wifi off. It must NEVER touch the server-side download endpoint
--- (ApiClient:downloadChapter / POST /download) — that path persists a server record
--- the offline feature deliberately no longer relies on (RFC §5.4).
---
--- Network reaches it only through an injected ApiClient, and the clock / file-size
--- collaborators are injected too (CLAUDE.md §5/§9), so busted drives it with no
--- KOReader loaded. The fetch/apply split mirrors the other state modules: net.lua
--- runs `fetchCbz` in a forked sub-process that cannot mutate the parent's index
--- across the fork (KRP-305), so the UI (ui/reader_menu.lua) calls `record` in net's
--- on_result callback (parent side).
+-- Pure state behind the "Download this chapter for offline" action (RFC §5.4): it
+-- streams a chapter's transient eink CBZ (readChapterCbzToFile) into the device
+-- store's path, then records a device-local index entry with the metadata the
+-- offline list + reader need (title / chapterNumber / direction). It must NEVER touch
+-- the server download endpoint (POST /download) — the offline feature deliberately no
+-- longer relies on a server record. Splits fetch/apply like the other state modules.
 --
 -- `chapter` = { chapterId, mangaId, title, chapterNumber, direction }.
 local Downloads = require("state.downloads")
@@ -22,9 +11,7 @@ local Downloads = require("state.downloads")
 local DownloadCoordinator = {}
 DownloadCoordinator.__index = DownloadCoordinator
 
--- Runtime default file-size reader: seek to the end of the file. Pure Lua (no
--- KOReader/lfs coupling) so the module still imports clean under busted; specs
--- inject their own over the fake fs.
+-- Pure Lua (no lfs) so the module still imports under busted; specs inject their own.
 local function file_size_on_disk(path)
     local f = io.open(path, "rb")
     if not f then
@@ -35,7 +22,6 @@ local function file_size_on_disk(path)
     return size
 end
 
--- api: an ApiClient (or a fake). downloads: a state/downloads.lua index.
 -- opts = { now?, file_size? } — injected so createdAt/size are deterministic in tests.
 function DownloadCoordinator.new(api, downloads, opts)
     opts = opts or {}
@@ -47,9 +33,7 @@ function DownloadCoordinator.new(api, downloads, opts)
     }, DownloadCoordinator)
 end
 
--- Pure fetch (fork-safe): stream the transient eink CBZ to the device store path,
--- returning (path, nil) or (nil, err). Already-downloaded is a no-op that returns the
--- stored path with NO network call. Mutates no index — `record` does that parent-side.
+-- Already-downloaded is a no-op returning the stored path with no network call.
 function DownloadCoordinator:fetchCbz(chapter)
     local path = self.downloads:pathFor(chapter.chapterId)
     if self.downloads:has(chapter.chapterId) then
@@ -58,8 +42,6 @@ function DownloadCoordinator:fetchCbz(chapter)
     return self.api:readChapterCbzToFile(chapter.chapterId, path)
 end
 
--- Parent-side apply: record the device-local index entry (idempotent) with the
--- offline-list metadata, returning the stored entry.
 function DownloadCoordinator:record(chapter, path)
     self.downloads:add{
         chapterId = chapter.chapterId,
@@ -74,10 +56,8 @@ function DownloadCoordinator:record(chapter, path)
     return self.downloads:get(chapter.chapterId)
 end
 
--- Tested composition of fetchCbz + record: returns (entry, nil) on success,
--- (nil, err) on a fetch failure (recording NOTHING — the transient fetch already
--- removed any partial file), or the existing entry (a no-op) when the chapter is
--- already downloaded.
+-- On a fetch failure, records nothing (the transient fetch already removed any
+-- partial file).
 function DownloadCoordinator:download(chapter)
     if self.downloads:has(chapter.chapterId) then
         return self.downloads:get(chapter.chapterId), nil

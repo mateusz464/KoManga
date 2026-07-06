@@ -1,28 +1,11 @@
--- KRP-403/404 — Manga details & chapter list (logic). The pure, framework-free
--- state behind a manga's details view (CLAUDE.md §5: state/ is pure,
--- busted-testable with no KOReader loaded). It reaches the network only through an
--- injected ApiClient (CLAUDE.md §5/§9 — state never touches socket.http).
---
--- It owns four jobs (the KRP-403 acceptance criteria):
---   1. Load details: manga metadata, the chapter list IN ORDER, reading direction.
---   2. Load the last-read position; a "never read yet" 404 is the empty state, NOT
---      an error; expose which chapter is the last-read one.
---   3. Load whether the manga is followed (membership of the library list).
---   4. Follow / unfollow: toggle followed state and call the API; on error leave
---      the state intact so a retry is possible.
---
--- Each job mirrors state/browse.lua's split into a pure `fetch*` (the blocking API
--- call, returning api/client.lua's (data, err)) and an `apply*` (mutates this
--- state). The synchronous load/follow/unfollow methods the specs drive are their
--- composition. The split exists because net.lua runs the fetch in a forked
--- sub-process (KRP-305) which can't mutate this table across the fork, so the UI
--- runs the fetch through net and applies the result in the parent (KRP-404).
+-- Pure, framework-free state behind a manga's details view: metadata + ordered
+-- chapter list, last-read position, follow state, and follow/unfollow. Reaches the
+-- network only through an injected ApiClient, and follows the same fetch*/apply*
+-- split as state/browse.lua.
 
 local Details = {}
 Details.__index = Details
 
--- api: an ApiClient (or a fake). mangaId: the manga this view is for. Injected,
--- not global.
 function Details.new(api, mangaId)
     return setmetatable({
         api = api,
@@ -44,13 +27,10 @@ end
 
 -- --- Details & chapter list ----------------------------------------------------
 
--- Pure fetch (safe to run off-thread): returns the ApiClient (data, err).
 function Details:fetchManga()
     return self.api:getManga(self.manga_id)
 end
 
--- Apply fetched details. On error the metadata/chapters are left as they were and
--- the error is surfaced via getError(); on success the error is cleared.
 function Details:applyManga(data, err)
     if err then
         self.error = err
@@ -83,9 +63,8 @@ function Details:getReadingDirection()
     return self.reading_direction
 end
 
--- The chapter number for a chapter id from the loaded list, or nil. Lets a caller
--- that only knows the id (the resume/continue path threads just { id }) label an
--- offline download without another lookup (KRP-804).
+-- Lets the resume/continue path (which threads only { id }) label an offline
+-- download without another lookup.
 function Details:chapterNumberFor(chapterId)
     for _, chapter in ipairs(self.chapters or {}) do
         if chapter.id == chapterId then
@@ -101,8 +80,7 @@ function Details:fetchProgress()
     return self.api:getProgress(self.manga_id)
 end
 
--- Apply fetched progress. A 404 is the "never read yet" empty state — success with
--- no last-read position, NOT an error. Any other error is surfaced.
+-- A 404 is the "never read yet" empty state, NOT an error. Any other error is surfaced.
 function Details:applyProgress(data, err)
     if is_not_found(err) then
         self.error = nil
@@ -142,7 +120,7 @@ function Details:fetchLibrary()
 end
 
 -- The manga endpoint carries no follow flag, so follow state is derived from
--- library membership. On error the existing follow state is left unchanged.
+-- library membership.
 function Details:applyLibrary(data, err)
     if err then
         self.error = err
@@ -170,15 +148,13 @@ end
 
 -- --- Follow / unfollow ---------------------------------------------------------
 
--- Capture the manga's display title at follow time (API-908/KRP-605) so the library
--- list can label the row by name. The title comes from the loaded manga metadata;
--- if details haven't loaded, it is omitted and the row falls back to the mangaId.
+-- Passes the loaded title so the library row is labelled by name; if details
+-- haven't loaded, it is omitted and the row falls back to the mangaId.
 function Details:fetchFollow(addedAt)
     return self.api:follow(self.manga_id, addedAt, self.manga and self.manga.title)
 end
 
--- Flip to followed only on success; on a write error the toggle does not flip so a
--- retry is possible.
+-- Flip only on success, so a failed write is retryable.
 function Details:applyFollow(data, err)
     if err then
         self.error = err

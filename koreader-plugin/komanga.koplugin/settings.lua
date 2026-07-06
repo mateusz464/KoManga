@@ -1,26 +1,20 @@
--- LuaSettings-backed persistence (CLAUDE.md §5): the single API credential plus
--- any user overrides of the config knobs. The logic is pure over an injected
--- store (CLAUDE.md §9: pass collaborators in), so busted can test it with a fake
--- store and no KOReader loaded. Settings.open() is the KOReader-runtime factory
--- that wires a real LuaSettings file; main.lua uses it, specs use Settings.new.
+-- The single credential plus user overrides of the config knobs. Pure over an
+-- injected store so busted can drive it; Settings.open() wires the real LuaSettings.
 local Config = require("config")
 
 local Settings = {}
 Settings.__index = Settings
 
--- Keys are namespaced under the plugin so they never collide in a shared store.
 local KEY_CREDENTIAL = "komanga_credential"
 local KEY_API_BASE_URL = "komanga_api_base_url"
 local KEY_PREFETCH_WINDOW = "komanga_prefetch_window"
 local KEY_PROGRESS_DEBOUNCE = "komanga_progress_debounce_seconds"
 
--- store: any object exposing LuaSettings' readSetting/saveSetting/delSetting/flush.
 function Settings.new(store)
     return setmetatable({ store = store }, Settings)
 end
 
--- Runtime factory: open the plugin's own LuaSettings file under the settings dir.
--- Lazily requires KOReader modules so the module stays importable under busted.
+-- Lazily requires KOReader so the module stays importable under busted.
 function Settings.open()
     local DataStorage = require("datastorage")
     local LuaSettings = require("luasettings")

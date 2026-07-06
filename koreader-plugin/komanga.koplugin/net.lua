@@ -1,19 +1,13 @@
--- KRP-305 — Async networking & wifi gating. The single path every view uses to
--- run an API call (CLAUDE.md §5/§7): it gates on wifi (NetworkMgr) and runs the
--- blocking fetch off the UI thread behind a dismissable loading dialog (Trapper),
--- so a slow call never freezes the panel and a call with wifi off prompts/enables
--- wifi instead of failing silently. No view or state module touches NetworkMgr or
--- Trapper directly — they call Net:run and get the (data, err) back via callback.
---
--- All KOReader-API coupling (Trapper, NetworkMgr) is confined here, so an upgrade
--- breaks few modules (CLAUDE.md §12) and the collaborators are injected (§9) so
--- busted can drive the gating/wrapping logic with fakes (no KOReader, no sockets).
+-- The single path every view uses to run an API call (CLAUDE.md §5/§7): it gates on
+-- wifi (NetworkMgr) and runs the blocking fetch off the UI thread behind a
+-- dismissable loading dialog (Trapper), so a slow call never freezes the panel and a
+-- call with wifi off prompts/enables wifi instead of failing silently. Confining all
+-- Trapper/NetworkMgr coupling here keeps state/ui mockable and upgrade-resilient.
 
 local Net = {}
 Net.__index = Net
 
--- Lazily build the runtime collaborators so the module imports cleanly under
--- busted (which has no KOReader loaded); specs inject their own fakes instead.
+-- Lazily required so the module imports under busted; specs inject their own fakes.
 local function default_network_mgr()
     return require("ui/network/manager")
 end
@@ -32,32 +26,24 @@ function Net.new(opts)
 end
 
 -- Run an API call without freezing the UI.
---   task    : a function() -> (data, err) that performs the actual ApiClient call.
---             It runs in a forked sub-process (Trapper), so it must not touch the
---             UI, settings, or wifi — pure fetch + decode only (which is exactly
---             what api/client.lua does). Its return values are marshalled back.
---   opts    : { text = loading message, on_result = function(data, err),
---               background = bool }.
+--   task : function() -> (data, err) — the ApiClient call. It runs in a forked
+--          sub-process, so it must not touch the UI, settings, or wifi (pure fetch +
+--          decode, which is what api/client.lua does); its returns are marshalled back.
+--   opts : { text = loading message, on_result = function(data, err), background = bool }.
 --
--- Flow: ensure we're online (NetworkMgr prompts/enables wifi if not), then wrap
--- the fetch in a coroutine showing a dismissable loading dialog. If the user
--- dismisses it, on_result is called with a { kind = "cancelled" } error rather
--- than leaving the panel blank. on_result always runs through api/client.lua's
--- (data, err) contract, so callers (and Auth:handleError for 401s) treat a
--- gated/cancelled call exactly like any other.
+-- A user-dismissed call yields a { kind = "cancelled" } error rather than a blank
+-- panel; on_result always sees the (data, err) contract, so callers treat a
+-- gated/cancelled call like any other.
 --
--- `background = true` is the best-effort, unobtrusive variant for calls that fire
--- silently during another activity — progress sync on page turns (KRP-602): it runs
--- ONLY when already online (never prompts to enable wifi — an offline turn is just
--- skipped, on_result gets a { kind = "offline" } error) and behind an INVISIBLE
--- Trapper widget (no loading dialog flashing on every turn), while still running the
--- fetch off the UI thread so reading never stutters.
+-- background = true is the unobtrusive variant for calls that fire during another
+-- activity (progress sync on page turns): it runs ONLY when already online (an
+-- offline turn is skipped with a { kind = "offline" } error, never a wifi prompt)
+-- and behind an invisible Trapper widget, so reading never stutters.
 function Net:run(task, opts)
     opts = opts or {}
     local on_result = opts.on_result
     local background = opts.background == true
-    -- false → an invisible Trapper widget (no dialog); a string → the loading dialog.
-    -- (Not the `and/or` idiom: `false` is falsy, so it would fall through to the text.)
+    -- Not the `and/or` idiom: `false` is falsy, so it would fall through to the text.
     local loading_text = opts.text or "Loading…"
     if background then
         loading_text = false
@@ -65,9 +51,7 @@ function Net:run(task, opts)
 
     local function fetch()
         self.trapper:wrap(function()
-            -- The fetch runs in a sub-process so the UI thread keeps ticking and
-            -- the loading dialog stays dismissable; completed is false if the
-            -- user tapped to cancel.
+            -- completed is false if the user tapped to cancel the loading dialog.
             local completed, data, err =
                 self.trapper:dismissableRunInSubprocess(task, loading_text)
             if not completed then
@@ -83,8 +67,6 @@ function Net:run(task, opts)
     end
 
     if background then
-        -- Best-effort: only sync when already online; never interrupt reading with a
-        -- wifi prompt. An offline turn is skipped, not a silent failure to the caller.
         if self.network_mgr:isOnline() then
             fetch()
         elseif on_result then
@@ -93,9 +75,8 @@ function Net:run(task, opts)
         return
     end
 
-    -- runWhenOnline runs the callback now if already online, otherwise routes
-    -- through NetworkMgr's wifi prompt/enable and runs it once connected — so an
-    -- offline call is never a silent failure.
+    -- Runs now if online, else routes through the wifi prompt/enable and runs once
+    -- connected — so an offline call is never a silent failure.
     self.network_mgr:runWhenOnline(fetch)
 end
 

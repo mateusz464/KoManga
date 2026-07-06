@@ -1,18 +1,11 @@
--- KRP-304 — Auth flow (impl). The pure, framework-free coordinator for the
--- single-user credential (RFC §6/§7, CLAUDE.md §5/§6): it owns credential
--- storage (delegated to a settings-backed store, so it survives a restart),
--- hands the API client a getter that reads the credential PER request, and
--- detects a 401 to route back to the credential-entry prompt.
---
--- Collaborators are injected (CLAUDE.md §9): `settings` (a Settings instance for
--- persistence) and `on_prompt` (the credential-entry launcher — an InputDialog in
--- the runtime, see ui/credential_prompt.lua; a recorder in specs). No KOReader and
--- no HTTP are touched here, so busted can test it in isolation (CLAUDE.md §4).
+-- Pure, framework-free coordinator for the single-user credential: storage
+-- (delegated to the injected settings store), a getter the API client reads per
+-- request, and 401 detection to route back to the credential prompt. on_prompt is
+-- the credential-entry launcher (ui/credential_prompt.lua at runtime).
 
 local Auth = {}
 Auth.__index = Auth
 
--- opts: { settings = <Settings>, on_prompt = <function> }
 function Auth.new(opts)
     return setmetatable({
         settings = opts.settings,
@@ -33,23 +26,20 @@ function Auth:setCredential(credential)
     self.settings:setCredential(credential)
 end
 
--- A getter the API client reads on EVERY request (KRP-301), so a credential
--- entered mid-session attaches to later calls without rebuilding the client.
+-- Read on every request, so a credential entered mid-session attaches to later
+-- calls without rebuilding the client.
 function Auth:credentialGetter()
     return function()
         return self:getCredential()
     end
 end
 
--- Pure predicate: true only for the 401 shape api/client.lua maps (KRP-301),
--- never for other http statuses, transport, or decode errors (or no error).
 function Auth:isUnauthorized(err)
     return err ~= nil and err.kind == "http" and err.status == 401
 end
 
--- Route a call's error back to credential entry when (and only when) it is a 401.
--- Returns true if it handled (re-prompted), false otherwise — so callers can tell
--- a re-auth apart from an error to surface.
+-- Re-prompts on a 401 and returns true; returns false for anything else, so callers
+-- can tell a re-auth apart from an error to surface.
 function Auth:handleError(err)
     if self:isUnauthorized(err) then
         self.on_prompt()

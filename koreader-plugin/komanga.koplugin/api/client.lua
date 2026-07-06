@@ -1,28 +1,21 @@
--- KRP-302 — API client (impl). The typed-ish REST client and the ONLY place HTTP
--- lives (CLAUDE.md §5). It shapes per-endpoint requests, injects the single
--- credential as a Bearer header (read per request, never cached), unwraps the
--- API's { data } success envelope into plugin-domain tables, and maps failures to
--- typed errors. The actual socket call is delegated to an injected `transport`
--- (the HTTP boundary, KRP-301) so the rest of the app — and busted — never touch
--- transport; the runtime default wires socket.http/ssl.https + ltn12.
+-- The typed-ish REST client and the ONLY place HTTP lives (CLAUDE.md §5). The
+-- socket call is delegated to an injected `transport` so the rest of the app — and
+-- busted — never touch it; the runtime default wires socket.http/ssl.https + ltn12.
 --
--- Method contract: a request method returns (data, nil) on success or (nil, err)
--- on failure, where err.kind ∈ "http" (err.status, err.code) | "transport" |
--- "decode". URL builders (pageImageUrl/cbzUrl) are pure and make no request.
+-- Method contract: (data, nil) on success or (nil, err) on failure, where
+-- err.kind ∈ "http" (err.status, err.code) | "transport" | "decode".
 local rapidjson = require("rapidjson")
 
 local ApiClient = {}
 ApiClient.__index = ApiClient
 
--- Percent-encode a query value: escape everything outside the unreserved set so
--- spaces and reserved chars (& = ? …) can't break query parsing.
 local function urlencode(value)
     return (tostring(value):gsub("[^%w%-_%.~]", function(c)
         return string.format("%%%02X", string.byte(c))
     end))
 end
 
--- Join the (possibly trailing-slash) base URL with an absolute path, no double slash.
+-- Join a (possibly trailing-slash) base URL with an absolute path, no double slash.
 local function join_url(base, path)
     if base:sub(-1) == "/" then
         base = base:sub(1, -2)
@@ -30,7 +23,7 @@ local function join_url(base, path)
     return base .. path
 end
 
--- Decode a JSON body, tolerating both nil-returning and error-raising codecs.
+-- Tolerates both nil-returning and error-raising codecs.
 local function decode_json(body)
     local ok, decoded = pcall(rapidjson.decode, body)
     if not ok then
@@ -39,14 +32,12 @@ local function decode_json(body)
     return decoded
 end
 
--- Runtime transport: a real HTTP round-trip via luasocket. Lazily required so the
--- module imports cleanly under busted (specs inject their own transport).
+-- Real HTTP round-trip via luasocket; lazily required so the module imports under busted.
 --
--- When request.sink_path is set the body is streamed straight to that file (an
--- ltn12 file sink) instead of accumulated in memory, so an arbitrarily large
--- download never lives in a Lua string — essential for chapter CBZs, which are
--- tens of MB and would OOM the device if buffered and marshalled (KRP-502). In
--- that mode response.body is nil (the bytes are on disk, not returned).
+-- When request.sink_path is set the body is streamed straight to that file instead
+-- of accumulated in memory, so an arbitrarily large download never lives in a Lua
+-- string — essential for chapter CBZs (tens of MB), which would OOM the device if
+-- buffered and marshalled. In that mode response.body is nil.
 local function default_transport(request)
     local ltn12 = require("ltn12")
     local headers = {}
@@ -63,7 +54,6 @@ local function default_transport(request)
         if not file then
             return nil, "cannot open sink file: " .. tostring(open_err)
         end
-        -- ltn12.sink.file closes the handle when the stream ends (or on error).
         sink = ltn12.sink.file(file)
     else
         chunks = {}
@@ -93,13 +83,11 @@ function ApiClient.new(opts)
     }, ApiClient)
 end
 
--- Shape and run one request, returning (response, nil) on a 2xx or (nil, err) on a
--- transport failure / non-2xx. This is the shared transport+auth+error stage every
--- method goes through; `_request` decodes the JSON envelope on top of it, while raw
--- byte endpoints (covers, KRP-406) read response.body directly. `body` is a
--- pre-encoded request body; `extra_headers` carries e.g. Content-Type;
--- `sink_path`, when set, streams the response body to that file instead of
--- buffering it (large downloads — KRP-502), leaving response.body nil.
+-- The shared transport+auth+error stage every method goes through, returning
+-- (response, nil) on a 2xx or (nil, err) otherwise. `_request` decodes the JSON
+-- envelope on top of it; raw-byte endpoints (covers, CBZs) read response.body
+-- directly. When set, `sink_path` streams the response to that file (large
+-- downloads) leaving response.body nil.
 function ApiClient:_send(method, url, body, extra_headers, sink_path)
     local headers = {}
     if extra_headers then
@@ -137,8 +125,7 @@ function ApiClient:_send(method, url, body, extra_headers, sink_path)
     return response, nil
 end
 
--- Shape and run one JSON request, returning (data, nil) | (nil, err): the { data }
--- envelope unwrapped, or a decode error if the 2xx body wasn't decodable JSON.
+-- Unwraps the { data } envelope, or a decode error if the 2xx body wasn't JSON.
 function ApiClient:_request(method, url, body, extra_headers)
     local response, err = self:_send(method, url, body, extra_headers)
     if not response then
@@ -178,7 +165,7 @@ function ApiClient:getChapterPages(chapterId)
     return self:_request("GET", join_url(self.base_url, "/api/chapter/" .. chapterId .. "/pages"))
 end
 
--- This client only ever builds eink CBZs (CLAUDE.md §6); never the raw profile.
+-- eink only, never raw (CLAUDE.md §6) — as with every image/CBZ path below.
 function ApiClient:downloadChapter(chapterId, mangaId)
     local path = "/api/chapter/" .. chapterId .. "/download?mangaId=" .. urlencode(mangaId) .. "&profile=eink"
     return self:_request("POST", join_url(self.base_url, path))
@@ -201,8 +188,7 @@ function ApiClient:listLibrary()
     return self:_request("GET", join_url(self.base_url, "/api/library"))
 end
 
--- Capture the display title at follow time (API-908) so the library list can label
--- the row by name; it is optional, so a title-less follow still succeeds.
+-- The optional title labels the library row by name; a title-less follow still succeeds.
 function ApiClient:follow(mangaId, addedAt, title)
     local url = join_url(self.base_url, "/api/library/" .. mangaId)
     local body = { addedAt = addedAt }
@@ -216,7 +202,6 @@ function ApiClient:unfollow(mangaId)
     return self:_request("DELETE", join_url(self.base_url, "/api/library/" .. mangaId))
 end
 
--- Pure URL builders: page images and downloaded CBZ bytes. Always eink (§6).
 function ApiClient:pageImageUrl(pageId)
     return join_url(self.base_url, "/api/page/" .. pageId .. "?profile=eink")
 end
@@ -225,16 +210,12 @@ function ApiClient:cbzUrl(chapterId)
     return join_url(self.base_url, "/api/downloads/" .. chapterId)
 end
 
--- Cover thumbnail (KRP-406). The server negotiates the profile and produces the
--- eink rendition; this client only ever asks for eink (§6, mirroring pageImageUrl).
 function ApiClient:coverImageUrl(mangaId)
     return join_url(self.base_url, "/api/manga/" .. mangaId .. "/cover?profile=eink")
 end
 
--- Fetch a cover's raw image bytes (not the JSON envelope — this endpoint serves the
--- image directly). Returns (bytes, nil) on success or (nil, err) with the same
--- transport/http error shape as every other call, so a missing cover (e.g. 404) is
--- an ordinary error the caller degrades to text on (KRP-406).
+-- Raw image bytes, not the JSON envelope. A missing cover (404) is an ordinary
+-- error, which the caller degrades to text on.
 function ApiClient:fetchCover(mangaId)
     local response, err = self:_send("GET", self:coverImageUrl(mangaId))
     if not response then
@@ -243,15 +224,10 @@ function ApiClient:fetchCover(mangaId)
     return response.body, nil
 end
 
--- Download a chapter's built eink CBZ (KRP-502) straight to `destPath`, returning
--- (destPath, nil) on success or (nil, err). Unlike fetchCover, a chapter CBZ is far
--- too large to return as a string: reader_launcher runs this inside net.lua's forked
--- subprocess, and marshalling tens of MB back through the pipe OOMs the device
--- (the child's buffer.encode fails → caller gets nil → the reader never opens).
--- Streaming to a file (sink_path) keeps the bytes on disk the whole way; only the
--- small path crosses the pipe, and the parent hands that file to ReaderUI. A
--- failure removes any partial file so a retry starts clean. URL is the eink-only
--- cbzUrl builder (§6).
+-- Streams a chapter's built CBZ to `destPath` rather than returning bytes: this
+-- runs inside net.lua's forked subprocess, and marshalling tens of MB back through
+-- the pipe OOMs the device. Only the path crosses the pipe. A failure removes any
+-- partial file so a retry starts clean.
 function ApiClient:downloadChapterCbzToFile(chapterId, destPath)
     local response, err = self:_send("GET", self:cbzUrl(chapterId), nil, nil, destPath)
     if not response then
@@ -261,19 +237,15 @@ function ApiClient:downloadChapterCbzToFile(chapterId, destPath)
     return destPath, nil
 end
 
--- Transient read path (KRP-606): the URL for a chapter's eink CBZ built and served
--- straight from the server's session cache, WITHOUT persisting a download record —
--- so plain reading never appears under "Downloaded" (only the explicit POST
--- /download does, ui/reader_menu.lua). Always eink (§6), mirroring cbzUrl.
+-- Transient read path (KRP-606): served from the server's session cache WITHOUT
+-- persisting a download record, so plain reading never appears under "Downloaded"
+-- (only the explicit POST /download does).
 function ApiClient:readCbzUrl(chapterId)
     return join_url(self.base_url, "/api/chapter/" .. chapterId .. "/cbz?profile=eink")
 end
 
--- Fetch a chapter's transient eink CBZ (KRP-606) straight to `destPath`, returning
--- (destPath, nil) or (nil, err). Same streaming-to-file rationale as
--- downloadChapterCbzToFile (a CBZ is far too large to marshal back through
--- net.lua's fork), but it hits the transient read endpoint so reading a chapter
--- does not create a persisted download.
+-- Same streaming-to-file rationale as downloadChapterCbzToFile, but hits the
+-- transient read endpoint so reading a chapter creates no persisted download.
 function ApiClient:readChapterCbzToFile(chapterId, destPath)
     local response, err = self:_send("GET", self:readCbzUrl(chapterId), nil, nil, destPath)
     if not response then

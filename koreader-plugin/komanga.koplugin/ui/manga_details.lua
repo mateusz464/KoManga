@@ -1,15 +1,6 @@
--- KRP-404 — Manga details & chapter list (UI). The screen behind selecting a
--- manga in the source browser (KRP-402), built on KOReader's Menu widget
--- (CLAUDE.md §5/§7: lean on KOReader widgets, no hand-rolled layout). It drives the
--- pure state/details.lua logic (KRP-403) and runs every API call through net.lua
--- (KRP-305) so the panel never freezes and a wifi-off call prompts/enables wifi.
---
--- The Menu lists a follow/unfollow toggle row followed by the chapter list in the
--- order the API served it, with the last-read chapter marked. Opening a chapter
--- (the reader) lands in KRP-502 — for now a result shows a stub.
---
--- No business logic lives here (CLAUDE.md §5): fetching/decisions are in details +
--- api; this module only shapes Menu rows and loading/empty/error states.
+-- The screen behind selecting a manga: a Menu driving state/details.lua, running
+-- every API call through net.lua. It lists a follow/unfollow toggle row followed by
+-- the chapter list in the order the API served it, with the last-read chapter marked.
 local Menu = require("ui/widget/menu")
 local InfoMessage = require("ui/widget/infomessage")
 local UIManager = require("ui/uimanager")
@@ -18,7 +9,6 @@ local ErrorText = require("ui/errors")
 local T = require("ffi/util").template
 local _ = require("gettext")
 
--- Cover slot size on the details header row (KRP-406); on-device tuning is KRP-701.
 local COVER_W = 80
 local COVER_H = 112
 
@@ -27,14 +17,14 @@ local MangaDetails = Menu:extend{
     is_borderless = true,
     is_popout = false,
     title = _("KoManga"),
-    state_w = COVER_W, -- reserve the left column for the cover thumbnail (KRP-406)
-    -- Collaborators, injected by main.lua (CLAUDE.md §9):
+    state_w = COVER_W, -- reserve the left column for the cover thumbnail
+    -- Collaborators injected by main.lua:
     details = nil,    -- state/details.lua instance
     covers = nil,     -- state/covers.lua instance (cover prefetch + cache)
     net = nil,        -- net.lua wrapper (the single network path)
     auth = nil,       -- state/auth.lua (optional — routes a 401 to the prompt)
     manga_stub = nil, -- the search-result row (title for the header before load)
-    open_reader = nil, -- function(chapter): opens the chapter in the reader (KRP-502)
+    open_reader = nil, -- function(chapter): opens the chapter in the reader
 }
 
 function MangaDetails:init()
@@ -42,8 +32,7 @@ function MangaDetails:init()
     Menu.init(self)
 end
 
--- A 401 routes back to credential entry (CLAUDE.md §6, KRP-303/304); any other
--- error is shown in place. Returns true if the error was handled here.
+-- A 401 routes back to credential entry; any other error is shown in place.
 function MangaDetails:handleError(err)
     if not err then
         return false
@@ -58,9 +47,8 @@ function MangaDetails:handleError(err)
     return true
 end
 
--- Kick off the loads. Called by main.lua after the widget is shown. Details is the
--- main content; progress (resume marker) and follow state enrich it once details
--- land, each on its own network call.
+-- Details is the main content; progress (resume marker) and follow state enrich it
+-- once details land, each on its own network call.
 function MangaDetails:start()
     self:loadDetails()
 end
@@ -83,9 +71,6 @@ function MangaDetails:loadDetails()
     })
 end
 
--- Fetch this manga's cover through the single network path (net.lua: non-blocking +
--- wifi-gated) and re-render so it appears on the header row. One-shot (the planner
--- dedups), and a missing/failed cover simply leaves the header text (KRP-406).
 function MangaDetails:loadCover()
     if not self.covers then
         return
@@ -188,8 +173,7 @@ function MangaDetails:render()
 
     local item_table = {}
 
-    -- Follow / unfollow toggle row, doubling as the cover header: a ready cover
-    -- renders as its left widget, otherwise the row is just text (KRP-406).
+    -- Follow / unfollow toggle row, doubling as the cover header.
     local header = {
         text = self.details:isFollowed()
             and _("★ In library — tap to remove")
@@ -220,17 +204,14 @@ function MangaDetails:render()
     self:switchItemTable(title, item_table)
 end
 
--- Open the tapped chapter in KOReader's native reader (KRP-502). The collaborator
--- construction (Reader state + the launcher) lives in main.lua; this just hands off
--- the chapter so no business logic leaks into the view (CLAUDE.md §5).
 function MangaDetails:openChapter(chapter)
     if self.open_reader then
         self.open_reader(chapter)
     end
 end
 
--- Keep the menu open on a tap and run the row's action (the default would close the
--- whole menu, which suits a file picker, not this view).
+-- Keep the menu open on a tap and run the row's action (the default closes the whole
+-- menu, which suits a file picker, not this view).
 function MangaDetails:onMenuSelect(item)
     if item.callback then
         item.callback()

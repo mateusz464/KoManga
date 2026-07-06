@@ -1,8 +1,5 @@
--- Plugin entry point: registers the KoManga main-menu entry and wires the rest.
--- Module layout (CLAUDE.md §5): config.lua (API base + knobs), settings.lua
--- (LuaSettings-backed credential/prefs), api/ (the HTTP client), state/ (pure
--- logic), ui/ (KOReader widgets), and net.lua (the single network path). This
--- builds the collaborators once and hands them to the screens as they land.
+-- Plugin entry point: registers the KoManga menu entry, builds the collaborators
+-- once, and hands them to the screens as they land.
 local WidgetContainer = require("ui/widget/container/widgetcontainer")
 local UIManager = require("ui/uimanager")
 local InfoMessage = require("ui/widget/infomessage")
@@ -36,27 +33,21 @@ local Komanga = WidgetContainer:extend{
 
 function Komanga:init()
     self.settings = Settings.open()
-    -- 401 from any call routes back to credential entry (KRP-303/304); the API
-    -- client (KRP-302) reads auth:credentialGetter() per request.
+    -- on_prompt fires on any 401; the API client reads credentialGetter() per request.
     self.auth = Auth.new{
         settings = self.settings,
         on_prompt = function()
             CredentialPrompt.show(self.auth)
         end,
     }
-    -- The single path views use for network calls (KRP-305): wifi-gated +
-    -- non-blocking. Built once here and handed to screens as they land.
     self.net = Net.new{}
-    -- The only place HTTP lives (KRP-302): reads the credential per request and
-    -- targets the user's configured API base.
     self.api = ApiClient.new{
         base_url = self.settings:getApiBaseUrl(),
         get_credential = self.auth:credentialGetter(),
     }
-    -- Reader context (a document is open): sync reading progress to the API off the
-    -- reader's page-update/close events (KRP-602). The plugin is a registered ReaderUI
-    -- module, so those events broadcast to the handlers below; the sync only engages
-    -- for a KoManga chapter (recovered from the DocSettings sidecar on ReaderReady).
+    -- Reader context: the plugin is a registered ReaderUI module, so the page-update/
+    -- close events below broadcast to it. Progress sync engages only for a KoManga
+    -- chapter (recovered from the DocSettings sidecar on ReaderReady, KRP-602).
     if self.ui and self.ui.document then
         self.progress_sync = ProgressSync.new{
             ui = self.ui,
@@ -67,9 +58,8 @@ function Komanga:init()
     self.ui.menu:registerToMainMenu(self)
 end
 
--- Reader events (broadcast to the plugin as a registered ReaderUI module). Each
--- delegates to the progress sync and returns nothing, so the event keeps propagating
--- to KOReader's own modules. Guarded so they are inert in the file-manager context.
+-- Reader events. Each returns nothing so the event keeps propagating to KOReader's
+-- own modules, and is inert (no progress_sync) in the file-manager context.
 function Komanga:onReaderReady(doc_settings)
     if self.progress_sync then
         self.progress_sync:onReaderReady(doc_settings)
@@ -89,12 +79,9 @@ function Komanga:onCloseDocument()
 end
 
 function Komanga:addToMainMenu(menu_items)
-    -- Reader context (a document is open): offer the in-reader chapter menu instead
-    -- of Browse. The same plugin loads in both the file manager and the reader
-    -- (is_doc_only = false); self.ui is the ReaderUI here and carries the open
-    -- document. The menu is built only for a KoManga chapter (nil otherwise), and
-    -- attached to KOReader's own reader menu so opening/closing it never disturbs the
-    -- reading position (KRP-506).
+    -- In the reader, offer the in-reader chapter menu instead of Browse. Built only
+    -- for a KoManga chapter (nil otherwise) and attached to KOReader's own reader
+    -- menu, so opening/closing it never disturbs the reading position (KRP-506).
     if self.ui and self.ui.document then
         local entry = ReaderMenu.build{
             ui = self.ui,
@@ -140,10 +127,8 @@ function Komanga:addToMainMenu(menu_items)
     }
 end
 
--- Point the plugin at a different API from the device (KRP-706). The URL persists in
--- settings (survives a KOReader restart and a plugin-folder overwrite on update), so
--- we rebuild the API client with the new base so subsequent calls target it — the
--- client captured the base URL when it was built in init.
+-- Rebuild the API client on save: it captured the base URL at construction, so
+-- subsequent calls only target the new server once it is rebuilt.
 function Komanga:showServerUrlPrompt()
     ServerUrlPrompt.show{
         current = self.settings:getApiBaseUrl(),
@@ -157,12 +142,9 @@ function Komanga:showServerUrlPrompt()
     }
 end
 
--- Open the library / home screen (KRP-604): followed manga, continue-reading, and
--- the downloaded-chapters list. A fresh Library per visit; the screen drives it
--- through net (wifi-gated, non-blocking) and kicks the loads once it is on screen.
 function Komanga:showLibrary()
-    -- One device-index handle shared by the Library read and the delete path, so a
-    -- deletion (KRP-807) mutates the same in-memory index the view renders from.
+    -- One shared index handle, so a deletion mutates the same in-memory index the
+    -- Library view renders from.
     local downloads = Downloads.open()
     local library_state = Library.new(self.api, downloads)
     local home
@@ -193,12 +175,9 @@ function Komanga:showLibrary()
     home:start()
 end
 
--- Act on a followed row's "continue" tap (KRP-607). The API hands each entry its
--- continue target (nextChapter/caughtUp — API-912), so a normal row opens that
--- chapter directly (resume-seek happens on open, KRP-602; reading direction is loaded
--- in resumeReader). A caught-up row has nothing new, so open its details; a row the
--- API left without a target (older API / no stored chapters) falls back to resolving
--- the last-read position via a progress lookup.
+-- Act on a followed row's "continue" tap. The API usually hands each entry a
+-- continue target, so a normal row opens that chapter directly; a caught-up row
+-- opens its details; a targetless row (older API) falls back to a progress lookup.
 function Komanga:continueReading(library_state, entry)
     local label = Library.continueLabel(entry)
     if label.chapterId then
@@ -212,10 +191,8 @@ function Komanga:continueReading(library_state, entry)
     self:continueViaProgress(library_state, entry.mangaId)
 end
 
--- Fallback for a row without an API continue target: resolve the last-read position
--- via a progress lookup and act on it — jump into the reader at that chapter, or open
--- details when the manga was never read. The lookup runs through net (wifi-gated,
--- non-blocking).
+-- Fallback: resolve the last-read position via a progress lookup, then jump into the
+-- reader at that chapter — or open details when the manga was never read.
 function Komanga:continueViaProgress(library_state, manga_id)
     self.net:run(function()
         return library_state:fetchProgress(manga_id)
@@ -242,10 +219,8 @@ function Komanga:continueViaProgress(library_state, manga_id)
     })
 end
 
--- Open a specific chapter in the reader (KRP-604) — used by continue-reading and by
--- opening a downloaded chapter. Reading direction lives in the manga metadata, so we
--- load it first (through net) to honour RTL/LTR, then hand off to the reader launcher
--- (which downloads the eink CBZ and opens KOReader's native reader — KRP-502).
+-- Reading direction lives in the manga metadata, so load it first (through net) to
+-- honour RTL/LTR, then hand off to the reader launcher.
 function Komanga:resumeReader(manga_id, chapter_id)
     local details_state = Details.new(self.api, manga_id)
     self.net:run(function()
@@ -268,15 +243,10 @@ function Komanga:resumeReader(manga_id, chapter_id)
     })
 end
 
--- Open the source list & search screen (KRP-402). A fresh Browse per visit so each
--- session starts clean; the screen drives it through net (wifi-gated, non-blocking)
--- and the initial source load is kicked once the widget is on screen.
 function Komanga:showBrowse()
     local browser
     browser = SourceBrowser:new{
         browse = Browse.new(self.api),
-        -- A fresh cover cache per visit (CLAUDE.md §8: bounded prefetch); the window
-        -- comes from config so it's tunable in one place (KRP-406).
         covers = Covers.new(self.api, { window = Config.cover_prefetch_window }),
         net = self.net,
         auth = self.auth,
@@ -291,9 +261,6 @@ function Komanga:showBrowse()
     browser:start()
 end
 
--- Open the manga details & chapter-list screen (KRP-404) for a search-result row. A
--- fresh Details per visit; the screen drives it through net (wifi-gated,
--- non-blocking) and kicks the loads once the widget is on screen.
 function Komanga:showDetails(manga)
     local details_state = Details.new(self.api, manga.id)
     local details
@@ -314,11 +281,8 @@ function Komanga:showDetails(manga)
     details:start()
 end
 
--- Open a chapter in KOReader's native reader (KRP-502). A fresh Reader per chapter;
--- the launcher drives it through net (wifi-gated, non-blocking) and honours the
--- manga's reading direction (RTL/LTR) from the loaded details. Title / chapter number
--- / direction are threaded from the loaded details so the in-reader "download for
--- offline" action (KRP-804) can label the offline entry without a network call.
+-- Title / chapter number / direction are threaded from the loaded details so the
+-- in-reader "download for offline" action can label the entry without a network call.
 function Komanga:openReader(details_state, chapter)
     local manga = details_state:getManga()
     ReaderLauncher.open{

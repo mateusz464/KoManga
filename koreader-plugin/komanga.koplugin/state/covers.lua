@@ -1,30 +1,16 @@
--- KRP-406 — Cover thumbnails (logic). The pure, framework-free state behind the
--- cover thumbnails shown in the search-results and manga-details lists (CLAUDE.md
--- §5: state/ is pure, busted-testable with no KOReader loaded). It reaches the
--- network only through an injected ApiClient (CLAUDE.md §5/§9 — state never touches
--- socket.http), and it owns the two non-UI concerns this ticket carries:
---
---   1. BOUNDED PREFETCH (CLAUDE.md §8): given a list of rows in display order, only
---      ever fetch a bounded window of covers per pass, and never re-fetch one that
---      is already cached, in-flight, or known-missing — so a long result list can't
---      fan out into one request per row.
---   2. DEGRADE TO TEXT: a cover that fails to fetch is remembered as failed, not
---      retried in a loop and never left "loading"; the UI renders text for it
---      (never a blank or broken row, KRP-406 acceptance).
---
--- Like the other state modules it splits a pure `fetch` (the blocking API calls,
--- safe to run off the UI thread in net.lua's forked sub-process) from an `apply`
--- (mutates this cache in the parent, since the fork can't mutate across it). The
--- planner (`plan`) and reads stay in the parent too. Cover bytes themselves are
--- opaque to this module — decoding into a bitmap is the UI's job (KRP-406, device).
+-- Pure state behind the cover thumbnails in the results/details lists, owning two
+-- concerns: (1) bounded prefetch — only fetch a window of covers per pass and never
+-- re-fetch one already cached/in-flight/known-missing, so a long list can't fan out
+-- into a request per row; (2) degrade to text — a failed cover is remembered failed,
+-- not retried in a loop, and the UI renders text for it. Splits fetch/apply like the
+-- other state modules; cover bytes are opaque here (the UI decodes them).
 
 local Covers = {}
 Covers.__index = Covers
 
 local DEFAULT_WINDOW = 6
 
--- api: an ApiClient (or a fake exposing fetchCover). opts.window bounds how many
--- covers a single plan/fetch pass may request (CLAUDE.md §8). Injected, not global.
+-- opts.window bounds how many covers a single plan/fetch pass may request.
 function Covers.new(api, opts)
     opts = opts or {}
     return setmetatable({
@@ -35,15 +21,13 @@ function Covers.new(api, opts)
     }, Covers)
 end
 
--- A cover is "untouched" (a fetch candidate) only when we've never planned it: not
--- pending, not already fetched, not known-missing. This is the dedup gate.
+-- The dedup gate: a cover is a fetch candidate only when never planned before.
 function Covers:needs(id)
     return id ~= nil and self.cache[id] == nil
 end
 
--- Select up to `window` untouched covers from `ids` (display order), mark them
--- pending so a later pass won't re-pick them, and return that bounded batch. The
--- caller fetches exactly the returned ids; an empty result means nothing new to do.
+-- Select up to `window` untouched covers (display order) and mark them pending so a
+-- later pass won't re-pick them. The caller fetches exactly the returned ids.
 function Covers:plan(ids)
     local batch = {}
     for _, id in ipairs(ids or {}) do
@@ -58,10 +42,8 @@ function Covers:plan(ids)
     return batch
 end
 
--- Pure fetch (safe to run off-thread): fetch each planned id's bytes and return a
--- per-id result table. A single dead cover does NOT fail the whole pass — its entry
--- just carries failed=true — so one missing cover never blanks the others. Returns
--- (results, nil); there is no batch-level error to surface.
+-- A single dead cover does NOT fail the whole pass — its entry carries failed=true —
+-- so one missing cover never blanks the others.
 function Covers:fetch(ids)
     local results = {}
     for _, id in ipairs(ids or {}) do
@@ -75,8 +57,7 @@ function Covers:fetch(ids)
     return results
 end
 
--- Record a fetched batch into the cache: bytes -> ready, anything else -> failed
--- (degrade to text). Applied in the parent after the off-thread fetch returns.
+-- bytes -> ready, anything else -> failed (degrade to text).
 function Covers:apply(results)
     for id, result in pairs(results or {}) do
         if result.bytes then
@@ -99,8 +80,7 @@ function Covers:isFailed(id)
     return entry ~= nil and entry.status == "failed"
 end
 
--- The cover bytes for `id`, or nil if not yet ready (pending/failed/untouched). The
--- UI decodes these into a bitmap; a nil here is the "render text" signal.
+-- nil (not ready) is the UI's "render text" signal.
 function Covers:getBytes(id)
     local entry = self.cache[id]
     return entry and entry.bytes or nil

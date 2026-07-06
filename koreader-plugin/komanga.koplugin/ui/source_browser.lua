@@ -1,17 +1,7 @@
--- KRP-402 — Source list & search (UI). The screen behind the KoManga menu entry,
--- built on KOReader's Menu widget (CLAUDE.md §5/§7: lean on KOReader widgets, no
--- hand-rolled layout). It drives the pure state/browse.lua logic (KRP-401) and
--- runs every API call through net.lua (KRP-305) so the panel never freezes and a
--- call with wifi off prompts/enables wifi.
---
--- Two modes share the one Menu, switched with switchItemTable:
---   * sources  — the installed sources; selecting one prompts for a search query.
---   * results  — the search results, with a "Load more" row while more pages
---                exist and a back arrow (paths) to the source list.
---
--- No business logic lives here (CLAUDE.md §5): fetching/decisions are in browse +
--- api; this module only shapes Menu rows and loading/empty/error states. Manga
--- details (selecting a result) land in KRP-404 — for now a result shows a stub.
+-- The screen behind the KoManga menu entry: a Menu driving state/browse.lua, running
+-- every API call through net.lua. Two modes share the one Menu (switchItemTable):
+-- sources (selecting one prompts for a query) and results (a "Load more" row while
+-- more pages exist, plus a back arrow to the source list).
 local Menu = require("ui/widget/menu")
 local InfoMessage = require("ui/widget/infomessage")
 local InputDialog = require("ui/widget/inputdialog")
@@ -20,27 +10,24 @@ local CoverThumbnail = require("ui/cover_thumbnail")
 local T = require("ffi/util").template
 local _ = require("gettext")
 
--- Cover slot for a result row (KRP-406). The cover keeps the manga 5:7 aspect; its
--- height is capped to the menu's real row height at render time (see coverSlot) so a
--- full-height cover can't bleed into the next row — the on-device finding behind the
--- cap (a row is shorter than the nominal 112 at the default items-per-page). COVER_H
--- is the nominal upper bound; final sizing is on-device tuning (KRP-701, [DEVICE]).
-local COVER_ASPECT = 5 / 7 -- standard manga cover width:height
+-- COVER_H is a nominal upper bound; coverSlot caps the height to the menu's real row
+-- height so a full-aspect cover can't bleed into the next row (an on-device finding).
+local COVER_ASPECT = 5 / 7
 local COVER_H = 112
-local COVER_W = math.floor(COVER_H * COVER_ASPECT) -- reserved column when a row is tall enough
-local COVER_MARGIN = 2 -- top/bottom breathing room so the cover never touches the row edge
+local COVER_W = math.floor(COVER_H * COVER_ASPECT)
+local COVER_MARGIN = 2
 
 local SourceBrowser = Menu:extend{
     name = "komanga_source_browser",
     is_borderless = true,
     is_popout = false,
     title = _("KoManga"),
-    -- Collaborators, injected by main.lua (CLAUDE.md §9):
+    -- Collaborators injected by main.lua:
     browse = nil,       -- state/browse.lua instance
     covers = nil,       -- state/covers.lua instance (cover prefetch + cache)
     net = nil,          -- net.lua wrapper (the single network path)
     auth = nil,         -- state/auth.lua (optional — route a 401 to the prompt)
-    show_details = nil, -- function(manga): open the manga-details screen (KRP-404)
+    show_details = nil, -- function(manga): open the manga-details screen
 }
 
 function SourceBrowser:init()
@@ -49,8 +36,6 @@ function SourceBrowser:init()
     Menu.init(self)
 end
 
--- Turn the api/client.lua typed error into a single on-panel line (CLAUDE.md §9:
--- never leave the panel blank — every failure gets a visible state).
 local function err_text(err)
     if not err then
         return _("Something went wrong.")
@@ -67,8 +52,7 @@ local function err_text(err)
     return _("Something went wrong.")
 end
 
--- A 401 routes back to credential entry (CLAUDE.md §6, KRP-303/304); any other
--- error is shown in place. Returns true if the error was handled here.
+-- A 401 routes back to credential entry; any other error is shown in place.
 function SourceBrowser:handleError(err)
     if not err then
         return false
@@ -83,7 +67,7 @@ function SourceBrowser:handleError(err)
     return true
 end
 
--- Kick off the initial source load. Called by main.lua after the widget is shown.
+-- Called by main.lua after the widget is shown.
 function SourceBrowser:start()
     self:loadSources()
 end
@@ -104,7 +88,7 @@ end
 
 function SourceBrowser:renderSources()
     self.paths = {}
-    self.state_w = 0 -- source rows carry no cover; don't indent their text (KRP-406)
+    self.state_w = 0 -- source rows carry no cover; don't indent their text
     if self.browse:getError() then
         self:handleError(self.browse:getError())
     end
@@ -177,11 +161,8 @@ function SourceBrowser:runSearch(source, query)
     })
 end
 
--- Cover slot bounded by the menu's actual row height (self.item_dimen.h, derived
--- from items-per-page) so a full-aspect cover can't overflow into the next row
--- (KRP-406 device finding). Width follows the 5:7 aspect from the capped height, so
--- the reserved text indent matches the cover that's actually drawn. Falls back to the
--- nominal slot before the menu has computed a row height.
+-- Height capped to the menu's actual row height so a cover can't overflow into the
+-- next row; falls back to the nominal slot before the menu has computed a row height.
 function SourceBrowser:coverSlot()
     local h = COVER_H
     if self.item_dimen and self.item_dimen.h and self.item_dimen.h > 0 then
@@ -194,7 +175,7 @@ end
 function SourceBrowser:renderResults()
     self.paths = { { mode = "results" } } -- non-empty → back arrow enabled
     local cover_w, cover_h = self:coverSlot()
-    self.state_w = cover_w -- reserve the left column for cover thumbnails (KRP-406)
+    self.state_w = cover_w -- reserve the left column for cover thumbnails
     if self.browse:getError() then
         self:handleError(self.browse:getError())
     end
@@ -208,8 +189,7 @@ function SourceBrowser:renderResults()
                 text = manga.title or manga.id,
                 callback = function() self:openManga(manga) end,
             }
-            -- A ready cover renders as the row's left widget; a pending/failed/
-            -- absent cover just leaves text — never a blank or broken row (KRP-406).
+            -- A ready cover renders as the row's left widget; otherwise text only.
             if self.covers and self.covers:isReady(manga.id) then
                 item.state = CoverThumbnail.build(self.covers:getBytes(manga.id), cover_w, cover_h)
             end
@@ -225,10 +205,8 @@ function SourceBrowser:renderResults()
     self:switchItemTable(T(_("Search: %1"), self.browse:getQuery()), item_table)
 end
 
--- Fetch a bounded window of result covers (CLAUDE.md §8) through the single network
--- path (net.lua: non-blocking + wifi-gated), then re-render so the arrived covers
--- appear. One-shot per call (only the planner's new ids are fetched) so it can't
--- loop with renderResults; a failed cover is remembered and degrades to text.
+-- One-shot per call (only the planner's new ids are fetched) so it can't loop with
+-- renderResults; then re-render so the arrived covers appear.
 function SourceBrowser:loadCovers()
     if not self.covers then
         return
@@ -271,8 +249,6 @@ function SourceBrowser:loadMore()
     })
 end
 
--- Open the manga details + chapter list (KRP-404). main.lua injects show_details so
--- the collaborator wiring (api client + a fresh Details state) stays there.
 function SourceBrowser:openManga(manga)
     if self.show_details then
         self.show_details(manga)
@@ -281,8 +257,8 @@ end
 
 -- --- Navigation ----------------------------------------------------------------
 
--- Keep the menu open on a tap and run the row's action (the default would close
--- the whole menu, which suits a file picker, not a browser).
+-- Keep the menu open on a tap and run the row's action (the default closes the whole
+-- menu, which suits a file picker, not a browser).
 function SourceBrowser:onMenuSelect(item)
     if item.callback then
         item.callback()
@@ -290,7 +266,6 @@ function SourceBrowser:onMenuSelect(item)
     return true
 end
 
--- Back arrow (enabled only in results mode) returns to the source list.
 function SourceBrowser:onReturn()
     self:renderSources()
     return true

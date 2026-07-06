@@ -1,8 +1,5 @@
--- KRP-506 — the single api/client.lua-error → on-panel line mapping (CLAUDE.md §9:
--- never leave the panel blank — every failure gets a visible, legible state). This
--- is the dedup of the identical err_text copies ui/reader_launcher.lua and
--- ui/manga_details.lua each carried. gettext-wrapped wording lives in ui/ so
--- state/ stays framework-free (CLAUDE.md §5); the retryable/cancelled decisions are
+-- The single api/client.lua-error → on-panel line mapping. gettext-wrapped wording
+-- lives in ui/ so state/ stays framework-free; the retryable/cancelled decisions are
 -- the pure state/errors.lua.
 local T = require("ffi/util").template
 local _ = require("gettext")

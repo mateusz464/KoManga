@@ -1,18 +1,10 @@
--- KRP-506 — run a net.lua task with a loading/retry state (CLAUDE.md §7/§9: never a
--- frozen or blank panel — a slow call shows a dismissable loading dialog, a failed
--- one a clear message with a way forward). It is the shared shape both reader paths
--- use (opening a chapter — ui/reader_launcher.lua — and the in-reader
--- download-for-offline action — ui/reader_menu.lua), so the loading/error/retry UX
--- lives in one place.
---
--- On a result:
+-- Run a net.lua task with the shared loading/retry state, so both reader paths
+-- (opening a chapter, downloading for offline) handle a result the same way:
 --   * success            → on_success(data)
---   * cancelled dialog   → nothing (the user chose to stop; leave the panel as-is)
---   * 401                → routed to the credential prompt via auth (KRP-303/304)
+--   * cancelled dialog   → nothing (leave the panel as-is)
+--   * 401                → routed to the credential prompt via auth
 --   * retryable failure  → a Retry/Cancel dialog that re-runs the SAME task
 --   * anything else      → a single on-panel error line
--- All network still flows through net.lua (wifi-gated, non-blocking); this only
--- wraps its result handling.
 local ConfirmBox = require("ui/widget/confirmbox")
 local InfoMessage = require("ui/widget/infomessage")
 local UIManager = require("ui/uimanager")
