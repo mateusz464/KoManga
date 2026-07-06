@@ -56,8 +56,6 @@ export interface Config {
   readonly paths: {
     readonly sqliteFile: string;
     readonly cbzStore: string;
-    // Unset → no static client served, only /health and /api/*.
-    readonly clientDir?: string;
   };
 }
 
@@ -207,7 +205,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     paths: {
       sqliteFile: optionalString("DATABASE_PATH", DEFAULTS.DATABASE_PATH),
       cbzStore: optionalString("CBZ_STORE_PATH", DEFAULTS.CBZ_STORE_PATH),
-      clientDir: env.CLIENT_DIST_PATH?.trim() || undefined,
     },
   };
 

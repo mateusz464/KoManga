@@ -58,8 +58,6 @@ export interface AppDependencies {
   readonly downloadsRepository?: DownloadsRepository;
   readonly readingProgressRepository?: ReadingProgressRepository;
   readonly libraryRepository?: LibraryRepository;
-  // When set, the API serves the built web client same-origin (KWC-202).
-  readonly clientDir?: string;
 }
 
 // Mirrors config's CBZ_PAGE_CONCURRENCY default, for when a test omits the knob.
@@ -169,12 +167,6 @@ export function createApp(deps: AppDependencies): express.Express {
         ),
       ),
     );
-  }
-
-  // After the /api routers so it can never shadow an API route; a non-file
-  // request falls through to the JSON 404 below.
-  if (deps.clientDir) {
-    app.use(express.static(deps.clientDir));
   }
 
   app.use(notFoundHandler);

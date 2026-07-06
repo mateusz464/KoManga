@@ -9,9 +9,11 @@
 
 ## 1. Summary
 
-A self-hosted manga reading system that brings Tachiyomi/Mihon-style source browsing to a Kobo e-reader. The Kobo runs a lightweight web client; all heavy work (source scraping, image fetching, processing) is outsourced to a server stack running on a Mac Mini. Suwayomi-Server provides the Tachiyomi source engine; a Node/TypeScript API wraps it in a Kobo-optimised REST layer.
+A self-hosted manga reading system that brings Tachiyomi/Mihon-style source browsing to a Kobo e-reader. The Kobo reads through a KOReader plugin client; all heavy work (source scraping, image fetching, processing) is outsourced to a server stack running on a Mac Mini. Suwayomi-Server provides the Tachiyomi source engine; a Node/TypeScript API wraps it in a Kobo-optimised REST layer.
 
-The defining constraint is the Kobo's hardware: a slow ARM SoC, an old WebKit browser, and an e-ink display. Every architectural decision flows from keeping the client thin and the display happy.
+The defining constraint is the Kobo's hardware: a slow ARM SoC and an e-ink display. Every architectural decision flows from keeping the client thin and the display happy.
+
+> **Reconciled 2026-07-06 (API-807):** the original client was a **web client** running in the Kobo's Nickel browser, and much of this RFC below is written in those terms. That epic was **retired** — the web-client device spike proved Nickel's browser chrome and 732×762 viewport can't be escaped from a web page (see §2), so the **KOReader plugin** (§13, `koreader-plugin/`) is now the **sole Kobo client**. Read the "web client" throughout this document as **historical**: the API's REST contract is client-generic and unchanged, and the plugin consumes it exactly as the web client would have. `docs/device.md` (written by the web-client spike) survives as the shared panel-capability record. The old WebKit constraint no longer applies.
 
 ---
 
@@ -42,8 +44,8 @@ The defining constraint is the Kobo's hardware: a slow ARM SoC, an old WebKit br
 ```
 ┌─────────────┐      HTTPS       ┌──────────────────────────────────────┐
 │   Kobo      │ ───────────────► │           Mac Mini (Docker)          │
-│ web client  │                  │                                       │
-│ (WebKit)    │ ◄─────────────── │  ┌─────────────┐   ┌───────────────┐ │
+│  KOReader   │                  │                                       │
+│   plugin    │ ◄─────────────── │  ┌─────────────┐   ┌───────────────┐ │
 └─────────────┘   REST + images  │  │ Cloudflare  │──►│  Node/TS API  │ │
                                   │  │   Tunnel    │   │ (REST wrapper)│ │
                                   │  └─────────────┘   │   + SQLite    │ │
@@ -72,8 +74,8 @@ Runs the real Tachiyomi/Mihon source extensions on the JVM. Manages source insta
 - Owns reading-progress and download metadata in SQLite.
 - Enforces single-user auth and rate limiting.
 
-**Kobo web client**
-Static HTML/CSS/JS, deliberately minimal, targeting old WebKit. Two main surfaces: a browse/search/library view and a page reader. Tap-based navigation, no animations, designed around e-ink refresh behaviour.
+**Kobo client** *(historical: web client — retired, see §1/§13)*
+Originally a deliberately-minimal static HTML/CSS/JS web app targeting old WebKit, with two surfaces (browse/search/library and a page reader). Superseded by the **KOReader plugin** (§13), which runs full-panel inside KOReader and reads chapters through KOReader's native CBZ reader. The API's REST + image surface it consumes is unchanged.
 
 **Cloudflare Tunnel**
 Public entry point. No inbound ports on the home router; the Mac Mini originates an outbound tunnel. TLS handled by Cloudflare. Cloudflare Access can sit in front as an additional auth gate.

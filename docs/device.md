@@ -1,6 +1,6 @@
 # Device Capability Report
 
-> Source of truth for the **target Kobo device**. Produced by the Device Capability Spike (KWC-101/102/103). Build target, transport, layout, image format, and the e-ink refresh policy all derive from this file. If a convention in `web-client/CLAUDE.md` conflicts with what is recorded here, **this report wins**.
+> Source of truth for the **target Kobo device** — the shared panel-capability record for the whole system. Produced by the Device Capability Spike (KWC-101/102/103) of the now-retired web-client epic (API-807), it **survives that epic's removal**: the API's `eink` image profile and the KOReader plugin both derive their build target, layout, image format, and e-ink refresh policy from it. References to `web-client/…` files below are **historical** — that epic and its spike code have been removed, but their measured findings recorded here still govern the `eink` contract.
 
 ---
 

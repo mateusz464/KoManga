@@ -6,7 +6,7 @@
 
 ## 1. What this is
 
-A KOReader plugin (`komanga.koplugin`) that runs **inside KOReader on the Kobo** and consumes the KoManga API. It is the **second client** of that API (the web client is the first), and it exists for one reason the web client can't solve: the Kobo's Nickel browser only exposes a **732×762** viewport on the 1072×1448 panel and wraps it in chrome the page cannot hide. KOReader draws to the **full panel**, has no browser chrome, and brings a tuned e-ink refresh engine and a native CBZ reader with it.
+A KOReader plugin (`komanga.koplugin`) that runs **inside KOReader on the Kobo** and consumes the KoManga API. It is the **sole Kobo client** of that API — an earlier web client was built first but was **retired** (API-807) for a reason it couldn't solve: the Kobo's Nickel browser only exposes a **732×762** viewport on the 1072×1448 panel and wraps it in chrome the page cannot hide. KOReader draws to the **full panel**, has no browser chrome, and brings a tuned e-ink refresh engine and a native CBZ reader with it.
 
 It does almost no heavy work — it browses, it reads, it syncs progress. All scraping, image processing, CBZ building, and storage happen server-side, exactly as for the web client.
 
@@ -124,11 +124,11 @@ spec/           # busted specs, mirroring the modules; logic only
 
 ## 10. Multi-client (RFC §13)
 
-This is a **client of the shared API**, alongside the web client (and future website/mobile). That means:
+This is a **client of the shared API** (alongside future website/mobile clients; the original web client has been retired). That means:
 
 - Optimise hard for KOReader/Kobo — but **keep client-specific assumptions (CBZ-reader strategy, `eink` profile, KOReader widgets) inside this epic**, not pushed into the API.
 - If the API is missing something, it's an API-epic ticket, not a plugin workaround.
-- Don't duplicate the web client's logic by copy-paste across epics — they're independent clients; shared truth lives in the **API**, not in shared client code.
+- Keep client-specific logic inside this epic; shared truth lives in the **API**, not in copy-pasted client code.
 
 ---
 

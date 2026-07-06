@@ -45,10 +45,6 @@ services:
       # Persistent paths point at the named volumes mounted below.
       DATABASE_PATH: /data/db/komanga.sqlite
       CBZ_STORE_PATH: /data/downloads
-      # Built Kobo web client, served same-origin so the client calls /api/*
-      # without CORS (KWC-202). Points at the read-only bind mount below; build
-      # it on the host first with `npm run build` in web-client/.
-      CLIENT_DIST_PATH: /web-client
     # Published to loopback only so the host can reach it for local checks; the
     # public entrypoint is the Cloudflare Tunnel (API-802), and loopback opens
     # no inbound router ports (RFC §9).
@@ -60,9 +56,6 @@ services:
       # Persistent CBZ download store, separate from the ephemeral session cache
       # and never auto-pruned (RFC §5.2/§7).
       - cbz-store:/data/downloads
-      # Built web client served same-origin (KWC-202). Read-only: the API only
-      # serves these static assets, never writes them.
-      - ./web-client/dist:/web-client:ro
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:3000/health"]
       interval: 30s

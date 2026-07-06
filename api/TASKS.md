@@ -446,6 +446,20 @@
 **Blocked by:** API-804.
 **Estimate:** S
 
+### API-807 — Retire the web client (stop serving the static client; remove web-client epic) — **Done**
+**Description:** The Kobo Nickel **web client is discontinued** (the KOReader plugin is the client). Retire it across the monorepo. Most of the enforceable work is in the API — it currently serves the built client same-origin — but it also deletes the `web-client/` epic and touches root docs. **Raised 2026-07-06** while writing `koreader-plugin/INSTALL.md` (KRP-703), which no longer mentions building the web client.
+**Acceptance criteria:**
+- **API stops serving the static client:** drop the `clientDir` config (`CLIENT_DIST_PATH`, `src/config/index.ts`) and the `express.static(deps.clientDir)` mount (`src/http/app.ts`). Remove/adjust the associated tests (`test/http/client-static.test.ts`, the `CLIENT_DIST_PATH` case in `test/config/config.test.ts`). Full suite, lint, typecheck, build, format clean.
+- **`docker-compose.yml`:** remove the `./web-client/dist:/web-client:ro` bind mount and the `CLIENT_DIST_PATH` env from the `api` service.
+- **Remove the epic:** delete `web-client/` (dir, its `CLAUDE.md`, `TASKS.md`).
+- **Root docs:** update root `CLAUDE.md` (monorepo router) and `RFC.md` to drop the web client as an active client (note discontinued/historical, don't pretend it never existed).
+- **Keep `docs/device.md`** — it was written by the web-client device spike but is **shared** (the API's `eink` profile and the KOReader plugin both depend on it). Do **not** delete it; only reframe wording that ties it to an active web client.
+- Sweep stale cross-references in `api/TASKS.md` and `koreader-plugin/` docs that imply an active web client.
+**Note:** `docs/device.md` is the tripwire — deleting it would break the API/plugin `eink` contract.
+**Blocked by:** none.
+**Estimate:** M
+**Notes (2026-07-06):** Retired across the monorepo. **API stopped serving the static client:** dropped `paths.clientDir` + the `CLIENT_DIST_PATH` read (`src/config/index.ts`), the `clientDir` `AppDependencies` field + `express.static` mount (`src/http/app.ts`), and the composition-root wiring (`src/index.ts`); deleted `test/http/client-static.test.ts`. (No `CLIENT_DIST_PATH` case existed in `test/config/config.test.ts` — the ticket anticipated one, but there was none to remove.) **`docker-compose.yml`:** removed the `CLIENT_DIST_PATH` env + the `./web-client/dist:/web-client:ro` bind mount from the `api` service. **Epic removed:** `git rm -r web-client` (tracked files) + the untracked `dist`/`node_modules`. **Root docs reframed (discontinued/historical, not erased):** root `CLAUDE.md` (dropped `web-client/` from the layout tree + conventions table, added a "Discontinued" note) and `RFC.md` (reframed the summary + architecture diagram/component to the KOReader plugin, added a top-level API-807 reconciliation note). **`docs/device.md` kept** — reframed its header as the shared panel-capability record (API `eink` + plugin), with the `web-client/…` pointers flagged historical (tripwire held: it lives at repo root, untouched by the deletion). Swept the clearest active-peer framings in `koreader-plugin/CLAUDE.md` (sole Kobo client; retired web client); left completed-ticket Outcome logs in `koreader-plugin/TASKS.md` intact as historical record. Full API suite **244 passing**, lint + typecheck + build + format clean.
+
 ---
 
 # Feature: Bug Fixes / Device-spike reconciliation (9xx)

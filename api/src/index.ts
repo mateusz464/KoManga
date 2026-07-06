@@ -63,7 +63,6 @@ const app = createApp({
   downloadsRepository,
   readingProgressRepository,
   libraryRepository,
-  clientDir: config.paths.clientDir,
 });
 
 app.listen(config.port, () => {
