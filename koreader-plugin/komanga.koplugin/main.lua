@@ -19,6 +19,7 @@ local Library = require("state/library")
 local Downloads = require("state/downloads")
 local Config = require("config")
 local CredentialPrompt = require("ui/credential_prompt")
+local ServerUrlPrompt = require("ui/server_url_prompt")
 local SourceBrowser = require("ui/source_browser")
 local MangaDetails = require("ui/manga_details")
 local LibraryView = require("ui/library_view")
@@ -129,7 +130,30 @@ function Komanga:addToMainMenu(menu_items)
                     CredentialPrompt.show(self.auth)
                 end,
             },
+            {
+                text = _("Set server URL"),
+                callback = function()
+                    self:showServerUrlPrompt()
+                end,
+            },
         },
+    }
+end
+
+-- Point the plugin at a different API from the device (KRP-706). The URL persists in
+-- settings (survives a KOReader restart and a plugin-folder overwrite on update), so
+-- we rebuild the API client with the new base so subsequent calls target it — the
+-- client captured the base URL when it was built in init.
+function Komanga:showServerUrlPrompt()
+    ServerUrlPrompt.show{
+        current = self.settings:getApiBaseUrl(),
+        on_save = function(url)
+            self.settings:setApiBaseUrl(url)
+            self.api = ApiClient.new{
+                base_url = url,
+                get_credential = self.auth:credentialGetter(),
+            }
+        end,
     }
 end
 
