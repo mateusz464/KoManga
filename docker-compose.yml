@@ -1,6 +1,7 @@
-# KoManga stack: `suwayomi` (internal-only) + `api` + `cloudflared` (the public
-# entrypoint). Suwayomi is never reachable from the host or the internet; the
-# only public surface is the API, fronted by the Cloudflare Tunnel (RFC §9/§10).
+# KoManga stack: `suwayomi` (internal-only) + `api` + `cloudflared`. Suwayomi is
+# never reachable from the host or the internet (RFC §9/§10). By default the stack
+# runs local-only; `cloudflared` is opt-in via the `tunnel` profile
+# (`docker compose --profile tunnel up -d`) to reach the API away from home.
 
 services:
   suwayomi:
@@ -63,15 +64,36 @@ services:
       retries: 5
       start_period: 20s
 
+  tunnel-preflight:
+    # Fail-fast guard for a missing token. This can't be a `${TUNNEL_TOKEN:?}` on
+    # cloudflared: Compose interpolates the whole file before applying profiles,
+    # so that guard would also break a tokenless local-only `up`. cloudflared
+    # depends on this completing, so under `--profile tunnel` a blank token here
+    # blocks the connector and fails the `up`.
+    image: busybox:stable
+    container_name: komanga-tunnel-preflight
+    profiles:
+      - tunnel
+    environment:
+      CLOUDFLARE_TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    command:
+      - sh
+      - -c
+      - >-
+        test -n "$$CLOUDFLARE_TUNNEL_TOKEN" ||
+        { echo "CLOUDFLARE_TUNNEL_TOKEN must be set for the tunnel profile (see .env.example and docs/cloudflare-tunnel.md)" >&2; exit 1; }
+    restart: "no"
+
   cloudflared:
-    # The Cloudflare Tunnel connector — the stack's only public entrypoint
-    # (RFC §9/§10). It dials OUT to Cloudflare's edge and proxies requests back
-    # to the API over the internal network, so no inbound ports are opened on
-    # the home router and the home IP stays hidden. TLS is terminated at the
-    # Cloudflare edge.
+    # The Cloudflare Tunnel connector — an OPT-IN public entrypoint (RFC §9/§10).
+    # It dials OUT to Cloudflare's edge and proxies requests back to the API over
+    # the internal network, so no inbound ports are opened on the home router and
+    # the home IP stays hidden. TLS is terminated at the Cloudflare edge.
     image: cloudflare/cloudflared:latest
     container_name: komanga-cloudflared
     restart: unless-stopped
+    profiles:
+      - tunnel
     # `tunnel run` with a token is a remotely-managed tunnel: the public
     # hostname → service mapping lives in the Cloudflare Zero Trust dashboard
     # (set it to http://api:3000), so no local config file is needed.
@@ -81,13 +103,15 @@ services:
         # Only dial out once the API is healthy, so the first proxied request
         # doesn't hit a cold/booting upstream.
         condition: service_healthy
+      tunnel-preflight:
+        condition: service_completed_successfully
     networks:
       - komanga
     environment:
-      # Connector credential from the host environment / `.env`, never committed
-      # (CLAUDE.md §5/§9). Compose fails fast if it is unset. Generate it in the
-      # Cloudflare Zero Trust dashboard when creating the tunnel.
-      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:?CLOUDFLARE_TUNNEL_TOKEN must be set (see .env.example and docs/cloudflare-tunnel.md)}
+      # Credential from `.env`, never committed (CLAUDE.md §5/§9). Defaulted empty
+      # so a tokenless local-only `up` doesn't trip a mandatory-variable error;
+      # tunnel-preflight enforces it is set under the profile.
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
     # No `ports:` — the connector is outbound-only. cloudflared reaches the API
     # by its in-network name (`api:3000`); it is NOT configured to route to
     # Suwayomi, which therefore stays unreachable from the internet.

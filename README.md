@@ -33,10 +33,18 @@ Edit `.env` and set two secrets:
   away from home. Leave it blank to run local-only on your LAN. See
   [`docs/cloudflare-tunnel.md`](docs/cloudflare-tunnel.md) for the one-time setup.
 
-Then start everything:
+Then start everything. **Local-only** (on your LAN, no Cloudflare account or
+token needed):
 
 ```sh
 docker compose up -d
+```
+
+Or, to also expose your server through the Cloudflare Tunnel (once you've set
+`CLOUDFLARE_TUNNEL_TOKEN`), add the `tunnel` profile:
+
+```sh
+docker compose --profile tunnel up -d
 ```
 
 That's it! The server is running.

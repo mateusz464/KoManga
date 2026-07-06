@@ -1,9 +1,13 @@
 # Cloudflare Tunnel setup (API-802)
 
-The KoManga stack is exposed to the internet **only** through a Cloudflare
-Tunnel. The `cloudflared` connector (see `docker-compose.yml`) dials *out* to
-Cloudflare's edge and proxies HTTPS requests back to the API over the internal
-Docker network. The consequences, all required by RFC §9:
+The KoManga stack can be exposed to the internet through a Cloudflare Tunnel.
+This is **opt-in**: the `cloudflared` connector lives behind the `tunnel` Compose
+profile, so a plain `docker compose up -d` runs local-only (LAN) and needs no
+Cloudflare account or token. Enable the tunnel with `docker compose --profile
+tunnel up -d` (or `COMPOSE_PROFILES=tunnel`). When enabled, the connector (see
+`docker-compose.yml`) dials *out* to Cloudflare's edge and proxies HTTPS requests
+back to the API over the internal Docker network. The consequences, all required
+by RFC §9:
 
 - **No inbound ports** are opened on the home router — the connection is
   outbound-only, so the home IP stays hidden.
@@ -42,7 +46,9 @@ config file to maintain. The container only needs the connector token.
    AUTH_TOKEN=<your single-user API secret>
    ```
 
-   See `.env.example`. Compose fails fast at `up` if either is unset.
+   See `.env.example`. Under the `tunnel` profile Compose fails fast at `up` if
+   either is unset. (`AUTH_TOKEN` is always required; `CLOUDFLARE_TUNNEL_TOKEN`
+   only matters when the `tunnel` profile is active.)
 
 4. **Add a public hostname → API route.** Still in the tunnel's configuration,
    open **Public Hostnames → Add a public hostname**:
@@ -56,14 +62,17 @@ config file to maintain. The container only needs the connector token.
    `komanga` Docker network) and Suwayomi is *not* added here, only the API is
    ever exposed.
 
-5. **Bring up the stack.**
+5. **Bring up the stack with the tunnel profile.**
 
    ```sh
-   docker compose up -d
+   docker compose --profile tunnel up -d
    ```
 
-   The `cloudflared` service waits for the `api` healthcheck, then registers the
-   connector. The tunnel shows **Healthy** in the dashboard once connected.
+   The `tunnel` profile adds the `cloudflared` connector on top of the base
+   `suwayomi` + `api` services. It waits for the `api` healthcheck, then
+   registers the connector; the tunnel shows **Healthy** in the dashboard once
+   connected. (Without `--profile tunnel`, `cloudflared` is never started and the
+   stack runs local-only.)
 
 ## Verifying
 
