@@ -63,6 +63,9 @@ export function createPino(options: PinoLoggerOptions): PinoLogger {
   return pino(
     {
       level: options.level,
+      // Emit the level as its string label ("info") rather than pino's numeric
+      // default (30) so Loki/Grafana level detection works without a numeric map.
+      formatters: { level: (label) => ({ level: label }) },
       redact: { paths: [...REDACT_PATHS], censor: REDACTED },
     },
     destination,

@@ -51,7 +51,9 @@ describe("createPinoLogger", () => {
     expect(entry.msg).toBe("page served");
     expect(entry.mangaId).toBe(7);
     expect(entry.profile).toBe("eink");
-    expect(typeof entry.level).toBe("number");
+    // Level is the string label, not pino's numeric default, so Grafana/Loki
+    // level detection works without mapping the numeric scale.
+    expect(entry.level).toBe("info");
   });
 
   it("honours the configured level, dropping lower-severity logs", () => {
