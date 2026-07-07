@@ -6,6 +6,9 @@ KoManga is a small self-hosted stack you run on your own machine. It browses and
 searches manga sources, optimises pages for e-ink, and serves them to a
 lightweight **KOReader plugin** on your Kobo, with offline reading capability.
 
+KoManga does not provide, host, or endorse manga sources. You choose and install
+your own Tachiyomi/Mihon-compatible source extensions in Suwayomi.
+
 ## What you need
 
 - A machine to run the server on.
@@ -20,7 +23,8 @@ lightweight **KOReader plugin** on your Kobo, with offline reading capability.
 ### 1. Run the server
 
 ```sh
-git clone <this-repo> && cd KoManga
+git clone https://github.com/mateusz464/KoManga.git
+cd KoManga
 cp .env.example .env
 ```
 
@@ -47,7 +51,7 @@ Or, to also expose your server through the Cloudflare Tunnel (once you've set
 docker compose --profile tunnel up -d
 ```
 
-That's it! The server is running.
+The server is now running. Next, add the sources you want KoManga to browse.
 
 ### 2. Add sources
 
