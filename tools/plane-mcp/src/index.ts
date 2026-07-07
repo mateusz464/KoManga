@@ -99,6 +99,83 @@ async function getStateMap(
   return map;
 }
 
+function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    value
+  );
+}
+
+function normalizeWorkItemLookup(value: string): string {
+  const trimmed = value.trim();
+  const browseMatch = trimmed.match(
+    /\/browse\/([A-Z][A-Z0-9]+-\d+)(?:[/?#]|$)/i
+  );
+  return (browseMatch?.[1] ?? trimmed).toUpperCase();
+}
+
+async function resolveProjectIdFromWorkItemLookup(
+  workItemLookup: string
+): Promise<string> {
+  const lookup = normalizeWorkItemLookup(workItemLookup);
+  const projectKeyMatch = lookup.match(/^([A-Z][A-Z0-9]+)-\d+$/i);
+
+  if (!projectKeyMatch) {
+    throw new Error(
+      `Could not infer a Plane project from "${workItemLookup}". Provide a URL or key like KOM-132.`
+    );
+  }
+
+  const projectIdentifier = projectKeyMatch[1].toUpperCase();
+  const { results } = await client.listProjects();
+  const project = results.find(
+    (p) => p.identifier.toUpperCase() === projectIdentifier
+  );
+
+  if (!project) {
+    throw new Error(
+      `No Plane project found with identifier "${projectIdentifier}".`
+    );
+  }
+
+  return project.id;
+}
+
+async function resolveWorkItemId(
+  projectId: string,
+  workItemLookup: string
+): Promise<string> {
+  const lookup = normalizeWorkItemLookup(workItemLookup);
+  if (isUuid(lookup)) return lookup;
+
+  const project = await client.getProject(projectId);
+  const projectKeyMatch = lookup.match(
+    new RegExp(`^${project.identifier}-(\\d+)$`, "i")
+  );
+  const externalId = lookup.match(/^[A-Z]+-\d+$/i) ? lookup : undefined;
+
+  const { results } = await client.listWorkItems(projectId);
+  const found = results.find((item) => {
+    if (projectKeyMatch && item.sequence_id === Number(projectKeyMatch[1])) {
+      return true;
+    }
+
+    if (!externalId) return false;
+    return (
+      item.external_id?.toUpperCase() === externalId ||
+      item.name.toUpperCase().startsWith(`${externalId} —`) ||
+      item.name.toUpperCase().startsWith(`${externalId} -`)
+    );
+  });
+
+  if (!found) {
+    throw new Error(
+      `No Plane work item found for "${workItemLookup}" in project ${project.identifier}. Use a UUID, ${project.identifier}-<number>, a URL ending /browse/${project.identifier}-<number>/, or an imported ticket key like API-812.`
+    );
+  }
+
+  return found.id;
+}
+
 // ─── Tools ───
 
 server.tool(
@@ -343,7 +420,11 @@ server.tool(
   "Update an existing work item in Plane.",
   {
     project_id: z.string().describe("Plane project ID"),
-    work_item_id: z.string().describe("Work item ID to update"),
+    work_item_id: z
+      .string()
+      .describe(
+        "Work item UUID, Plane key such as KOM-132, imported ticket key such as API-812, or a Plane URL ending /browse/KOM-132/"
+      ),
     name: z.string().optional().describe("New title"),
     description_html: z.string().optional().describe("New HTML description"),
     state_name: z.string().optional().describe("New state name"),
@@ -379,7 +460,8 @@ server.tool(
       if (stateId) updates.state = stateId;
     }
 
-    const item = await client.updateWorkItem(project_id, work_item_id, updates);
+    const resolvedId = await resolveWorkItemId(project_id, work_item_id);
+    const item = await client.updateWorkItem(project_id, resolvedId, updates);
 
     return {
       content: [
@@ -397,10 +479,40 @@ server.tool(
   "Get details of a specific work item.",
   {
     project_id: z.string().describe("Plane project ID"),
-    work_item_id: z.string().describe("Work item ID"),
+    work_item_id: z
+      .string()
+      .describe(
+        "Work item UUID, Plane key such as KOM-132, imported ticket key such as API-812, or a Plane URL ending /browse/KOM-132/"
+      ),
   },
   async ({ project_id, work_item_id }) => {
-    const item = await client.getWorkItem(project_id, work_item_id);
+    const resolvedId = await resolveWorkItemId(project_id, work_item_id);
+    const item = await client.getWorkItem(project_id, resolvedId);
+    return {
+      content: [
+        {
+          type: "text" as const,
+          text: JSON.stringify(item, null, 2),
+        },
+      ],
+    };
+  }
+);
+
+server.tool(
+  "get_work_item_by_url",
+  "Get details of a Plane work item from a browse URL such as https://app.plane.so/startni-dev/browse/KOM-132/.",
+  {
+    work_item_url: z
+      .string()
+      .describe(
+        "Plane browse URL, or a Plane key such as KOM-132. The project is inferred from the key prefix."
+      ),
+  },
+  async ({ work_item_url }) => {
+    const projectId = await resolveProjectIdFromWorkItemLookup(work_item_url);
+    const resolvedId = await resolveWorkItemId(projectId, work_item_url);
+    const item = await client.getWorkItem(projectId, resolvedId);
     return {
       content: [
         {
