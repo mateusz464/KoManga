@@ -100,8 +100,10 @@ see `smoke-test.md` (`npm run smoke`).
 ## Suwayomi admin WebUI Access policy (API-811)
 
 The Suwayomi admin WebUI is the place to install and manage Tachiyomi/Mihon
-source extensions. It is also a fully open admin surface unless Cloudflare
-Access protects it, so KoManga treats Access as mandatory for this hostname.
+source extensions (the source-adding workflow itself is in the README's
+[Adding sources](../README.md#2-add-sources) section). It is also a fully open
+admin surface unless Cloudflare Access protects it, so KoManga treats Access as
+mandatory for this hostname.
 
 Use a separate hostname from the Kobo/API endpoint, for example:
 
