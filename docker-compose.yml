@@ -1,7 +1,8 @@
-# KoManga stack: `suwayomi` (internal-only) + `api` + `cloudflared`. Suwayomi is
-# never reachable from the host or the internet (RFC §9/§10). By default the stack
-# runs local-only; `cloudflared` is opt-in via the `tunnel` profile
-# (`docker compose --profile tunnel up -d`) to reach the API away from home.
+# KoManga stack: `suwayomi` + `api` + optional `cloudflared`. By default the
+# stack runs local-only; `cloudflared` is opt-in via the `tunnel` profile
+# (`docker compose --profile tunnel up -d`). Suwayomi has no default host/public
+# port. RFC §9/§10 allow only owner-authenticated admin WebUI reachability through
+# Cloudflare Access; API-810 adds that route. Kobo clients still only use the API.
 
 services:
   suwayomi:
@@ -10,8 +11,10 @@ services:
     restart: unless-stopped
     networks:
       - komanga
-    # No published ports: Suwayomi must never be reachable from the host's
-    # public interface (RFC §9) — only in-network, via the `suwayomi` hostname.
+    # No default published ports: Kobo/content traffic reaches Suwayomi only
+    # in-network, via the `suwayomi` hostname. Owner admin WebUI access is
+    # reconciled in RFC §9/§10 and is added by API-810 behind Cloudflare Access
+    # or, for local-only maintenance, loopback-only host access.
     expose:
       - "4567"
     volumes:
@@ -37,7 +40,8 @@ services:
     networks:
       - komanga
     environment:
-      # Suwayomi is reached by its in-network service name, never publicly.
+      # Content/reading traffic reaches Suwayomi by its in-network service name,
+      # never by a Kobo-visible public URL.
       SUWAYOMI_URL: http://suwayomi:4567
       # Single-user secret — supplied from the host environment / `.env`, never
       # committed (CLAUDE.md §5/§9). Compose fails fast if it is unset.
@@ -86,17 +90,19 @@ services:
 
   cloudflared:
     # The Cloudflare Tunnel connector — an OPT-IN public entrypoint (RFC §9/§10).
-    # It dials OUT to Cloudflare's edge and proxies requests back to the API over
-    # the internal network, so no inbound ports are opened on the home router and
-    # the home IP stays hidden. TLS is terminated at the Cloudflare edge.
+    # It dials OUT to Cloudflare's edge and proxies requests back over the
+    # internal network, so no inbound ports are opened on the home router and the
+    # home IP stays hidden. TLS is terminated at the Cloudflare edge.
     image: cloudflare/cloudflared:latest
     container_name: komanga-cloudflared
     restart: unless-stopped
     profiles:
       - tunnel
     # `tunnel run` with a token is a remotely-managed tunnel: the public
-    # hostname → service mapping lives in the Cloudflare Zero Trust dashboard
-    # (set it to http://api:3000), so no local config file is needed.
+    # hostname → service mapping lives in the Cloudflare Zero Trust dashboard.
+    # Current config routes the Kobo/API hostname to http://api:3000. API-810
+    # adds a separate Suwayomi admin WebUI hostname to http://suwayomi:4567,
+    # protected by an owner-only Cloudflare Access policy.
     command: tunnel --no-autoupdate run
     depends_on:
       api:
@@ -112,9 +118,9 @@ services:
       # so a tokenless local-only `up` doesn't trip a mandatory-variable error;
       # tunnel-preflight enforces it is set under the profile.
       TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
-    # No `ports:` — the connector is outbound-only. cloudflared reaches the API
-    # by its in-network name (`api:3000`); it is NOT configured to route to
-    # Suwayomi, which therefore stays unreachable from the internet.
+    # No `ports:` — the connector is outbound-only. cloudflared reaches services
+    # by in-network names. Until API-810, only the API route is configured in
+    # Cloudflare; any Suwayomi WebUI route must be owner-only behind Access.
 
 # A plain bridge, not `internal: true`: Suwayomi needs outbound internet to
 # scrape sources; it just has no inbound port mapping to the host.

@@ -63,7 +63,9 @@ The defining constraint is the Kobo's hardware: a slow ARM SoC and an e-ink disp
 ### Components
 
 **Suwayomi-Server (Docker)**
-Runs the real Tachiyomi/Mihon source extensions on the JVM. Manages source installation, catalogue browsing, search, chapter listing, and raw page fetching. Exposes a GraphQL API. We treat it as an upstream dependency and never expose it directly to the client.
+Runs the real Tachiyomi/Mihon source extensions on the JVM. Manages source installation, catalogue browsing, search, chapter listing, and raw page fetching. Exposes a GraphQL API plus its own admin WebUI. We treat it as an upstream dependency and never expose it directly to the Kobo client.
+
+> **Reconciled 2026-07-07 (API-809):** source-extension management is Suwayomi's job and needs the Suwayomi admin WebUI. The "never expose Suwayomi" rule means **never expose it unauthenticated**, never publish inbound router ports, and never make it reachable by the Kobo client. The single allowed public reachability is the Suwayomi admin WebUI through the Cloudflare Tunnel, gated by a Cloudflare Access policy that admits only the owner. Content and reading traffic remain unchanged: Kobo client → API REST surface → Suwayomi over the internal Compose network.
 
 **Node/TS API (Docker) — the heart of this project**
 - Exposes a clean REST API shaped for the Kobo client.
@@ -78,7 +80,7 @@ Runs the real Tachiyomi/Mihon source extensions on the JVM. Manages source insta
 Originally a deliberately-minimal static HTML/CSS/JS web app targeting old WebKit, with two surfaces (browse/search/library and a page reader). Superseded by the **KOReader plugin** (§13), which runs full-panel inside KOReader and reads chapters through KOReader's native CBZ reader. The API's REST + image surface it consumes is unchanged.
 
 **Cloudflare Tunnel**
-Public entry point. No inbound ports on the home router; the Mac Mini originates an outbound tunnel. TLS handled by Cloudflare. Cloudflare Access can sit in front as an additional auth gate.
+Public entry point. No inbound ports on the home router; the Mac Mini originates an outbound tunnel. TLS handled by Cloudflare. The Kobo-facing API remains behind the API's own single-user auth, and the Suwayomi admin WebUI may be routed through the same tunnel only when protected by Cloudflare Access for the owner identity.
 
 ---
 
@@ -181,19 +183,24 @@ Public exposure makes this first-class, not an afterthought:
 - **Single-user auth** — a credential/token required on every API call. Optionally fronted by Cloudflare Access.
 - **TLS** — terminated by Cloudflare.
 - **Rate limiting** — protects both our API and the upstream sources from abuse/runaway clients.
-- **Suwayomi is never directly exposed** — only reachable from the Node API inside the Compose network.
+- **Suwayomi is never exposed unauthenticated** — the Kobo client never reaches it directly, no inbound router ports are opened for it, and content/reading traffic reaches it only from the Node API inside the Compose network.
+- **Suwayomi admin WebUI exception** — the WebUI may be publicly reachable only through the Cloudflare Tunnel and only behind a Cloudflare Access policy that admits the owner. Suwayomi has no auth of its own, so Cloudflare Access is mandatory for that surface.
 - **Secrets** — auth credentials/tokens via environment/secret files, never committed.
+
+> **Reconciled 2026-07-07 (API-809):** RFC §9 previously said Suwayomi was "never directly exposed". The security invariant is narrower: Suwayomi is never exposed to the Kobo client or the unauthenticated internet. Owner-only WebUI access through Cloudflare Access is allowed so sources can be installed and managed without adding source-management responsibilities to the API.
 
 ---
 
 ## 10. Deployment
 
 Single `docker-compose.yml` on the Mac Mini:
-- `suwayomi` — source engine; internal network only; named volume for its data.
+- `suwayomi` — source engine; no default host/public port; named volume for its data. Its GraphQL/content path stays internal to the Compose network. Its admin WebUI may be routed by `cloudflared` only behind Cloudflare Access.
 - `api` — Node/TS service; mounts SQLite volume + download store; depends on `suwayomi`.
-- `cloudflared` — Cloudflare Tunnel connector pointing at the `api` service.
+- `cloudflared` — optional Cloudflare Tunnel connector. In the tunnel profile, it routes the API hostname to `api` and may also route a separate owner-only Suwayomi WebUI hostname to `suwayomi:4567`.
 
 Volumes for: Suwayomi data, our SQLite DB, the persistent CBZ download store. The ephemeral session cache can live on a volume or tmpfs depending on size.
+
+> **Reconciled 2026-07-07 (API-809):** API-808 made `cloudflared` optional for local-only runs. In a local-only deployment with no tunnel profile, there is no public Suwayomi WebUI route. The fallback stance is loopback-only maintenance access from the Mac Mini host, never LAN/public binding: a later Compose ticket may add an explicit opt-in local maintenance profile or document an SSH/loopback workflow, but the default stack keeps Suwayomi without a host port.
 
 ---
 

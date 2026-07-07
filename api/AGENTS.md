@@ -15,7 +15,7 @@ The Node/TypeScript API is the layer between the Kobo client and **Suwayomi-Serv
 - Owns **reading progress, library, and download** records in **SQLite**.
 - Is **single-user but multi-client**, **publicly exposed** via Cloudflare Tunnel, and therefore secured.
 
-**Suwayomi is never exposed unauthenticated.** Kobo clients only ever see this API's REST surface, and content/reading traffic reaches Suwayomi only from this service on the internal Docker network. The only public Suwayomi surface allowed by the RFC is the admin WebUI through Cloudflare Tunnel, gated by owner-only Cloudflare Access.
+**Suwayomi is never exposed publicly.** It is reachable only from this service on the internal Docker network.
 
 ---
 
@@ -135,7 +135,7 @@ Do not write implementation ahead of its test ticket. Do not weaken a test to ma
 
 - **Auth on every `/api/*` route.** A valid single-user credential/token is required; `/health` is the only public route. The scheme must **not assume one device** (multi-client).
 - **Rate limiting** on API routes, configurable, returning `429` over the limit.
-- **Suwayomi never unauthenticated or client-reachable** — Kobo clients only ever see the API's REST surface; content/reading traffic reaches Suwayomi only through the internal Docker network. The Suwayomi admin WebUI may be publicly reachable only through Cloudflare Tunnel behind owner-only Cloudflare Access.
+- **Suwayomi never publicly reachable** — internal Docker network only.
 - **TLS terminated by Cloudflare**; no inbound ports opened on the home router.
 - Credentials from config/secret only; never hardcoded, never logged.
 

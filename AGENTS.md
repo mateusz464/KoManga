@@ -47,7 +47,7 @@ The KOReader plugin (`koreader-plugin/`) is a **client of the API**: it runs ins
 - **Agents must never create commits.** Prepare and verify changes, but leave staging/committing to the human unless they explicitly ask for a git action in that turn.
 - **`docs/device.md` is shared.** It was written by the (now-retired) web-client device spike, but it lives on as the Kobo panel capability record: the API's `eink` image profile resolution and the KOReader plugin both read from it. Keep them in sync.
 - **`docs/koreader.md` is the KOReader-plugin spike doc.** The plugin epic's spike (KRP-101/102) writes it (KOReader version, install/launch, emulator loop); plugin tickets read from it. It shares the same `eink` profile contract as `device.md` — both clients render the API's `eink` output.
-- **Suwayomi is never exposed unauthenticated.** Kobo clients only ever see the API's REST surface; content/reading traffic reaches Suwayomi only through the API on the internal Docker network. The only public Suwayomi surface allowed is the admin WebUI through Cloudflare Tunnel, gated by owner-only Cloudflare Access (RFC §3/§9/§10).
+- **Suwayomi is never exposed publicly** — internal Docker network only; clients only ever see the API's REST surface.
 
 ## Working a ticket — quick procedure
 

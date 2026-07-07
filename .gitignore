@@ -4,3 +4,5 @@ dist/
 .env
 .idea
 .mcp.json
+.codex
+.claude
