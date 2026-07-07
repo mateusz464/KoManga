@@ -1,4 +1,4 @@
-# Cloudflare Tunnel setup (API-802)
+# Cloudflare Tunnel setup (API-802, API-811)
 
 The KoManga stack can be exposed to the internet through a Cloudflare Tunnel.
 This is **opt-in**: the `cloudflared` connector lives behind the `tunnel` Compose
@@ -13,9 +13,10 @@ by RFC §9:
   outbound-only, so the home IP stays hidden.
 - **TLS is terminated at the Cloudflare edge**; clients always speak HTTPS to the
   public hostname.
-- **Suwayomi is never publicly reachable** — the tunnel is configured to route
-  the public hostname to `http://api:3000` and nothing else. Suwayomi has no
-  published port and is not a tunnel ingress target.
+- **Suwayomi is never reachable without an identity gate** — Kobo/content
+  traffic uses only the API hostname. The Suwayomi admin WebUI may have a
+  separate tunnel hostname only when a Cloudflare Access application already
+  protects that hostname for the owner identity.
 
 This is a *remotely-managed* (token-based) tunnel: the public hostname → service
 mapping lives in the Cloudflare Zero Trust dashboard, so there is no local
@@ -57,12 +58,17 @@ config file to maintain. The container only needs the connector token.
    - **Service Type:** `HTTP`
    - **URL:** `api:3000`
 
-   This is the only ingress rule. Cloudflare creates the `CNAME` DNS record
-   automatically. Because the service is `api:3000` (resolved on the internal
-   `komanga` Docker network) and Suwayomi is *not* added here, only the API is
-   ever exposed.
+   Cloudflare creates the `CNAME` DNS record automatically. Because the service
+   is `api:3000` (resolved on the internal `komanga` Docker network), Kobo
+   clients still only see the API's REST surface.
 
-5. **Bring up the stack with the tunnel profile.**
+5. **Create the Suwayomi WebUI Access policy before adding its route.** This is
+   mandatory because Suwayomi's WebUI has no authentication of its own. See
+   [Suwayomi admin WebUI Access policy](#suwayomi-admin-webui-access-policy-api-811)
+   below. Do not add or announce the Suwayomi WebUI public hostname until that
+   policy passes its verification checklist.
+
+6. **Bring up the stack with the tunnel profile.**
 
    ```sh
    docker compose --profile tunnel up -d
@@ -80,28 +86,88 @@ config file to maintain. The container only needs the connector token.
 - `https://manga.example.com/api/sources` without a credential → `401`; with
   `Authorization: Bearer <AUTH_TOKEN>` → `200`. (Auth is enforced by the API,
   API-702.)
-- Suwayomi is **not** reachable: there is no tunnel hostname for it and no
-  published port. `http://<host>:4567` from outside the Docker network fails.
+- Suwayomi is **not reachable by the Kobo client** and has no published host
+  port. `http://<host>:4567` from outside the Docker network fails.
+- If a Suwayomi WebUI hostname exists, an unauthenticated request to that
+  hostname must show a Cloudflare Access challenge or denial, never the raw
+  Suwayomi WebUI. See the API-811 verification checklist below.
 - The home router has **no** forwarded/inbound ports for this stack.
 
 For a full end-to-end pass over the whole reading path through the tunnel
 hostname (auth → search → page → download → progress), run the smoke test —
 see `smoke-test.md` (`npm run smoke`).
 
-## Optional: Cloudflare Access (extra auth gate)
+## Suwayomi admin WebUI Access policy (API-811)
 
-The API already enforces single-user auth (API-702), but you can put Cloudflare
-Access *in front* of the tunnel for defence in depth — an identity gate at the
-edge before requests ever reach the connector:
+The Suwayomi admin WebUI is the place to install and manage Tachiyomi/Mihon
+source extensions. It is also a fully open admin surface unless Cloudflare
+Access protects it, so KoManga treats Access as mandatory for this hostname.
 
-1. **Zero Trust → Access → Applications → Add an application → Self-hosted.**
-2. Set the application domain to the tunnel hostname (e.g.
-   `manga.example.com`).
-3. Add a policy (e.g. allow a specific email, or a one-time-PIN login).
+Use a separate hostname from the Kobo/API endpoint, for example:
 
-Caveat: Access protects *browser* traffic via an interactive login. The Kobo
-client and any programmatic clients would then also need to satisfy Access — use
-a **service token** (Access → Service Auth) and send the
-`CF-Access-Client-Id` / `CF-Access-Client-Secret` headers, or scope the Access
-policy to `/` paths only while bypassing it for the API paths the device uses.
-For a single user, the API's own Bearer auth is sufficient; Access is optional.
+- API: `manga.example.com` → `http://api:3000`
+- Suwayomi WebUI: `suwayomi.example.com` → `http://suwayomi:4567`
+
+Create the Access application before adding the Suwayomi public hostname route:
+
+1. In Cloudflare Zero Trust, open **Access → Applications → Add an application →
+   Self-hosted**.
+2. Name it clearly, for example `KoManga Suwayomi WebUI`.
+3. Set the application domain to the future Suwayomi WebUI hostname, for example
+   `suwayomi.example.com`. Do not reuse the API hostname.
+4. Set the session duration deliberately. The recommended default for this admin
+   surface is one day: short enough to limit stale browser sessions, long enough
+   that routine source maintenance is not painful.
+5. Add a single **Allow** policy for the owner identity only:
+   - Include rule: `Emails` equals the owner's email address; or
+   - Include rule: the owner's SSO identity/group, if the Cloudflare account is
+     already wired to an identity provider.
+6. Leave service tokens unset. The WebUI is for browser administration only; no
+   Kobo/plugin/API automation should need to call it. If automation is ever
+   added, create a dedicated scoped service token in a later ticket instead of
+   reusing the owner browser policy.
+7. Save the application and policy.
+
+Only after the Access application exists, API-810 may add the matching tunnel
+public hostname:
+
+- **Subdomain / Domain:** the Suwayomi WebUI hostname, e.g.
+  `suwayomi.example.com`
+- **Service Type:** `HTTP`
+- **URL:** `suwayomi:4567`
+
+The route and Access application must match the same hostname. A mismatch means
+Cloudflare may route traffic to Suwayomi without applying the identity gate.
+
+### API-811 verification checklist
+
+Run this checklist before considering the Suwayomi route live:
+
+- In a private/incognito browser session, open the Suwayomi WebUI hostname. The
+  first screen must be a Cloudflare Access login/challenge or denial, not the
+  Suwayomi WebUI.
+- From a terminal, request the hostname without Access credentials:
+
+  ```sh
+  curl -i https://suwayomi.example.com/
+  ```
+
+  The response must be a Cloudflare Access challenge/redirect or denial. It must
+  not contain Suwayomi/Tachidesk page content.
+- Authenticate as the owner identity. The browser should reach the Suwayomi
+  WebUI after Cloudflare Access succeeds.
+- Try a non-owner identity, or remove the owner from the policy temporarily and
+  retry. Access must deny the request.
+- Confirm the Mac Mini/router still has no inbound port forwarding and
+  `docker-compose.yml` still publishes no Suwayomi host port by default.
+
+If any check fails, remove the Suwayomi public hostname route immediately and
+fix the Access application before re-adding it.
+
+## Optional: Cloudflare Access for the API
+
+The API already enforces single-user Bearer auth (API-702), so Cloudflare Access
+is optional for the API hostname. If you add Access in front of the API, remember
+that the KOReader plugin and smoke tests are programmatic clients: they would
+need an Access service token (`CF-Access-Client-Id` /
+`CF-Access-Client-Secret`) or an Access bypass rule for the API paths they use.

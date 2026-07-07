@@ -2,7 +2,7 @@
 # stack runs local-only; `cloudflared` is opt-in via the `tunnel` profile
 # (`docker compose --profile tunnel up -d`). Suwayomi has no default host/public
 # port. RFC §9/§10 allow only owner-authenticated admin WebUI reachability through
-# Cloudflare Access; API-810 adds that route. Kobo clients still only use the API.
+# Cloudflare Access. Kobo clients still only use the API.
 
 services:
   suwayomi:
@@ -13,8 +13,8 @@ services:
       - komanga
     # No default published ports: Kobo/content traffic reaches Suwayomi only
     # in-network, via the `suwayomi` hostname. Owner admin WebUI access is
-    # reconciled in RFC §9/§10 and is added by API-810 behind Cloudflare Access
-    # or, for local-only maintenance, loopback-only host access.
+    # reconciled in RFC §9/§10 and may be routed through Cloudflare only behind
+    # Access, or through explicit loopback-only host access for local maintenance.
     expose:
       - "4567"
     volumes:
@@ -100,14 +100,18 @@ services:
       - tunnel
     # `tunnel run` with a token is a remotely-managed tunnel: the public
     # hostname → service mapping lives in the Cloudflare Zero Trust dashboard.
-    # Current config routes the Kobo/API hostname to http://api:3000. API-810
-    # adds a separate Suwayomi admin WebUI hostname to http://suwayomi:4567,
-    # protected by an owner-only Cloudflare Access policy.
+    # Remote config routes the Kobo/API hostname to http://api:3000 and may route
+    # a separate Suwayomi admin WebUI hostname to http://suwayomi:4567, protected
+    # by an owner-only Cloudflare Access policy.
     command: tunnel --no-autoupdate run
     depends_on:
       api:
         # Only dial out once the API is healthy, so the first proxied request
         # doesn't hit a cold/booting upstream.
+        condition: service_healthy
+      suwayomi:
+        # The remotely-managed tunnel may route the admin WebUI to Suwayomi, so
+        # ensure that target is healthy before the connector registers.
         condition: service_healthy
       tunnel-preflight:
         condition: service_completed_successfully
@@ -119,8 +123,8 @@ services:
       # tunnel-preflight enforces it is set under the profile.
       TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
     # No `ports:` — the connector is outbound-only. cloudflared reaches services
-    # by in-network names. Until API-810, only the API route is configured in
-    # Cloudflare; any Suwayomi WebUI route must be owner-only behind Access.
+    # by in-network names. Any Suwayomi WebUI route must be owner-only behind
+    # Access.
 
 # A plain bridge, not `internal: true`: Suwayomi needs outbound internet to
 # scrape sources; it just has no inbound port mapping to the host.
