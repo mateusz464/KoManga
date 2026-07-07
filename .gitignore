@@ -6,3 +6,9 @@ dist/
 .mcp.json
 .codex
 .claude
+
+# macOS
+.DS_Store
+
+# API runtime data (SQLite DB, downloads) — never commit
+api/data/
