@@ -13,6 +13,10 @@ by RFC §9:
   outbound-only, so the home IP stays hidden.
 - **TLS is terminated at the Cloudflare edge**; clients always speak HTTPS to the
   public hostname.
+- **AniList account linking uses the same API hostname**; register
+  `https://<api-hostname>/api/tracker/anilist/callback` in AniList and keep the
+  tunnel running while scanning the QR link. No separate callback hostname is
+  needed.
 - **Suwayomi is never reachable without an identity gate** — Kobo/content
   traffic uses only the API hostname. The Suwayomi admin WebUI may have a
   separate tunnel hostname only when a Cloudflare Access application already
@@ -45,11 +49,14 @@ config file to maintain. The container only needs the connector token.
    ```
    CLOUDFLARE_TUNNEL_TOKEN=<the token you copied>
    AUTH_TOKEN=<your single-user API secret>
+   ANILIST_CLIENT_ID=<your AniList OAuth client id>
+   ANILIST_CLIENT_SECRET=<your AniList OAuth client secret>
+   ANILIST_REDIRECT_URI=https://manga.example.com/api/tracker/anilist/callback
    ```
 
-   See `.env.example`. Under the `tunnel` profile Compose fails fast at `up` if
-   either is unset. (`AUTH_TOKEN` is always required; `CLOUDFLARE_TUNNEL_TOKEN`
-   only matters when the `tunnel` profile is active.)
+   See `.env.example`. `AUTH_TOKEN` and the AniList variables are required by
+   the API service. `CLOUDFLARE_TUNNEL_TOKEN` is required only when the `tunnel`
+   profile is active.
 
 4. **Add a public hostname → API route.** Still in the tunnel's configuration,
    open **Public Hostnames → Add a public hostname**:
@@ -60,7 +67,9 @@ config file to maintain. The container only needs the connector token.
 
    Cloudflare creates the `CNAME` DNS record automatically. Because the service
    is `api:3000` (resolved on the internal `komanga` Docker network), Kobo
-   clients still only see the API's REST surface.
+   clients still only see the API's REST surface. The AniList OAuth callback is
+   just a path on this same hostname:
+   `https://manga.example.com/api/tracker/anilist/callback`.
 
 5. **Create the Suwayomi WebUI Access policy before adding its route.** This is
    mandatory because Suwayomi's WebUI has no authentication of its own. See
