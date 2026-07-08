@@ -31,5 +31,18 @@ export function trackerRouter(service: TrackingService): Router {
     res.json({ data: service.status(req.params.mangaId) });
   });
 
+  router.post("/tracker/complete", json(), (req, res) => {
+    const body = req.body as Record<string, unknown>;
+    const chapterId = body.chapterId;
+    if (typeof chapterId !== "string" || chapterId.trim() === "") {
+      throw new BadRequestError(
+        "Body field 'chapterId' must be a non-empty string",
+      );
+    }
+
+    void service.completeChapter(chapterId);
+    res.status(202).json({ data: { status: "accepted" } });
+  });
+
   return router;
 }

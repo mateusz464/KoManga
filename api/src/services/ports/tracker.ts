@@ -44,11 +44,15 @@ export interface Tracker {
   exchangeCode(code: string): Promise<TrackerToken>;
   getViewer?(accessToken: string): Promise<TrackerViewer>;
   searchMedia(title: string): Promise<TrackerMediaCandidate[]>;
-  getListEntry(mediaId: string): Promise<TrackerListEntry | null>;
+  getListEntry(
+    mediaId: string,
+    accessToken?: string,
+  ): Promise<TrackerListEntry | null>;
   saveProgress(
     mediaId: string,
     progress: number,
     status: TrackerStatus,
+    accessToken?: string,
   ): Promise<TrackerListEntry>;
 }
 

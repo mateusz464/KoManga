@@ -140,6 +140,7 @@ export function createApp(deps: AppDependencies): express.Express {
           deps.anilistTracker,
           deps.trackerAccountRepository,
           deps.trackerLinkRepository,
+          deps.logger ?? NOOP_LOGGER,
         ),
       ),
     );

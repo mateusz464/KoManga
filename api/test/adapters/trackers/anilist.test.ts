@@ -186,6 +186,26 @@ describe("AniListTracker (port contract)", () => {
       await expect(client.getListEntry("30002")).resolves.toBeNull();
     });
 
+    it("uses a per-call linked-account token when one is supplied", async () => {
+      const { transport, request } = transportReturning({
+        graphql: {
+          MediaList: {
+            progress: 12,
+            status: "CURRENT",
+          },
+        },
+      });
+      const client = tracker(transport);
+
+      await client.getListEntry("30002", "linked-account-token");
+
+      expect(request).toHaveBeenCalledWith(
+        expect.any(String),
+        { mediaId: 30002 },
+        "linked-account-token",
+      );
+    });
+
     it("saveProgress maps tracker status into AniList status and returns the saved entry", async () => {
       const { transport, request } = transportReturning({
         graphql: {

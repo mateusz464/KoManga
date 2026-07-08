@@ -1,14 +1,31 @@
 import { BadRequestError } from "../http/errors.js";
+import type { Logger } from "./ports/logger.js";
 import type { SuwayomiClient } from "./ports/suwayomi-client.js";
-import type { Tracker, TrackerMediaCandidate } from "./ports/tracker.js";
+import type {
+  Tracker,
+  TrackerListEntry,
+  TrackerMediaCandidate,
+  TrackerStatus,
+} from "./ports/tracker.js";
 import type {
   TrackerAccount,
   TrackerAccountRepository,
   TrackerService,
 } from "./ports/tracker-account-repository.js";
-import type { TrackerLinkRepository } from "./ports/tracker-link-repository.js";
+import type {
+  TrackerLink,
+  TrackerLinkRepository,
+} from "./ports/tracker-link-repository.js";
 
 const SERVICE: TrackerService = "anilist";
+
+const noop = (): void => undefined;
+const NOOP_LOGGER: Logger = {
+  debug: noop,
+  info: noop,
+  warn: noop,
+  error: noop,
+};
 
 export type TrackerMatchState =
   | "matched"
@@ -40,6 +57,7 @@ export class TrackingService {
     private readonly tracker: Tracker,
     private readonly accounts: TrackerAccountRepository,
     private readonly links: TrackerLinkRepository,
+    private readonly logger: Logger = NOOP_LOGGER,
   ) {}
 
   async candidates(mangaId: string): Promise<TrackerCandidates> {
@@ -103,6 +121,69 @@ export class TrackingService {
       doNotTrack,
     };
   }
+
+  async completeChapter(chapterId: string): Promise<void> {
+    try {
+      const chapter = await this.suwayomi.getChapterDetails(chapterId);
+      const account = this.accounts.get(SERVICE);
+      const link = this.links.get(chapter.mangaId, SERVICE);
+
+      if (!account || !isTrackable(link)) {
+        return;
+      }
+
+      const finishedChapter = Math.floor(chapter.chapterNumber);
+      const listEntry = await this.getListEntry(link.mediaId, account);
+      const guard = Math.max(
+        link.lastSyncedChapter ?? listEntry?.progress ?? 0,
+        listEntry?.progress ?? 0,
+      );
+
+      if (finishedChapter <= guard) {
+        if (link.lastSyncedChapter === undefined) {
+          this.links.updateLastSynced(chapter.mangaId, SERVICE, guard);
+        }
+        return;
+      }
+
+      await this.saveProgress(
+        link.mediaId,
+        finishedChapter,
+        statusFor(finishedChapter, listEntry),
+        account,
+      );
+      this.links.updateLastSynced(chapter.mangaId, SERVICE, finishedChapter);
+    } catch (error) {
+      this.logger.error("Chapter completion sync failed", { error, chapterId });
+    }
+  }
+
+  private getListEntry(
+    mediaId: string,
+    account: TrackerAccount,
+  ): Promise<TrackerListEntry | null> {
+    if (this.tracker.getListEntry.length >= 2) {
+      return this.tracker.getListEntry(mediaId, account.accessToken);
+    }
+    return this.tracker.getListEntry(mediaId);
+  }
+
+  private saveProgress(
+    mediaId: string,
+    progress: number,
+    status: TrackerStatus,
+    account: TrackerAccount,
+  ): Promise<TrackerListEntry> {
+    if (this.tracker.saveProgress.length >= 4) {
+      return this.tracker.saveProgress(
+        mediaId,
+        progress,
+        status,
+        account.accessToken,
+      );
+    }
+    return this.tracker.saveProgress(mediaId, progress, status);
+  }
 }
 
 function stateFor(options: {
@@ -124,4 +205,19 @@ function stateFor(options: {
 
 function accountNeedsRelink(account: TrackerAccount | undefined): boolean {
   return account === undefined || account.expiresAt <= Date.now();
+}
+
+function isTrackable(
+  link: TrackerLink | undefined,
+): link is TrackerLink & { readonly mediaId: string } {
+  return link !== undefined && !link.doNotTrack && link.mediaId !== undefined;
+}
+
+function statusFor(
+  progress: number,
+  entry: TrackerListEntry | null,
+): TrackerStatus {
+  return entry?.totalChapters !== undefined && progress >= entry.totalChapters
+    ? "completed"
+    : "reading";
 }

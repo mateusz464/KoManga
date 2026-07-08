@@ -67,10 +67,14 @@ export class AniListTracker implements Tracker {
     return (data.Page?.media ?? []).map(mapMediaCandidate);
   }
 
-  async getListEntry(mediaId: string): Promise<TrackerListEntry | null> {
+  async getListEntry(
+    mediaId: string,
+    accessToken?: string,
+  ): Promise<TrackerListEntry | null> {
     const data = await this.runGraphQL<{ MediaList?: RawListEntry | null }>(
       GET_LIST_ENTRY,
       { mediaId: toIntId(mediaId) },
+      accessToken,
     );
     return data.MediaList ? mapListEntry(data.MediaList) : null;
   }
@@ -79,14 +83,19 @@ export class AniListTracker implements Tracker {
     mediaId: string,
     progress: number,
     status: TrackerStatus,
+    accessToken?: string,
   ): Promise<TrackerListEntry> {
     const data = await this.runGraphQL<{
       SaveMediaListEntry?: RawListEntry | null;
-    }>(SAVE_PROGRESS, {
-      mediaId: toIntId(mediaId),
-      progress,
-      status: toAniListStatus(status),
-    });
+    }>(
+      SAVE_PROGRESS,
+      {
+        mediaId: toIntId(mediaId),
+        progress,
+        status: toAniListStatus(status),
+      },
+      accessToken,
+    );
     if (!data.SaveMediaListEntry) {
       throw new TrackerError("graphql");
     }
