@@ -18,6 +18,13 @@
 --   GET    /api/downloads/:chapterId       (CBZ bytes; URL builder)
 --   GET/PUT  /api/progress/:mangaId
 --   GET/PUT/DELETE /api/library[/:mangaId]
+--   POST   /api/tracker/anilist/link
+--   GET    /api/tracker/anilist/link/:sessionId/status
+--   GET    /api/tracker/anilist/link/:sessionId/qr.png  (raw PNG bytes)
+--   GET    /api/tracker/manga/:mangaId/candidates
+--   GET/PUT/DELETE /api/tracker/manga/:mangaId/{status,match}
+--   POST   /api/tracker/manga/:mangaId/do-not-track
+--   POST   /api/tracker/complete
 -- Success envelope: { "data": ... }; error envelope: { "error": { code, message } }.
 
 local FakeTransport = require("spec.support.fake_transport")
@@ -188,6 +195,107 @@ describe("ApiClient", function()
             assert.are.equal(BASE .. "/api/library/m7", req.url)
         end)
 
+        it("starts an AniList link session with POST /api/tracker/anilist/link", function()
+            local client, rec = make(FakeTransport.ok({
+                sessionId = "link-123",
+                qrUrl = "/api/tracker/anilist/link/link-123/qr.png",
+            }))
+            local data = client:linkStart()
+
+            local req = sole(rec)
+            assert.are.equal("POST", req.method)
+            assert.are.equal(BASE .. "/api/tracker/anilist/link", req.url)
+            assert.is_nil(req.body)
+            assert.are.same({
+                sessionId = "link-123",
+                qrUrl = "/api/tracker/anilist/link/link-123/qr.png",
+            }, data)
+        end)
+
+        it("polls an AniList link session with GET /api/tracker/anilist/link/:sessionId/status", function()
+            local client, rec = make(FakeTransport.ok({ status = "pending" }))
+            local data = client:linkStatus("link-123")
+
+            local req = sole(rec)
+            assert.are.equal("GET", req.method)
+            assert.are.equal(BASE .. "/api/tracker/anilist/link/link-123/status", req.url)
+            assert.are.same({ status = "pending" }, data)
+        end)
+
+        it("gets tracker candidates with GET /api/tracker/manga/:mangaId/candidates", function()
+            local client, rec = make(FakeTransport.ok({
+                mangaId = "m7",
+                candidates = { { mediaId = "30002", title = "Berserk" } },
+            }))
+            local data = client:trackerCandidates("m7")
+
+            local req = sole(rec)
+            assert.are.equal("GET", req.method)
+            assert.are.equal(BASE .. "/api/tracker/manga/m7/candidates", req.url)
+            assert.are.same({
+                mangaId = "m7",
+                candidates = { { mediaId = "30002", title = "Berserk" } },
+            }, data)
+        end)
+
+        it("sets a tracker match with PUT /api/tracker/manga/:mangaId/match and a JSON mediaId body", function()
+            local client, rec = make(FakeTransport.ok({ mangaId = "m7", mediaId = "30002" }))
+            client:setTrackerMatch("m7", "30002")
+
+            local req = sole(rec)
+            assert.are.equal("PUT", req.method)
+            assert.are.equal(BASE .. "/api/tracker/manga/m7/match", req.url)
+            assert.are.equal("application/json", req.headers["Content-Type"])
+            assert.are.same({ mediaId = "30002" }, rapidjson.decode(req.body))
+        end)
+
+        it("clears a tracker match with DELETE /api/tracker/manga/:mangaId/match", function()
+            local client, rec = make(FakeTransport.ok({ mangaId = "m7", mediaId = nil }))
+            client:clearTrackerMatch("m7")
+
+            local req = sole(rec)
+            assert.are.equal("DELETE", req.method)
+            assert.are.equal(BASE .. "/api/tracker/manga/m7/match", req.url)
+        end)
+
+        it("marks a manga do-not-track with POST /api/tracker/manga/:mangaId/do-not-track", function()
+            local client, rec = make(FakeTransport.ok({
+                mangaId = "m7",
+                doNotTrack = true,
+            }))
+            client:doNotTrack("m7")
+
+            local req = sole(rec)
+            assert.are.equal("POST", req.method)
+            assert.are.equal(BASE .. "/api/tracker/manga/m7/do-not-track", req.url)
+            assert.is_nil(req.body)
+        end)
+
+        it("gets tracker status with GET /api/tracker/manga/:mangaId/status", function()
+            local client, rec = make(FakeTransport.ok({
+                mangaId = "m7",
+                state = "matched",
+                media = { mediaId = "30002" },
+            }))
+            client:trackerStatus("m7")
+
+            local req = sole(rec)
+            assert.are.equal("GET", req.method)
+            assert.are.equal(BASE .. "/api/tracker/manga/m7/status", req.url)
+        end)
+
+        it("reports chapter completion with POST /api/tracker/complete and a JSON chapterId body", function()
+            local client, rec = make(FakeTransport.ok({ status = "accepted" }, 202))
+            local data = client:complete("ch9")
+
+            local req = sole(rec)
+            assert.are.equal("POST", req.method)
+            assert.are.equal(BASE .. "/api/tracker/complete", req.url)
+            assert.are.equal("application/json", req.headers["Content-Type"])
+            assert.are.same({ chapterId = "ch9" }, rapidjson.decode(req.body))
+            assert.are.same({ status = "accepted" }, data)
+        end)
+
         it("joins base URL and path without a double slash", function()
             local client, rec = make(FakeTransport.ok({}), { base_url = BASE .. "/" })
             client:listSources()
@@ -229,6 +337,22 @@ describe("ApiClient", function()
             client:listSources()
 
             assert.is_nil(sole(rec).headers["Authorization"])
+        end)
+
+        it("reads the credential per tracking request too", function()
+            local current = "first"
+            local client, rec = make(FakeTransport.ok({}), {
+                get_credential = function()
+                    return current
+                end,
+            })
+
+            client:linkStart()
+            current = "second"
+            client:trackerStatus("m7")
+
+            assert.are.equal("Bearer first", rec.requests[1].headers["Authorization"])
+            assert.are.equal("Bearer second", rec.requests[2].headers["Authorization"])
         end)
     end)
 
@@ -312,6 +436,67 @@ describe("ApiClient", function()
         it("maps a transport failure to a transport error", function()
             local client = make(FakeTransport.failing("network is unreachable"))
             local bytes, err = client:fetchCover("m7")
+
+            assert.is_nil(bytes)
+            assert.are.equal("transport", err.kind)
+        end)
+    end)
+
+    describe("tracker link QR (raw bytes)", function()
+        -- Distinct from JSON endpoints: the QR endpoint serves PNG bytes directly,
+        -- so fetchLinkQr returns the raw body, NOT the { data } envelope.
+        local PNG = "\137PNG\r\n\26\nqr\0bytes"
+
+        local function raw_ok(body, status)
+            return function()
+                return { status = status or 200, body = body, headers = {} }
+            end
+        end
+
+        it("builds the protected QR PNG URL for a link session", function()
+            local client = make()
+            assert.are.equal(
+                BASE .. "/api/tracker/anilist/link/link-123/qr.png",
+                client:linkQrUrl("link-123")
+            )
+        end)
+
+        it("GETs the QR PNG endpoint", function()
+            local client, rec = make(raw_ok(PNG))
+            client:fetchLinkQr("link-123")
+
+            local req = sole(rec)
+            assert.are.equal("GET", req.method)
+            assert.are.equal(BASE .. "/api/tracker/anilist/link/link-123/qr.png", req.url)
+        end)
+
+        it("returns the raw image bytes unchanged (no envelope unwrap, no decode)", function()
+            local client = make(raw_ok(PNG))
+            local bytes, err = client:fetchLinkQr("link-123")
+
+            assert.is_nil(err)
+            assert.are.equal(PNG, bytes)
+        end)
+
+        it("attaches the Bearer credential like every other call", function()
+            local client, rec = make(raw_ok(PNG))
+            client:fetchLinkQr("link-123")
+
+            assert.are.equal("Bearer " .. TOKEN, sole(rec).headers["Authorization"])
+        end)
+
+        it("maps a missing QR session (404) to an http error", function()
+            local client = make(FakeTransport.httpError(404, "NOT_FOUND", "No session"))
+            local bytes, err = client:fetchLinkQr("link-123")
+
+            assert.is_nil(bytes)
+            assert.are.equal("http", err.kind)
+            assert.are.equal(404, err.status)
+        end)
+
+        it("maps a transport failure to a transport error", function()
+            local client = make(FakeTransport.failing("network is unreachable"))
+            local bytes, err = client:fetchLinkQr("link-123")
 
             assert.is_nil(bytes)
             assert.are.equal("transport", err.kind)
@@ -499,6 +684,35 @@ describe("ApiClient", function()
 
             assert.is_nil(data)
             assert.are.equal("decode", err.kind)
+        end)
+
+        it("maps a 401 from a tracker endpoint to an http error the auth flow can detect", function()
+            local client = make(FakeTransport.httpError(401, "UNAUTHORIZED", "Missing or invalid credentials"))
+            local data, err = client:linkStart()
+
+            assert.is_nil(data)
+            assert.are.equal("http", err.kind)
+            assert.are.equal(401, err.status)
+            assert.are.equal("UNAUTHORIZED", err.code)
+        end)
+
+        it("maps a non-200 tracker response to an http error carrying status and code", function()
+            local client = make(FakeTransport.httpError(502, "TRACKER_ERROR", "AniList failed"))
+            local data, err = client:trackerCandidates("m7")
+
+            assert.is_nil(data)
+            assert.are.equal("http", err.kind)
+            assert.are.equal(502, err.status)
+            assert.are.equal("TRACKER_ERROR", err.code)
+        end)
+
+        it("maps a tracker transport failure to a transport error", function()
+            local client = make(FakeTransport.failing("network is unreachable"))
+            local data, err = client:complete("ch9")
+
+            assert.is_nil(data)
+            assert.are.equal("transport", err.kind)
+            assert.is_truthy(err.message:find("network", 1, true))
         end)
     end)
 end)
