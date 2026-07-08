@@ -7,6 +7,8 @@ import type { DownloadStore } from "../services/ports/download-store.js";
 import type { DownloadsRepository } from "../services/ports/downloads-repository.js";
 import type { ReadingProgressRepository } from "../services/ports/reading-progress-repository.js";
 import type { LibraryRepository } from "../services/ports/library-repository.js";
+import type { Tracker } from "../services/ports/tracker.js";
+import type { TrackerAccountRepository } from "../services/ports/tracker-account-repository.js";
 import type { Logger } from "../services/ports/logger.js";
 import { SourceService } from "../services/source-service.js";
 import { SearchService } from "../services/search-service.js";
@@ -58,6 +60,14 @@ export interface AppDependencies {
   readonly downloadsRepository?: DownloadsRepository;
   readonly readingProgressRepository?: ReadingProgressRepository;
   readonly libraryRepository?: LibraryRepository;
+  readonly anilistTracker?: Tracker;
+  readonly trackerAccountRepository?: TrackerAccountRepository;
+  readonly anilistOAuth?: {
+    readonly clientId: string;
+    readonly clientSecret: string;
+    readonly redirectUri: string;
+  };
+  readonly trackerLinkSessionTtlMs?: number;
 }
 
 // Mirrors config's CBZ_PAGE_CONCURRENCY default, for when a test omits the knob.
