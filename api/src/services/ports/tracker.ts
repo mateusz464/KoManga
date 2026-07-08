@@ -27,6 +27,7 @@ export interface TrackerMediaCandidate {
 export interface TrackerListEntry {
   readonly progress: number;
   readonly status: TrackerStatus;
+  readonly totalChapters?: number;
 }
 
 export interface TrackerViewer {

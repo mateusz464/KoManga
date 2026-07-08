@@ -146,6 +146,7 @@ function buildDeps(options: DepsOptions = {}) {
     search: unexpected,
     getMangaDetails: unexpected,
     listChapters: unexpected,
+    getChapterDetails: unexpected,
     fetchChapters: unexpected,
     getChapterPageCount: unexpected,
     fetchPageUrls,

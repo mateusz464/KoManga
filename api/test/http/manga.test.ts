@@ -48,6 +48,7 @@ function clientReturning(options: {
     search: unexpected,
     getMangaDetails,
     listChapters,
+    getChapterDetails: unexpected,
     fetchChapters,
     getChapterPageCount: unexpected,
     fetchPageUrls: unexpected,

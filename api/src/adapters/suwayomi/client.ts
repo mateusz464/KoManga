@@ -205,6 +205,10 @@ export class SuwayomiGraphQLClient implements SuwayomiClient {
     return (data.manga?.chapters?.nodes ?? []).map(mapChapter);
   }
 
+  getChapterDetails(_chapterId: string): Promise<never> {
+    throw new Error("Suwayomi getChapterDetails not implemented (KOM-143)");
+  }
+
   // Triggers Suwayomi's source scrape and returns the resulting chapters. A
   // source that genuinely has none answers with a "No chapters found" GraphQL
   // error — mapped to an empty list, not a 5xx (consistent with API-306's

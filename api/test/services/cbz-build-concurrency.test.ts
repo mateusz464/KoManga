@@ -88,6 +88,7 @@ function makeGatedSuwayomi(pageCount: number) {
     search: unexpected,
     getMangaDetails: unexpected,
     listChapters: unexpected,
+    getChapterDetails: unexpected,
     fetchChapters: unexpected,
     getChapterPageCount: unexpected,
     fetchPageUrls,
