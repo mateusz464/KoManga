@@ -22,6 +22,7 @@ import { ReaderService } from "../services/reader-service.js";
 import { ProgressService } from "../services/progress-service.js";
 import { LibraryService } from "../services/library-service.js";
 import { TrackerLinkService } from "../services/tracker-link-service.js";
+import { TrackingService } from "../services/tracking-service.js";
 import { sourcesRouter } from "../routes/sources.js";
 import { searchRouter } from "../routes/search.js";
 import { mangaRouter } from "../routes/manga.js";
@@ -36,6 +37,7 @@ import {
   protectedTrackerLinkRouter,
   publicTrackerLinkRouter,
 } from "../routes/tracker-link.js";
+import { trackerRouter } from "../routes/tracker.js";
 import { createErrorHandler, notFoundHandler } from "./error-handler.js";
 import { requireAuth } from "./auth.js";
 import { rateLimit, type RateLimitOptions } from "./rate-limit.js";
@@ -123,6 +125,24 @@ export function createApp(deps: AppDependencies): express.Express {
 
   if (trackerLinkService) {
     app.use("/api", protectedTrackerLinkRouter(trackerLinkService));
+  }
+
+  if (
+    deps.anilistTracker &&
+    deps.trackerAccountRepository &&
+    deps.trackerLinkRepository
+  ) {
+    app.use(
+      "/api",
+      trackerRouter(
+        new TrackingService(
+          deps.suwayomi,
+          deps.anilistTracker,
+          deps.trackerAccountRepository,
+          deps.trackerLinkRepository,
+        ),
+      ),
+    );
   }
 
   app.use("/api", sourcesRouter(new SourceService(deps.suwayomi)));
