@@ -1,8 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import {
-  AniListTracker,
-  type AniListTransport,
-} from "../../../src/adapters/trackers/anilist.js";
+import { AniListTracker } from "../../../src/adapters/trackers/anilist/anilist-tracker.js";
+import type { AniListTransport } from "../../../src/adapters/trackers/anilist/anilist-types.js";
 import {
   TrackerError,
   type Tracker,
