@@ -10,7 +10,12 @@ import {
 export function createRequestLogger(
   options: PinoLoggerOptions,
 ): RequestHandler {
-  const middleware = pinoHttp({ logger: createPino(options) });
+  const middleware = pinoHttp({
+    logger: createPino(options),
+    // /health is polled on a short interval by the container healthcheck and
+    // uptime monitoring; logging every hit drowns real request traffic.
+    autoLogging: { ignore: (req) => req.url === "/health" },
+  });
   // pino-http types its middleware against node's IncomingMessage/ServerResponse;
   // express's Request/Response extend those, so it is a valid RequestHandler.
   return middleware as unknown as RequestHandler;
