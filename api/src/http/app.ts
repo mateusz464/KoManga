@@ -20,6 +20,7 @@ import { DownloadService } from "../services/download-service.js";
 import { ReaderService } from "../services/reader-service.js";
 import { ProgressService } from "../services/progress-service.js";
 import { LibraryService } from "../services/library-service.js";
+import { TrackerLinkService } from "../services/tracker-link-service.js";
 import { sourcesRouter } from "../routes/sources.js";
 import { searchRouter } from "../routes/search.js";
 import { mangaRouter } from "../routes/manga.js";
@@ -30,6 +31,10 @@ import { downloadsRouter } from "../routes/downloads.js";
 import { readerRouter } from "../routes/reader.js";
 import { progressRouter } from "../routes/progress.js";
 import { libraryRouter } from "../routes/library.js";
+import {
+  protectedTrackerLinkRouter,
+  publicTrackerLinkRouter,
+} from "../routes/tracker-link.js";
 import { createErrorHandler, notFoundHandler } from "./error-handler.js";
 import { requireAuth } from "./auth.js";
 import { rateLimit, type RateLimitOptions } from "./rate-limit.js";
@@ -76,6 +81,18 @@ const DEFAULT_PAGE_CONCURRENCY = 6;
 export function createApp(deps: AppDependencies): express.Express {
   const app = express();
   const pageConcurrency = deps.pageConcurrency ?? DEFAULT_PAGE_CONCURRENCY;
+  const trackerLinkService =
+    deps.anilistTracker &&
+    deps.trackerAccountRepository &&
+    deps.anilistOAuth &&
+    deps.trackerLinkSessionTtlMs
+      ? new TrackerLinkService(
+          deps.anilistTracker,
+          deps.trackerAccountRepository,
+          deps.anilistOAuth,
+          deps.trackerLinkSessionTtlMs,
+        )
+      : undefined;
 
   // Before any routing, so even /health and rejected requests are logged.
   if (deps.requestLogger) {
@@ -92,8 +109,18 @@ export function createApp(deps: AppDependencies): express.Express {
     app.use("/api", rateLimit(deps.rateLimit));
   }
 
+  // The OAuth callback is intentionally public: AniList cannot send our bearer
+  // token back. It accepts only code+state and exposes no account data.
+  if (trackerLinkService) {
+    app.use("/api", publicTrackerLinkRouter(trackerLinkService));
+  }
+
   if (deps.authToken) {
     app.use("/api", requireAuth(deps.authToken));
+  }
+
+  if (trackerLinkService) {
+    app.use("/api", protectedTrackerLinkRouter(trackerLinkService));
   }
 
   app.use("/api", sourcesRouter(new SourceService(deps.suwayomi)));

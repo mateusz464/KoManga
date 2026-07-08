@@ -46,6 +46,11 @@ services:
       # Single-user secret — supplied from the host environment / `.env`, never
       # committed (CLAUDE.md §5/§9). Compose fails fast if it is unset.
       AUTH_TOKEN: ${AUTH_TOKEN:?AUTH_TOKEN must be set (see api/.env.example)}
+      # AniList OAuth app credentials — the secret stays server-side and is used
+      # only for code→token exchange during account linking.
+      ANILIST_CLIENT_ID: ${ANILIST_CLIENT_ID:?ANILIST_CLIENT_ID must be set (see api/.env.example)}
+      ANILIST_CLIENT_SECRET: ${ANILIST_CLIENT_SECRET:?ANILIST_CLIENT_SECRET must be set (see api/.env.example)}
+      ANILIST_REDIRECT_URI: ${ANILIST_REDIRECT_URI:?ANILIST_REDIRECT_URI must be set (see api/.env.example)}
       PORT: "3000"
       # Persistent paths point at the named volumes mounted below.
       DATABASE_PATH: /data/db/komanga.sqlite

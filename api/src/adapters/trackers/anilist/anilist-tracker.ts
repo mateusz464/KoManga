@@ -10,6 +10,7 @@ import {
   GET_LIST_ENTRY,
   SAVE_PROGRESS,
   SEARCH_MEDIA,
+  VIEWER,
 } from "./anilist-documents.js";
 import { isGraphQLResponseError } from "./anilist-errors.js";
 import { toIntId } from "./anilist-ids.js";
@@ -44,6 +45,18 @@ export class AniListTracker implements Tracker {
     } catch (cause) {
       throw new TrackerError("token_exchange", cause);
     }
+  }
+
+  async getViewer(accessToken: string): Promise<{ userId: string }> {
+    const data = await this.runGraphQL<{ Viewer?: { id?: number } }>(
+      VIEWER,
+      undefined,
+      accessToken,
+    );
+    if (typeof data.Viewer?.id !== "number") {
+      throw new TrackerError("graphql");
+    }
+    return { userId: String(data.Viewer.id) };
   }
 
   async searchMedia(title: string): Promise<TrackerMediaCandidate[]> {
@@ -83,12 +96,13 @@ export class AniListTracker implements Tracker {
   private async runGraphQL<T>(
     document: string,
     variables?: Record<string, unknown>,
+    accessToken = this.options.accessToken,
   ): Promise<T> {
     try {
       return (await this.transport.request(
         document,
         variables,
-        this.options.accessToken,
+        accessToken,
       )) as T;
     } catch (cause) {
       throw new TrackerError(

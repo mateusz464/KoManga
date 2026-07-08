@@ -27,6 +27,10 @@ export interface TrackerListEntry {
   readonly status: TrackerStatus;
 }
 
+export interface TrackerViewer {
+  readonly userId: string;
+}
+
 export type TrackerErrorKind = "graphql" | "transport" | "token_exchange";
 
 /**
@@ -35,6 +39,7 @@ export type TrackerErrorKind = "graphql" | "transport" | "token_exchange";
  */
 export interface Tracker {
   exchangeCode(code: string): Promise<TrackerToken>;
+  getViewer?(accessToken: string): Promise<TrackerViewer>;
   searchMedia(title: string): Promise<TrackerMediaCandidate[]>;
   getListEntry(mediaId: string): Promise<TrackerListEntry | null>;
   saveProgress(

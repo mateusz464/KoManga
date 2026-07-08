@@ -42,3 +42,11 @@ export const SAVE_PROGRESS = /* GraphQL */ `
     }
   }
 `;
+
+export const VIEWER = /* GraphQL */ `
+  query Viewer {
+    Viewer {
+      id
+    }
+  }
+`;
