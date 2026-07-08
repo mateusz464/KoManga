@@ -20,6 +20,8 @@ export interface TrackerMediaCandidate {
   readonly title: string;
   readonly alternateTitles: readonly string[];
   readonly coverImageUrl?: string;
+  readonly year?: number;
+  readonly format?: string;
 }
 
 export interface TrackerListEntry {

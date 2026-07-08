@@ -9,6 +9,7 @@ import type { ReadingProgressRepository } from "../services/ports/reading-progre
 import type { LibraryRepository } from "../services/ports/library-repository.js";
 import type { Tracker } from "../services/ports/tracker.js";
 import type { TrackerAccountRepository } from "../services/ports/tracker-account-repository.js";
+import type { TrackerLinkRepository } from "../services/ports/tracker-link-repository.js";
 import type { Logger } from "../services/ports/logger.js";
 import { SourceService } from "../services/source-service.js";
 import { SearchService } from "../services/search-service.js";
@@ -67,6 +68,7 @@ export interface AppDependencies {
   readonly libraryRepository?: LibraryRepository;
   readonly anilistTracker?: Tracker;
   readonly trackerAccountRepository?: TrackerAccountRepository;
+  readonly trackerLinkRepository?: TrackerLinkRepository;
   readonly anilistOAuth?: {
     readonly clientId: string;
     readonly clientSecret: string;
