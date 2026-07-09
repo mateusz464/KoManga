@@ -16,8 +16,12 @@ function Errors.text(err)
         return T(_("Server error (%1)."), tostring(err.status or "?"))
     elseif err.kind == "transport" then
         return _("Network error — is Wi-Fi on?")
+    elseif err.kind == "offline" then
+        return _("Network is offline.")
     elseif err.kind == "decode" then
         return _("Unexpected response from the server.")
+    elseif err.kind == "image" then
+        return _("The QR image could not be displayed.")
     elseif err.kind == "build" then
         return _("This chapter could not be prepared for reading.")
     end

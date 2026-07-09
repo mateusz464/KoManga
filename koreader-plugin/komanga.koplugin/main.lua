@@ -14,12 +14,14 @@ local Covers = require("state/covers")
 local Reader = require("state/reader")
 local Library = require("state/library")
 local Downloads = require("state/downloads")
+local TrackerLink = require("state/tracker_link")
 local Config = require("config")
 local CredentialPrompt = require("ui/credential_prompt")
 local ServerUrlPrompt = require("ui/server_url_prompt")
 local SourceBrowser = require("ui/source_browser")
 local MangaDetails = require("ui/manga_details")
 local LibraryView = require("ui/library_view")
+local TrackerLinkView = require("ui/tracker_link")
 local ReaderLauncher = require("ui/reader_launcher")
 local ReaderMenu = require("ui/reader_menu")
 local ProgressSync = require("ui/progress_sync")
@@ -109,6 +111,12 @@ function Komanga:addToMainMenu(menu_items)
                 text = _("Browse"),
                 callback = function()
                     self:showBrowse()
+                end,
+            },
+            {
+                text = _("Link AniList"),
+                callback = function()
+                    self:showTrackerLink()
                 end,
             },
             {
@@ -259,6 +267,23 @@ function Komanga:showBrowse()
     }
     UIManager:show(browser)
     browser:start()
+end
+
+function Komanga:showTrackerLink()
+    local view
+    local link = TrackerLink.new(self.api, {
+        on_poll = function()
+            if view then
+                view:pollStatus()
+            end
+        end,
+    })
+    view = TrackerLinkView:new{
+        link = link,
+        net = self.net,
+        auth = self.auth,
+    }
+    view:start()
 end
 
 function Komanga:showDetails(manga)
