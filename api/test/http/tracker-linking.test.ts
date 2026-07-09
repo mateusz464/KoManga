@@ -48,8 +48,13 @@ function pngParser(
 
 function tracker(overrides: Partial<Tracker> = {}) {
   const exchangeCode = vi.fn(async () => LINKED_TOKEN);
+  const getViewer = vi.fn(async () => ({
+    userId: "12345",
+    username: "AniListUser",
+  }));
   const port: Tracker = {
     exchangeCode,
+    getViewer,
     searchMedia: vi.fn(async () => []),
     getListEntry: vi.fn(async () => null),
     saveProgress: vi.fn(async () => ({
@@ -67,7 +72,10 @@ function accountRepository() {
   const upsert = vi.fn((account: TrackerAccount) => {
     accounts.set(account.service, account);
   });
-  const repo: TrackerAccountRepository = { get, upsert };
+  const deleteAccount = vi.fn((service: "anilist") => {
+    accounts.delete(service);
+  });
+  const repo: TrackerAccountRepository = { get, upsert, delete: deleteAccount };
   return { repo, get, upsert };
 }
 
@@ -204,7 +212,8 @@ describe("AniList account-linking endpoints (KOM-139)", () => {
       accessToken: LINKED_TOKEN.accessToken,
       tokenType: LINKED_TOKEN.tokenType,
       expiresAt: TOKEN_EXPIRES_AT.getTime(),
-      anilistUserId: expect.any(String),
+      anilistUserId: "12345",
+      username: "AniListUser",
     });
   });
 

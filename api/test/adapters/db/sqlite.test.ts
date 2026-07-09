@@ -129,6 +129,7 @@ const TRACKER_ACCOUNT: TrackerAccount = {
   tokenType: "Bearer",
   expiresAt: 1_900_000_000_000,
   anilistUserId: "12345",
+  username: "AniListUser",
 };
 
 const TRACKER_MATCH: TrackerMatch = {
@@ -167,6 +168,7 @@ describe("SQLite data layer (API-501)", () => {
           "token_type",
           "expires_at",
           "anilist_user_id",
+          "username",
         ]),
       );
       expect(columnNames(db, "tracker_link")).toEqual(
@@ -460,6 +462,7 @@ describe("SQLite data layer (API-501)", () => {
         accessToken: "replacement-secret",
         expiresAt: 1_900_000_060_000,
         anilistUserId: "67890",
+        username: "ReplacementUser",
       });
 
       const rows = db
@@ -471,7 +474,40 @@ describe("SQLite data layer (API-501)", () => {
         accessToken: "replacement-secret",
         expiresAt: 1_900_000_060_000,
         anilistUserId: "67890",
+        username: "ReplacementUser",
       });
+    });
+
+    it("round-trips the linked AniList username", () => {
+      const { trackerAccounts } = repos();
+
+      trackerAccounts.upsert({
+        ...TRACKER_ACCOUNT,
+        username: "ReadableName",
+      });
+
+      expect(trackerAccounts.get("anilist")?.username).toBe("ReadableName");
+    });
+
+    it("deletes the stored account without touching tracker_link rows", () => {
+      const { trackerAccounts, trackerLinks } = repos();
+
+      trackerAccounts.upsert(TRACKER_ACCOUNT);
+      trackerLinks.setMatch(TRACKER_MATCH);
+
+      trackerAccounts.delete("anilist");
+
+      expect(trackerAccounts.get("anilist")).toBeUndefined();
+      expect(trackerLinks.get(TRACKER_LINK.mangaId, "anilist")).toEqual(
+        TRACKER_LINK,
+      );
+    });
+
+    it("delete is idempotent for an absent account", () => {
+      const { trackerAccounts } = repos();
+
+      expect(() => trackerAccounts.delete("anilist")).not.toThrow();
+      expect(trackerAccounts.get("anilist")).toBeUndefined();
     });
   });
 
@@ -612,11 +648,14 @@ describe("SQLite data layer (API-501)", () => {
       const mock: TrackerAccountRepository = {
         get: vi.fn().mockReturnValue(TRACKER_ACCOUNT),
         upsert: vi.fn(),
+        delete: vi.fn(),
       };
 
       mock.upsert(TRACKER_ACCOUNT);
+      mock.delete("anilist");
       expect(mock.get("anilist")).toBe(TRACKER_ACCOUNT);
       expect(mock.upsert).toHaveBeenCalledWith(TRACKER_ACCOUNT);
+      expect(mock.delete).toHaveBeenCalledWith("anilist");
     });
 
     it("TrackerLinkRepository can be satisfied by a mock", () => {

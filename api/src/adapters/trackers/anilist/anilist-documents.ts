@@ -47,6 +47,7 @@ export const VIEWER = /* GraphQL */ `
   query Viewer {
     Viewer {
       id
+      name
     }
   }
 `;

@@ -32,6 +32,7 @@ export interface TrackerListEntry {
 
 export interface TrackerViewer {
   readonly userId: string;
+  readonly username: string;
 }
 
 export type TrackerErrorKind = "graphql" | "transport" | "token_exchange";

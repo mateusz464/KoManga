@@ -6,10 +6,12 @@ export interface TrackerAccount {
   readonly tokenType: string;
   readonly expiresAt: number; // epoch ms
   readonly anilistUserId: string;
+  readonly username: string;
 }
 
 export interface TrackerAccountRepository {
   get(service: TrackerService): TrackerAccount | undefined;
   // Single-user account storage: a new account for a service replaces the old one.
   upsert(account: TrackerAccount): void;
+  delete(service: TrackerService): void;
 }

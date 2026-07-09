@@ -5,6 +5,14 @@ import type { TrackingService } from "../services/tracking-service.js";
 export function trackerRouter(service: TrackingService): Router {
   const router = Router();
 
+  router.get("/tracker/anilist/account", (_req, res) => {
+    res.json({ data: service.accountStatus() });
+  });
+
+  router.delete("/tracker/anilist/account", (_req, res) => {
+    res.json({ data: service.unlinkAccount() });
+  });
+
   router.get("/tracker/manga/:mangaId/candidates", async (req, res) => {
     res.json({ data: await service.candidates(req.params.mangaId) });
   });

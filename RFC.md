@@ -152,7 +152,14 @@ Account linking uses AniList OAuth:
    `GET /api/tracker/anilist/callback?code=&state=`.
 5. The API accepts the callback only if the `state` is known, unexpired, and not
    already consumed; then it exchanges the code server-side and stores the
-   resulting AniList account token.
+   resulting AniList account token, AniList user id, and username.
+
+The linked account can be inspected by an authenticated client through
+`GET /api/tracker/anilist/account`; it returns only public account display
+fields, never OAuth token material. `DELETE /api/tracker/anilist/account`
+unlinks the account idempotently. Unlinking removes only the account row:
+confirmed manga matches remain because they are account-agnostic AniList media
+ids, so relinking can resume sync without rematching.
 
 Manga matching is explicit. The API can search AniList candidates using the
 Suwayomi manga title, but the user confirms the media id per manga. A manga can
@@ -189,8 +196,8 @@ This profile split is the main reason a thin client + fat server works for the K
 - **cache_index** — bookkeeping for the ephemeral session cache (keys, sizes, TTLs) to drive pruning.
 - **library** — followed manga ids plus lightweight local display/cache fields owned by KoManga.
 - **tracker_account** — one row per tracker service (currently `anilist`) with
-  OAuth access token metadata and AniList user id. Single-user account storage
-  means relinking replaces the previous service row.
+  OAuth access token metadata, AniList user id, and username. Single-user
+  account storage means relinking replaces the previous service row.
 - **tracker_link** — per manga tracker metadata: service, confirmed AniList
   media id (nullable while unmatched), `last_synced_chapter`, and
   `do_not_track`.
@@ -217,6 +224,8 @@ Source/catalogue/chapter metadata is *not* duplicated here; it's queried from Su
 | `GET` | `/api/tracker/anilist/link/:sessionId/qr.png` | Protected QR PNG for the AniList authorize URL |
 | `GET` | `/api/tracker/anilist/link/:sessionId/status` | Poll account-link status (`pending`, `linked`, `expired`) |
 | `GET` | `/api/tracker/anilist/callback?code=&state=` | Public AniList OAuth callback; validates single-use short-TTL state |
+| `GET` | `/api/tracker/anilist/account` | Read linked AniList account status without token material |
+| `DELETE` | `/api/tracker/anilist/account` | Unlink the AniList account; manga tracker matches are preserved |
 | `GET` | `/api/tracker/manga/:mangaId/candidates` | Search AniList candidate matches for a Suwayomi manga |
 | `GET` | `/api/tracker/manga/:mangaId/status` | Read account/match/do-not-track tracking state for one manga |
 | `PUT`/`DELETE` | `/api/tracker/manga/:mangaId/match` | Confirm or clear the AniList media match |

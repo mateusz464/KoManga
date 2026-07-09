@@ -69,6 +69,10 @@ describe("Tracker port", () => {
         progress: 8,
         status: "reading" as const,
       })),
+      getViewer: vi.fn(async () => ({
+        userId: "12345",
+        username: "AniListUser",
+      })),
     };
 
     await expect(mock.getListEntry("30002")).resolves.toEqual({
@@ -204,6 +208,33 @@ describe("AniListTracker (port contract)", () => {
         { mediaId: 30002 },
         "linked-account-token",
       );
+    });
+
+    it("getViewer maps the AniList user id and username", async () => {
+      const { transport, request } = transportReturning({
+        graphql: {
+          Viewer: {
+            id: 12345,
+            name: "AniListUser",
+          },
+        },
+      });
+      const client = tracker(transport);
+
+      await expect(client.getViewer("linked-account-token")).resolves.toEqual({
+        userId: "12345",
+        username: "AniListUser",
+      });
+
+      const [document, variables, accessToken] = request.mock.calls[0] as [
+        string,
+        undefined,
+        string,
+      ];
+      expect(document).toMatch(/\bid\b/);
+      expect(document).toMatch(/\bname\b/);
+      expect(variables).toBeUndefined();
+      expect(accessToken).toBe("linked-account-token");
     });
 
     it("saveProgress maps tracker status into AniList status and returns the saved entry", async () => {

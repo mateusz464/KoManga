@@ -86,6 +86,7 @@ export class TrackerLinkService {
       tokenType: token.tokenType,
       expiresAt: tokenExpiresAt(token),
       anilistUserId: viewer?.userId ?? "unknown",
+      username: viewer?.username ?? "unknown",
     });
     session.status = "linked";
 

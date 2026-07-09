@@ -39,7 +39,8 @@ const MIGRATIONS = `
     access_token    TEXT    NOT NULL,
     token_type      TEXT    NOT NULL,
     expires_at      INTEGER NOT NULL,
-    anilist_user_id TEXT    NOT NULL
+    anilist_user_id TEXT    NOT NULL,
+    username        TEXT    NOT NULL
   );
 
   CREATE TABLE IF NOT EXISTS tracker_link (
@@ -75,5 +76,11 @@ export function openDatabase(file: string): AppDatabase {
   db.pragma("foreign_keys = ON");
   db.exec(MIGRATIONS);
   addColumnIfMissing(db, "library", "title", "TEXT");
+  addColumnIfMissing(
+    db,
+    "tracker_account",
+    "username",
+    "TEXT NOT NULL DEFAULT ''",
+  );
   return db;
 }

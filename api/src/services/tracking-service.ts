@@ -51,6 +51,16 @@ export interface TrackerStatusView {
   readonly doNotTrack: boolean;
 }
 
+export type TrackerAccountStatus =
+  | { readonly linked: false }
+  | {
+      readonly linked: true;
+      readonly account: {
+        readonly anilistUserId: string;
+        readonly username: string;
+      };
+    };
+
 export class TrackingService {
   constructor(
     private readonly suwayomi: SuwayomiClient,
@@ -66,6 +76,26 @@ export class TrackingService {
       mangaId,
       candidates: await this.tracker.searchMedia(manga.title),
     };
+  }
+
+  accountStatus(): TrackerAccountStatus {
+    const account = this.accounts.get(SERVICE);
+    if (!account) {
+      return { linked: false };
+    }
+
+    return {
+      linked: true,
+      account: {
+        anilistUserId: account.anilistUserId,
+        username: account.username,
+      },
+    };
+  }
+
+  unlinkAccount(): { readonly linked: false } {
+    this.accounts.delete(SERVICE);
+    return { linked: false };
   }
 
   setMatch(

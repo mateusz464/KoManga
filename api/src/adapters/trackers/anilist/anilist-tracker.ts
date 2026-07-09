@@ -5,6 +5,7 @@ import {
   type TrackerMediaCandidate,
   type TrackerStatus,
   type TrackerToken,
+  type TrackerViewer,
 } from "../../../services/ports/tracker.js";
 import {
   GET_LIST_ENTRY,
@@ -47,16 +48,17 @@ export class AniListTracker implements Tracker {
     }
   }
 
-  async getViewer(accessToken: string): Promise<{ userId: string }> {
-    const data = await this.runGraphQL<{ Viewer?: { id?: number } }>(
-      VIEWER,
-      undefined,
-      accessToken,
-    );
-    if (typeof data.Viewer?.id !== "number") {
+  async getViewer(accessToken: string): Promise<TrackerViewer> {
+    const data = await this.runGraphQL<{
+      Viewer?: { id?: number; name?: string };
+    }>(VIEWER, undefined, accessToken);
+    if (
+      typeof data.Viewer?.id !== "number" ||
+      typeof data.Viewer.name !== "string"
+    ) {
       throw new TrackerError("graphql");
     }
-    return { userId: String(data.Viewer.id) };
+    return { userId: String(data.Viewer.id), username: data.Viewer.name };
   }
 
   async searchMedia(title: string): Promise<TrackerMediaCandidate[]> {

@@ -106,6 +106,7 @@ function accountRepository(account?: TrackerAccount): {
     repo: {
       get,
       upsert: vi.fn(),
+      delete: vi.fn(),
     },
     get,
   };
@@ -120,6 +121,7 @@ function linkedAccount(
     tokenType: "Bearer",
     expiresAt: NOW_FUTURE,
     anilistUserId: "12345",
+    username: "matt",
     ...overrides,
   };
 }

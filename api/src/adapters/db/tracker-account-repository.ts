@@ -11,6 +11,7 @@ interface Row {
   token_type: string;
   expires_at: number;
   anilist_user_id: string;
+  username: string;
 }
 
 function toAccount(row: Row): TrackerAccount {
@@ -20,6 +21,7 @@ function toAccount(row: Row): TrackerAccount {
     tokenType: row.token_type,
     expiresAt: row.expires_at,
     anilistUserId: row.anilist_user_id,
+    username: row.username,
   };
 }
 
@@ -37,14 +39,21 @@ export class SqliteTrackerAccountRepository implements TrackerAccountRepository 
     this.db
       .prepare(
         `INSERT INTO tracker_account
-           (service, access_token, token_type, expires_at, anilist_user_id)
-         VALUES (@service, @accessToken, @tokenType, @expiresAt, @anilistUserId)
+           (service, access_token, token_type, expires_at, anilist_user_id, username)
+         VALUES (@service, @accessToken, @tokenType, @expiresAt, @anilistUserId, @username)
          ON CONFLICT(service) DO UPDATE SET
            access_token    = excluded.access_token,
            token_type      = excluded.token_type,
            expires_at      = excluded.expires_at,
-           anilist_user_id = excluded.anilist_user_id`,
+           anilist_user_id = excluded.anilist_user_id,
+           username        = excluded.username`,
       )
       .run(account);
+  }
+
+  delete(service: TrackerService): void {
+    this.db
+      .prepare("DELETE FROM tracker_account WHERE service = ?")
+      .run(service);
   }
 }
