@@ -213,6 +213,14 @@ function ApiClient:linkStatus(sessionId)
     )
 end
 
+function ApiClient:trackerAccount()
+    return self:_request("GET", join_url(self.base_url, "/api/tracker/anilist/account"))
+end
+
+function ApiClient:trackerUnlink()
+    return self:_request("DELETE", join_url(self.base_url, "/api/tracker/anilist/account"))
+end
+
 function ApiClient:trackerCandidates(mangaId)
     return self:_request("GET", join_url(self.base_url, "/api/tracker/manga/" .. mangaId .. "/candidates"))
 end

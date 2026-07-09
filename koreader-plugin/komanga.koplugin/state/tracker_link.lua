@@ -25,6 +25,7 @@ function TrackerLink.new(api, opts)
         clock = opts.clock or default_clock(),
         poll_interval_seconds = opts.poll_interval_seconds or DEFAULT_POLL_INTERVAL_SECONDS,
         on_poll = opts.on_poll,
+        settings = opts.settings,
         status = "idle",
         session_id = nil,
         qr_url = nil,
@@ -128,6 +129,9 @@ function TrackerLink:applyStatus(data, err)
         self.status = "linked"
         self.account = data.account
         self.error = nil
+        if self.settings then
+            self.settings:setTrackerLinked(true)
+        end
         self:cancelPoll()
         return true, nil
     elseif status == "expired" then

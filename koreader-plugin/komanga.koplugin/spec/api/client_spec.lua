@@ -21,6 +21,7 @@
 --   POST   /api/tracker/anilist/link
 --   GET    /api/tracker/anilist/link/:sessionId/status
 --   GET    /api/tracker/anilist/link/:sessionId/qr.png  (raw PNG bytes)
+--   GET/DELETE /api/tracker/anilist/account
 --   GET    /api/tracker/manga/:mangaId/candidates
 --   GET/PUT/DELETE /api/tracker/manga/:mangaId/{status,match}
 --   POST   /api/tracker/manga/:mangaId/do-not-track
@@ -220,6 +221,32 @@ describe("ApiClient", function()
             assert.are.equal("GET", req.method)
             assert.are.equal(BASE .. "/api/tracker/anilist/link/link-123/status", req.url)
             assert.are.same({ status = "pending" }, data)
+        end)
+
+        it("reads the linked AniList account with GET /api/tracker/anilist/account", function()
+            local client, rec = make(FakeTransport.ok({
+                linked = true,
+                account = { anilistUserId = "100", username = "matt" },
+            }))
+            local data = client:trackerAccount()
+
+            local req = sole(rec)
+            assert.are.equal("GET", req.method)
+            assert.are.equal(BASE .. "/api/tracker/anilist/account", req.url)
+            assert.are.same({
+                linked = true,
+                account = { anilistUserId = "100", username = "matt" },
+            }, data)
+        end)
+
+        it("unlinks the AniList account with DELETE /api/tracker/anilist/account", function()
+            local client, rec = make(FakeTransport.ok({ linked = false }))
+            local data = client:trackerUnlink()
+
+            local req = sole(rec)
+            assert.are.equal("DELETE", req.method)
+            assert.are.equal(BASE .. "/api/tracker/anilist/account", req.url)
+            assert.are.same({ linked = false }, data)
         end)
 
         it("gets tracker candidates with GET /api/tracker/manga/:mangaId/candidates", function()
@@ -689,6 +716,16 @@ describe("ApiClient", function()
         it("maps a 401 from a tracker endpoint to an http error the auth flow can detect", function()
             local client = make(FakeTransport.httpError(401, "UNAUTHORIZED", "Missing or invalid credentials"))
             local data, err = client:linkStart()
+
+            assert.is_nil(data)
+            assert.are.equal("http", err.kind)
+            assert.are.equal(401, err.status)
+            assert.are.equal("UNAUTHORIZED", err.code)
+        end)
+
+        it("maps a 401 from the tracker account endpoint to an http error the auth flow can detect", function()
+            local client = make(FakeTransport.httpError(401, "UNAUTHORIZED", "Missing or invalid credentials"))
+            local data, err = client:trackerAccount()
 
             assert.is_nil(data)
             assert.are.equal("http", err.kind)

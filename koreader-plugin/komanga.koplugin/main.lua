@@ -14,6 +14,7 @@ local Covers = require("state/covers")
 local Reader = require("state/reader")
 local Library = require("state/library")
 local Downloads = require("state/downloads")
+local TrackerAccount = require("state/tracker_account")
 local TrackerLink = require("state/tracker_link")
 local Config = require("config")
 local CredentialPrompt = require("ui/credential_prompt")
@@ -21,11 +22,13 @@ local ServerUrlPrompt = require("ui/server_url_prompt")
 local SourceBrowser = require("ui/source_browser")
 local MangaDetails = require("ui/manga_details")
 local LibraryView = require("ui/library_view")
+local TrackerManage = require("ui/tracker_manage")
 local TrackerLinkView = require("ui/tracker_link")
 local ReaderLauncher = require("ui/reader_launcher")
 local ReaderMenu = require("ui/reader_menu")
 local ProgressSync = require("ui/progress_sync")
 local DownloadDelete = require("ui/download_delete")
+local Retry = require("ui/retry")
 local _ = require("gettext")
 
 local Komanga = WidgetContainer:extend{
@@ -114,9 +117,12 @@ function Komanga:addToMainMenu(menu_items)
                 end,
             },
             {
-                text = _("Link AniList"),
+                text = self:trackerMenuText(),
+                text_func = function()
+                    return self:trackerMenuText()
+                end,
                 callback = function()
-                    self:showTrackerLink()
+                    self:showTrackerEntry()
                 end,
             },
             {
@@ -133,6 +139,13 @@ function Komanga:addToMainMenu(menu_items)
             },
         },
     }
+end
+
+function Komanga:trackerMenuText()
+    if TrackerAccount.cachedLinked(self.settings) then
+        return _("Manage AniList")
+    end
+    return _("Link AniList")
 end
 
 -- Rebuild the API client on save: it captured the base URL at construction, so
@@ -269,9 +282,39 @@ function Komanga:showBrowse()
     browser:start()
 end
 
+function Komanga:showTrackerEntry()
+    local account = TrackerAccount.new(self.api, self.settings)
+    Retry.run{
+        net = self.net,
+        auth = self.auth,
+        text = _("Checking AniList account…"),
+        task = function()
+            return account:fetchAccount()
+        end,
+        on_success = function(data)
+            account:applyAccount(data, nil)
+            if account:isLinked() then
+                self:showTrackerManage(account)
+            else
+                self:showTrackerLink()
+            end
+        end,
+    }
+end
+
+function Komanga:showTrackerManage(account)
+    local view = TrackerManage:new{
+        account = account,
+        net = self.net,
+        auth = self.auth,
+    }
+    view:start()
+end
+
 function Komanga:showTrackerLink()
     local view
     local link = TrackerLink.new(self.api, {
+        settings = self.settings,
         on_poll = function()
             if view then
                 view:pollStatus()

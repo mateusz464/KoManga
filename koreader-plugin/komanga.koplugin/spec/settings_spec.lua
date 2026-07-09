@@ -38,4 +38,19 @@ describe("settings", function()
         assert.are.equal("https://my.tunnel.example", s:getApiBaseUrl())
         assert.are_not.equal(Config.api_base_url, s:getApiBaseUrl())
     end)
+
+    it("defaults the cached AniList linked flag to false", function()
+        local s = Settings.new(FakeStore.new())
+        assert.is_false(s:isTrackerLinked())
+    end)
+
+    it("persists the cached AniList linked flag", function()
+        local store = FakeStore.new()
+        local s = Settings.new(store)
+
+        s:setTrackerLinked(true)
+
+        assert.is_true(s:isTrackerLinked())
+        assert.is_true(store.flushes > 0)
+    end)
 end)

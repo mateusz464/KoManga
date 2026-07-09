@@ -11,7 +11,9 @@
 -- pending, and terminal/cancelled states schedule no further work.
 
 local TrackerLink = require("state.tracker_link")
+local Settings = require("settings")
 local FakeApi = require("spec.support.fake_api")
+local FakeStore = require("spec.support.fake_store")
 
 local HTTP_ERROR = { kind = "http", status = 502, code = "BAD_GATEWAY" }
 local TRANSPORT_ERROR = { kind = "transport", message = "wifi asleep" }
@@ -45,11 +47,13 @@ local function make(opts)
     opts = opts or {}
     local api = FakeApi.new(opts.api or {})
     local clock = opts.clock or fake_clock()
+    local settings = Settings.new(opts.store or FakeStore.new())
     local link = TrackerLink.new(api, {
         clock = clock,
         poll_interval_seconds = opts.poll_interval_seconds or 3,
+        settings = settings,
     })
-    return link, api, clock
+    return link, api, clock, settings
 end
 
 describe("tracker account-link state", function()
@@ -145,7 +149,7 @@ describe("tracker account-link state", function()
         end)
 
         it("applies linked as a terminal success and stops polling", function()
-            local link, _, clock = make{
+            local link, _, clock, settings = make{
                 api = {
                     linkStart = { sessionId = "link-123", qrUrl = "/qr" },
                 },
@@ -160,6 +164,7 @@ describe("tracker account-link state", function()
             assert.are.equal("linked", link:getStatus())
             assert.are.same({ username = "matt" }, link:getAccount())
             assert.is_nil(link:getError())
+            assert.is_true(settings:isTrackerLinked())
             assert.is_true(scheduled.cancelled)
             assert.are.equal(1, #clock.scheduled)
         end)
