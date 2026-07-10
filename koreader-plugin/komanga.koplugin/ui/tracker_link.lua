@@ -7,6 +7,7 @@ local Geom = require("ui/geometry")
 local Screen = require("device").screen
 local TextBoxWidget = require("ui/widget/textboxwidget")
 local UIManager = require("ui/uimanager")
+local VerticalGroup = require("ui/widget/verticalgroup")
 local VerticalSpan = require("ui/widget/verticalspan")
 local QrImage = require("ui/qr_image")
 local ErrorText = require("ui/errors")
@@ -139,17 +140,21 @@ function TrackerLinkView:qrWidget(bytes, width)
     }
 end
 
+-- ButtonDialog:addWidget reinit()s the dialog, freeing earlier parentless
+-- widgets so they repaint blank — all content must go in as ONE group.
 function TrackerLinkView:addContent(dialog, lines, qr_bytes)
     local width = dialog:getAddedWidgetAvailableWidth()
     local qr = self:qrWidget(qr_bytes, width)
+    local content = VerticalGroup:new{}
     for _, line in ipairs(lines) do
-        dialog:addWidget(self:textWidget(line, width))
-        dialog:addWidget(VerticalSpan:new{ width = 12 })
+        table.insert(content, self:textWidget(line, width))
+        table.insert(content, VerticalSpan:new{ width = 12 })
     end
     if qr then
-        dialog:addWidget(qr)
-        dialog:addWidget(VerticalSpan:new{ width = 12 })
+        table.insert(content, qr)
+        table.insert(content, VerticalSpan:new{ width = 12 })
     end
+    dialog:addWidget(content)
 end
 
 function TrackerLinkView:showDialog(title, lines, buttons, qr_bytes)

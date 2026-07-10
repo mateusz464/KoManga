@@ -4,6 +4,7 @@ local Font = require("ui/font")
 local InfoMessage = require("ui/widget/infomessage")
 local TextBoxWidget = require("ui/widget/textboxwidget")
 local UIManager = require("ui/uimanager")
+local VerticalGroup = require("ui/widget/verticalgroup")
 local VerticalSpan = require("ui/widget/verticalspan")
 local Retry = require("ui/retry")
 local _ = require("gettext")
@@ -66,8 +67,12 @@ function TrackerManage:render()
         },
     }
     local width = self.dialog:getAddedWidgetAvailableWidth()
-    self.dialog:addWidget(self:textWidget(_("Linked account: ") .. username, width))
-    self.dialog:addWidget(VerticalSpan:new{ width = 12 })
+    -- Single addWidget call: ButtonDialog:addWidget reinit()s the dialog,
+    -- freeing earlier parentless widgets so they repaint blank.
+    self.dialog:addWidget(VerticalGroup:new{
+        self:textWidget(_("Linked account: ") .. username, width),
+        VerticalSpan:new{ width = 12 },
+    })
     UIManager:show(self.dialog, "flashui")
 end
 
