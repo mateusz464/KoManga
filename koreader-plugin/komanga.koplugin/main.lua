@@ -30,6 +30,7 @@ local TrackerMatchView = require("ui/tracker_match")
 local ReaderLauncher = require("ui/reader_launcher")
 local ReaderMenu = require("ui/reader_menu")
 local ProgressSync = require("ui/progress_sync")
+local CompletionSync = require("ui/completion_sync")
 local DownloadDelete = require("ui/download_delete")
 local Retry = require("ui/retry")
 local _ = require("gettext")
@@ -62,6 +63,11 @@ function Komanga:init()
             net = self.net,
             api = self.api,
         }
+        self.completion_sync = CompletionSync.new{
+            ui = self.ui,
+            net = self.net,
+            api = self.api,
+        }
     end
     self.ui.menu:registerToMainMenu(self)
 end
@@ -72,11 +78,17 @@ function Komanga:onReaderReady(doc_settings)
     if self.progress_sync then
         self.progress_sync:onReaderReady(doc_settings)
     end
+    if self.completion_sync then
+        self.completion_sync:onReaderReady(doc_settings)
+    end
 end
 
 function Komanga:onPageUpdate(page)
     if self.progress_sync then
         self.progress_sync:onPageTurn(page)
+    end
+    if self.completion_sync then
+        self.completion_sync:onPageUpdate(page)
     end
 end
 
