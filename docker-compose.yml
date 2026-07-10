@@ -60,7 +60,7 @@ services:
       DATABASE_PATH: /data/db/komanga.sqlite
       CBZ_STORE_PATH: /data/downloads
     ports:
-      - "0.0.0.0:3000:3000"
+      - "127.0.0.1:3000:3000"
     volumes:
       # Our SQLite DB (reading progress, downloads, library — RFC §7).
       - api-data:/data/db
