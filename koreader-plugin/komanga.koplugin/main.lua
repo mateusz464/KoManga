@@ -16,6 +16,7 @@ local Library = require("state/library")
 local Downloads = require("state/downloads")
 local TrackerAccount = require("state/tracker_account")
 local TrackerLink = require("state/tracker_link")
+local TrackerMatch = require("state/tracker_match")
 local Config = require("config")
 local CredentialPrompt = require("ui/credential_prompt")
 local ServerUrlPrompt = require("ui/server_url_prompt")
@@ -24,6 +25,8 @@ local MangaDetails = require("ui/manga_details")
 local LibraryView = require("ui/library_view")
 local TrackerManage = require("ui/tracker_manage")
 local TrackerLinkView = require("ui/tracker_link")
+local TrackerManager = require("ui/tracker_manager")
+local TrackerMatchView = require("ui/tracker_match")
 local ReaderLauncher = require("ui/reader_launcher")
 local ReaderMenu = require("ui/reader_menu")
 local ProgressSync = require("ui/progress_sync")
@@ -123,6 +126,12 @@ function Komanga:addToMainMenu(menu_items)
                 end,
                 callback = function()
                     self:showTrackerEntry()
+                end,
+            },
+            {
+                text = _("Tracking"),
+                callback = function()
+                    self:showTrackingManager()
                 end,
             },
             {
@@ -329,8 +338,52 @@ function Komanga:showTrackerLink()
     view:start()
 end
 
+function Komanga:showTrackerMatch(match, title, on_changed)
+    local view = TrackerMatchView:new{
+        match = match,
+        manga_title = title,
+        net = self.net,
+        auth = self.auth,
+        on_changed = on_changed,
+    }
+    UIManager:show(view)
+    view:start()
+end
+
+function Komanga:removeTrackerMatch(match, on_changed)
+    TrackerMatchView.confirmClear{
+        match = match,
+        net = self.net,
+        auth = self.auth,
+        on_changed = on_changed,
+    }
+end
+
+function Komanga:showTrackingManager()
+    local manager
+    manager = TrackerManager:new{
+        library = Library.new(self.api, Downloads.open()),
+        api = self.api,
+        net = self.net,
+        auth = self.auth,
+        manage = function(entry, match, on_changed)
+            if match:isMatched() then
+                self:removeTrackerMatch(match, on_changed)
+            else
+                self:showTrackerMatch(match, Library.entryTitle(entry), on_changed)
+            end
+        end,
+        close_callback = function()
+            UIManager:close(manager)
+        end,
+    }
+    UIManager:show(manager)
+    manager:start()
+end
+
 function Komanga:showDetails(manga)
     local details_state = Details.new(self.api, manga.id)
+    local tracker = TrackerMatch.new(self.api, manga.id)
     local details
     details = MangaDetails:new{
         details = details_state,
@@ -338,6 +391,13 @@ function Komanga:showDetails(manga)
         manga_stub = manga,
         net = self.net,
         auth = self.auth,
+        tracker = tracker,
+        open_tracker_match = function(match, title, on_changed)
+            self:showTrackerMatch(match, title, on_changed)
+        end,
+        remove_tracker_match = function(match, on_changed)
+            self:removeTrackerMatch(match, on_changed)
+        end,
         open_reader = function(chapter)
             self:openReader(details_state, chapter)
         end,

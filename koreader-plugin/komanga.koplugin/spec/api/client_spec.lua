@@ -469,6 +469,44 @@ describe("ApiClient", function()
         end)
     end)
 
+    describe("tracker candidate cover (public raw bytes)", function()
+        local JPEG = "\255\216\255candidate-cover"
+        local URL = "https://s4.anilist.co/file/anilistcdn/media/manga/cover.jpg"
+
+        local function raw_ok()
+            return { status = 200, body = JPEG, headers = {} }
+        end
+
+        it("GETs the public candidate cover URL and returns its bytes", function()
+            local client, rec = make(raw_ok)
+
+            local bytes, err = client:fetchTrackerCover(URL)
+
+            assert.is_nil(err)
+            assert.are.equal(JPEG, bytes)
+            assert.are.equal("GET", sole(rec).method)
+            assert.are.equal(URL, sole(rec).url)
+        end)
+
+        it("does not send the KoManga bearer credential to the image CDN", function()
+            local client, rec = make(raw_ok)
+
+            client:fetchTrackerCover(URL)
+
+            assert.is_nil(sole(rec).headers["Authorization"])
+        end)
+
+        it("rejects a non-http URL without touching the transport", function()
+            local client, rec = make(raw_ok)
+
+            local bytes, err = client:fetchTrackerCover("file:///tmp/cover.jpg")
+
+            assert.is_nil(bytes)
+            assert.are.equal("transport", err.kind)
+            assert.are.equal(0, #rec.requests)
+        end)
+    end)
+
     describe("tracker link QR (raw bytes)", function()
         -- Distinct from JSON endpoints: the QR endpoint serves PNG bytes directly,
         -- so fetchLinkQr returns the raw body, NOT the { data } envelope.

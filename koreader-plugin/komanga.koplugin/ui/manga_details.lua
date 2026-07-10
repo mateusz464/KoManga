@@ -25,10 +25,14 @@ local MangaDetails = Menu:extend{
     auth = nil,       -- state/auth.lua (optional — routes a 401 to the prompt)
     manga_stub = nil, -- the search-result row (title for the header before load)
     open_reader = nil, -- function(chapter): opens the chapter in the reader
+    tracker = nil, -- state/tracker_match.lua instance
+    open_tracker_match = nil, -- function(match, title, on_changed)
+    remove_tracker_match = nil, -- function(match, on_changed)
 }
 
 function MangaDetails:init()
     self.item_table = {}
+    self.tracker_loaded = false
     Menu.init(self)
 end
 
@@ -66,6 +70,7 @@ function MangaDetails:loadDetails()
                 self:loadCover()
                 self:loadProgress()
                 self:loadFollowState()
+                self:loadTrackerStatus()
             end
         end,
     })
@@ -115,6 +120,47 @@ function MangaDetails:loadFollowState()
             self:render()
         end,
     })
+end
+
+function MangaDetails:loadTrackerStatus()
+    if not self.tracker then
+        return
+    end
+    self.tracker_loaded = false
+    self:render()
+    self.net:run(function()
+        return self.tracker:fetchStatus()
+    end, {
+        text = _("Checking AniList tracking…"),
+        on_result = function(data, err)
+            self.tracker_loaded = true
+            self.tracker:applyStatus(data, err)
+            if err then
+                self:handleError(err)
+            end
+            self:render()
+        end,
+    })
+end
+
+function MangaDetails:changeTracking()
+    if not self.tracker then
+        return
+    end
+    local changed = function()
+        self.tracker_loaded = true
+        self:render()
+    end
+    if self.tracker:isMatched() then
+        if self.remove_tracker_match then
+            self.remove_tracker_match(self.tracker, changed)
+        end
+        return
+    end
+    if self.open_tracker_match then
+        local manga = self.details:getManga()
+        self.open_tracker_match(self.tracker, manga and manga.title, changed)
+    end
 end
 
 -- --- Follow / unfollow ---------------------------------------------------------
@@ -185,6 +231,28 @@ function MangaDetails:render()
             self.covers:getBytes(self.details:getMangaId()), COVER_W, COVER_H)
     end
     item_table[#item_table + 1] = header
+
+    if self.tracker then
+        local status_line = self.tracker:statusLine()
+        if not self.tracker_loaded then
+            item_table[#item_table + 1] = { text = _("Tracking: loading…") }
+        elseif self.tracker:getError() then
+            item_table[#item_table + 1] = {
+                text = _("Tracking unavailable"),
+                mandatory = _("Tap to retry"),
+                callback = function() self:loadTrackerStatus() end,
+            }
+        else
+            if status_line then
+                item_table[#item_table + 1] = { text = _(status_line) }
+            end
+            item_table[#item_table + 1] = {
+                text = self.tracker:isMatched()
+                    and _("Remove from tracking") or _("Track on AniList"),
+                callback = function() self:changeTracking() end,
+            }
+        end
+    end
 
     local chapters = self.details:getChapters()
     if not manga then

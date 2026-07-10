@@ -88,7 +88,7 @@ end
 -- envelope on top of it; raw-byte endpoints (covers, CBZs) read response.body
 -- directly. When set, `sink_path` streams the response to that file (large
 -- downloads) leaving response.body nil.
-function ApiClient:_send(method, url, body, extra_headers, sink_path)
+function ApiClient:_send(method, url, body, extra_headers, sink_path, authenticate)
     local headers = {}
     if extra_headers then
         for k, v in pairs(extra_headers) do
@@ -96,7 +96,7 @@ function ApiClient:_send(method, url, body, extra_headers, sink_path)
         end
     end
     -- Per-request, never cached: a credential set after construction still applies.
-    local credential = self.get_credential and self.get_credential()
+    local credential = authenticate ~= false and self.get_credential and self.get_credential()
     if credential then
         headers["Authorization"] = "Bearer " .. credential
     end
@@ -277,6 +277,19 @@ end
 -- of the tracker-link flow, so it goes through the same auth/error stage.
 function ApiClient:fetchLinkQr(sessionId)
     local response, err = self:_send("GET", self:linkQrUrl(sessionId))
+    if not response then
+        return nil, err
+    end
+    return response.body, nil
+end
+
+-- AniList candidate covers are public CDN images. Fetch them through the same
+-- transport boundary without leaking KoManga's bearer credential to that host.
+function ApiClient:fetchTrackerCover(url)
+    if type(url) ~= "string" or not url:match("^https?://") then
+        return nil, { kind = "transport", message = "invalid tracker cover URL" }
+    end
+    local response, err = self:_send("GET", url, nil, nil, nil, false)
     if not response then
         return nil, err
     end

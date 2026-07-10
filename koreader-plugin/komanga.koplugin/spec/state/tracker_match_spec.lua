@@ -158,10 +158,10 @@ describe("tracker match state", function()
     end)
 
     describe("confirm match", function()
-        local function matched(match)
+        local function matched(match, api)
             match:applyCandidates(CANDIDATES())
             match:selectCandidate(1)
-            return match
+            return match, api
         end
 
         it("refuses to fetch a confirm without a selection", function()
@@ -271,13 +271,13 @@ describe("tracker match state", function()
     end)
 
     describe("remove tracking", function()
-        local function tracked(match)
+        local function tracked(match, api)
             match:applyStatus(STATUS{
                 state = "matched",
                 media = { mediaId = "301" },
                 lastSyncedChapter = 12,
             })
-            return match
+            return match, api
         end
 
         it("fetches through api:clearTrackerMatch without mutating state", function()
@@ -322,7 +322,7 @@ describe("tracker match state", function()
 
     describe("tracking status", function()
         it("fetches through api:trackerStatus without mutating state", function()
-            local match, api = make{ trackerStatus = STATUS }
+            local match, api = make{ trackerStatus = function() return STATUS() end }
 
             local data, err = match:fetchStatus()
 
