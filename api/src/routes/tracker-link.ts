@@ -32,7 +32,7 @@ export function protectedTrackerLinkRouter(
   });
 
   router.get("/tracker/anilist/link/:sessionId/status", (req, res) => {
-    res.json({ data: { status: service.getStatus(req.params.sessionId) } });
+    res.json({ data: service.getStatus(req.params.sessionId) });
   });
 
   router.get("/tracker/anilist/link/:sessionId/qr.png", async (req, res) => {

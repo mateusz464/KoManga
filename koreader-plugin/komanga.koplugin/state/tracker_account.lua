@@ -1,6 +1,21 @@
 local TrackerAccount = {}
 TrackerAccount.__index = TrackerAccount
 
+function TrackerAccount.normalizeAccount(account)
+    if not account then
+        return nil
+    end
+    if account.username == "" or account.username == "unknown" then
+        local cleaned = {}
+        for k, v in pairs(account) do
+            cleaned[k] = v
+        end
+        cleaned.username = nil
+        return cleaned
+    end
+    return account
+end
+
 function TrackerAccount.new(api, settings)
     return setmetatable({
         api = api,
@@ -45,7 +60,7 @@ function TrackerAccount:applyAccount(data, err)
     end
 
     self.linked = data ~= nil and data.linked == true
-    self.account = self.linked and data.account or nil
+    self.account = self.linked and TrackerAccount.normalizeAccount(data.account) or nil
     self.error = nil
     if self.settings then
         self.settings:setTrackerLinked(self.linked)

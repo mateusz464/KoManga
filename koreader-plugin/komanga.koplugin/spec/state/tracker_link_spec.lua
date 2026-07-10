@@ -169,6 +169,23 @@ describe("tracker account-link state", function()
             assert.are.equal(1, #clock.scheduled)
         end)
 
+        it("drops a blank legacy username so the UI falls back to generic wording", function()
+            local link = make{
+                api = {
+                    linkStart = { sessionId = "link-123", qrUrl = "/qr" },
+                },
+            }
+            link:start()
+
+            link:applyStatus({
+                status = "linked",
+                account = { anilistUserId = "12345", username = "" },
+            })
+
+            assert.are.equal("linked", link:getStatus())
+            assert.are.same({ anilistUserId = "12345" }, link:getAccount())
+        end)
+
         it("applies expired as a terminal restartable state and stops polling", function()
             local link, _, clock = make{
                 api = {

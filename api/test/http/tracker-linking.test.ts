@@ -165,7 +165,12 @@ describe("AniList account-linking endpoints (KOM-139)", () => {
       .query({ code: "oauth-code", state: session.sessionId });
 
     expect(callback.status).toBe(200);
-    expect(callback.body).toEqual({ data: { status: "linked" } });
+    expect(callback.body).toEqual({
+      data: {
+        status: "linked",
+        account: { anilistUserId: "12345", username: "AniListUser" },
+      },
+    });
     expect(exchangeCode).toHaveBeenCalledWith("oauth-code");
 
     const linked = await request(app)
@@ -173,7 +178,15 @@ describe("AniList account-linking endpoints (KOM-139)", () => {
       .set("Authorization", bearer(TOKEN));
 
     expect(linked.status).toBe(200);
-    expect(linked.body).toEqual({ data: { status: "linked" } });
+    expect(linked.body).toEqual({
+      data: {
+        status: "linked",
+        account: { anilistUserId: "12345", username: "AniListUser" },
+      },
+    });
+    expect(JSON.stringify(linked.body)).not.toContain(
+      LINKED_TOKEN.accessToken,
+    );
   });
 
   it("keeps the OAuth callback public while the other tracker routes stay authenticated", async () => {
@@ -192,7 +205,12 @@ describe("AniList account-linking endpoints (KOM-139)", () => {
       .query({ code: "oauth-code", state: session.sessionId });
 
     expect(callback.status).toBe(200);
-    expect(callback.body).toEqual({ data: { status: "linked" } });
+    expect(callback.body).toEqual({
+      data: {
+        status: "linked",
+        account: { anilistUserId: "12345", username: "AniListUser" },
+      },
+    });
     expect(exchangeCode).toHaveBeenCalledTimes(1);
   });
 

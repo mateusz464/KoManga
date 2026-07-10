@@ -78,19 +78,47 @@ export class TrackingService {
     };
   }
 
-  accountStatus(): TrackerAccountStatus {
+  async accountStatus(): Promise<TrackerAccountStatus> {
     const account = this.accounts.get(SERVICE);
     if (!account) {
       return { linked: false };
     }
 
+    const identified = await this.backfillIdentity(account);
     return {
       linked: true,
       account: {
-        anilistUserId: account.anilistUserId,
-        username: account.username,
+        anilistUserId: identified.anilistUserId,
+        username: identified.username,
       },
     };
+  }
+
+  // Accounts linked before the viewer lookup existed were stored with a blank
+  // or "unknown" identity; recover it once from AniList and persist it.
+  private async backfillIdentity(
+    account: TrackerAccount,
+  ): Promise<TrackerAccount> {
+    if (
+      (account.username !== "" && account.username !== "unknown") ||
+      !this.tracker.getViewer
+    ) {
+      return account;
+    }
+
+    try {
+      const viewer = await this.tracker.getViewer(account.accessToken);
+      const identified = {
+        ...account,
+        anilistUserId: viewer.userId,
+        username: viewer.username,
+      };
+      this.accounts.upsert(identified);
+      return identified;
+    } catch (error) {
+      this.logger.warn("AniList viewer backfill failed", { error });
+      return account;
+    }
   }
 
   unlinkAccount(): { readonly linked: false } {

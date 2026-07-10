@@ -59,11 +59,13 @@ services:
       # Persistent paths point at the named volumes mounted below.
       DATABASE_PATH: /data/db/komanga.sqlite
       CBZ_STORE_PATH: /data/downloads
-    # Published to loopback only so the host can reach it for local checks; the
-    # public entrypoint is the Cloudflare Tunnel (API-802), and loopback opens
-    # no inbound router ports (RFC §9).
+    # Published on all host interfaces so LAN clients (e.g. the Kobo on the local
+    # network) can reach the API directly. This is a deliberate divergence from
+    # the RFC §9 loopback-only default; it exposes the AUTH_TOKEN-gated API to the
+    # LAN (not the public internet — no router ports are forwarded). The Cloudflare
+    # Tunnel (API-802) remains the public entrypoint.
     ports:
-      - "127.0.0.1:3000:3000"
+      - "0.0.0.0:3000:3000"
     volumes:
       # Our SQLite DB (reading progress, downloads, library — RFC §7).
       - api-data:/data/db

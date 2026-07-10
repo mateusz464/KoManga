@@ -1,5 +1,7 @@
 -- Pure state behind AniList account linking. UI runs fetch* methods through
 -- net.lua; apply* mutates this table parent-side and schedules bounded polling.
+local TrackerAccount = require("state.tracker_account")
+
 local TrackerLink = {}
 TrackerLink.__index = TrackerLink
 
@@ -127,7 +129,7 @@ function TrackerLink:applyStatus(data, err)
     local status = data and data.status
     if status == "linked" then
         self.status = "linked"
-        self.account = data.account
+        self.account = TrackerAccount.normalizeAccount(data.account)
         self.error = nil
         if self.settings then
             self.settings:setTrackerLinked(true)

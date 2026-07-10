@@ -12,6 +12,14 @@ export interface AniListOAuthConfig {
 
 export type TrackerLinkStatus = "pending" | "linked" | "expired";
 
+export interface TrackerLinkStatusView {
+  readonly status: TrackerLinkStatus;
+  readonly account?: {
+    readonly anilistUserId: string;
+    readonly username: string;
+  };
+}
+
 interface LinkSession {
   readonly id: string;
   readonly authorizeUrl: string;
@@ -46,15 +54,25 @@ export class TrackerLinkService {
     };
   }
 
-  getStatus(sessionId: string): TrackerLinkStatus {
+  getStatus(sessionId: string): TrackerLinkStatusView {
     const session = this.sessions.get(sessionId);
     if (!session) {
       throw new BadRequestError("Unknown link session");
     }
     if (this.isExpired(session)) {
-      return "expired";
+      return { status: "expired" };
     }
-    return session.status;
+    if (session.status !== "linked") {
+      return { status: session.status };
+    }
+
+    const account = this.accounts.get("anilist");
+    return {
+      status: "linked",
+      account: account
+        ? { anilistUserId: account.anilistUserId, username: account.username }
+        : undefined,
+    };
   }
 
   async renderQrPng(sessionId: string): Promise<Buffer> {
@@ -70,7 +88,7 @@ export class TrackerLinkService {
     });
   }
 
-  async complete(code: string, state: string): Promise<{ status: "linked" }> {
+  async complete(code: string, state: string): Promise<TrackerLinkStatusView> {
     const session = this.sessions.get(state);
     if (!session || this.isExpired(session) || session.consumed) {
       throw new BadRequestError("Invalid OAuth state");
@@ -80,17 +98,19 @@ export class TrackerLinkService {
     const token = await this.tracker.exchangeCode(code);
     const viewer = await this.tracker.getViewer?.(token.accessToken);
 
+    const anilistUserId = viewer?.userId ?? "unknown";
+    const username = viewer?.username ?? "unknown";
     this.accounts.upsert({
       service: "anilist",
       accessToken: token.accessToken,
       tokenType: token.tokenType,
       expiresAt: tokenExpiresAt(token),
-      anilistUserId: viewer?.userId ?? "unknown",
-      username: viewer?.username ?? "unknown",
+      anilistUserId,
+      username,
     });
     session.status = "linked";
 
-    return { status: "linked" };
+    return { status: "linked", account: { anilistUserId, username } };
   }
 
   private authorizeUrl(state: string): string {

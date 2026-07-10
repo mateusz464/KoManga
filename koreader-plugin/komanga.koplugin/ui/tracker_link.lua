@@ -7,6 +7,7 @@ local Geom = require("ui/geometry")
 local Screen = require("device").screen
 local TextBoxWidget = require("ui/widget/textboxwidget")
 local UIManager = require("ui/uimanager")
+local VerticalGroup = require("ui/widget/verticalgroup")
 local VerticalSpan = require("ui/widget/verticalspan")
 local QrImage = require("ui/qr_image")
 local ErrorText = require("ui/errors")
@@ -139,17 +140,24 @@ function TrackerLinkView:qrWidget(bytes, width)
     }
 end
 
+-- All content goes into ONE addWidget call: every ButtonDialog:addWidget
+-- triggers a reinit that frees the widgets added before it (its keep-alive
+-- check only spares widgets with a .parent, e.g. core CheckButtons), and a
+-- freed TextBoxWidget re-renders blank — text added one call at a time never
+-- shows on screen.
 function TrackerLinkView:addContent(dialog, lines, qr_bytes)
     local width = dialog:getAddedWidgetAvailableWidth()
     local qr = self:qrWidget(qr_bytes, width)
+    local content = VerticalGroup:new{}
     for _, line in ipairs(lines) do
-        dialog:addWidget(self:textWidget(line, width))
-        dialog:addWidget(VerticalSpan:new{ width = 12 })
+        table.insert(content, self:textWidget(line, width))
+        table.insert(content, VerticalSpan:new{ width = 12 })
     end
     if qr then
-        dialog:addWidget(qr)
-        dialog:addWidget(VerticalSpan:new{ width = 12 })
+        table.insert(content, qr)
+        table.insert(content, VerticalSpan:new{ width = 12 })
     end
+    dialog:addWidget(content)
 end
 
 function TrackerLinkView:showDialog(title, lines, buttons, qr_bytes)
@@ -214,8 +222,8 @@ function TrackerLinkView:render()
     elseif status == "linked" then
         local account = self.link:getAccount()
         local line = account and account.username
-            and _("AniList linked: ") .. account.username
-            or _("AniList linked.")
+            and _("Success! Linked to AniList as ") .. account.username .. "."
+            or _("Success! Your AniList account is linked.")
         self:showDialog(_("AniList linked"), {
             line,
             _("You can close this screen."),

@@ -146,25 +146,88 @@ function service(
 }
 
 describe("TrackingService account status/unlink (KOM-156)", () => {
-  it("maps a missing account to an unlinked account status", () => {
+  it("maps a missing account to an unlinked account status", async () => {
     const accounts = accountRepository();
 
-    expect(service({ accounts: accounts.repo }).accountStatus()).toEqual({
+    expect(await service({ accounts: accounts.repo }).accountStatus()).toEqual({
       linked: false,
     });
     expect(accounts.get).toHaveBeenCalledWith("anilist");
   });
 
-  it("maps a stored account to public account status without token material", () => {
+  it("maps a stored account to public account status without token material", async () => {
     const accounts = accountRepository(linkedAccount());
 
-    expect(service({ accounts: accounts.repo }).accountStatus()).toEqual({
+    expect(await service({ accounts: accounts.repo }).accountStatus()).toEqual({
       linked: true,
       account: {
         anilistUserId: "12345",
         username: "AniListUser",
       },
     });
+  });
+
+  it("backfills a pre-KOM-156 blank identity from the AniList viewer and persists it", async () => {
+    const accounts = accountRepository(linkedAccount({ username: "" }));
+    const getViewer = vi.fn(async () => ({
+      userId: "67890",
+      username: "RecoveredUser",
+    }));
+    const trackerPort = { ...tracker().tracker, getViewer };
+
+    const status = await service({
+      accounts: accounts.repo,
+      tracker: trackerPort,
+    }).accountStatus();
+
+    expect(getViewer).toHaveBeenCalledWith("secret-access-token");
+    expect(status).toEqual({
+      linked: true,
+      account: {
+        anilistUserId: "67890",
+        username: "RecoveredUser",
+      },
+    });
+    expect(accounts.repo.get("anilist")).toMatchObject({
+      anilistUserId: "67890",
+      username: "RecoveredUser",
+      accessToken: "secret-access-token",
+    });
+  });
+
+  it("keeps the stored identity when the viewer backfill fails", async () => {
+    const accounts = accountRepository(linkedAccount({ username: "unknown" }));
+    const getViewer = vi.fn(async () => {
+      throw new Error("anilist down");
+    });
+    const trackerPort = { ...tracker().tracker, getViewer };
+
+    const status = await service({
+      accounts: accounts.repo,
+      tracker: trackerPort,
+    }).accountStatus();
+
+    expect(status).toEqual({
+      linked: true,
+      account: {
+        anilistUserId: "12345",
+        username: "unknown",
+      },
+    });
+  });
+
+  it("does not touch AniList when the stored identity is already known", async () => {
+    const accounts = accountRepository(linkedAccount());
+    const getViewer = vi.fn(async () => ({
+      userId: "67890",
+      username: "RecoveredUser",
+    }));
+    const trackerPort = { ...tracker().tracker, getViewer };
+
+    await service({ accounts: accounts.repo, tracker: trackerPort })
+      .accountStatus();
+
+    expect(getViewer).not.toHaveBeenCalled();
   });
 
   it("unlinks the stored account while leaving tracker_link rows untouched", () => {

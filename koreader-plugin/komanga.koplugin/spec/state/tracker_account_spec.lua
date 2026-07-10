@@ -53,6 +53,22 @@ describe("tracker account state", function()
             assert.is_true(settings:isTrackerLinked())
         end)
 
+        it("drops a blank or unknown legacy username so the UI shows its fallback", function()
+            local account = make()
+
+            account:applyAccount({
+                linked = true,
+                account = { anilistUserId = "100", username = "" },
+            })
+            assert.are.same({ anilistUserId = "100" }, account:getAccount())
+
+            account:applyAccount({
+                linked = true,
+                account = { anilistUserId = "100", username = "unknown" },
+            })
+            assert.are.same({ anilistUserId = "100" }, account:getAccount())
+        end)
+
         it("applies an unlinked account and clears the cached flag", function()
             local account, _, settings = make{ store = FakeStore.new{ komanga_tracker_anilist_linked = true } }
             account:applyAccount({ linked = true, account = ACCOUNT })
