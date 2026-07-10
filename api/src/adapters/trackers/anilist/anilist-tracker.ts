@@ -25,7 +25,11 @@ import type {
   AniListTrackerOptions,
   AniListTransport,
 } from "./anilist-types.js";
-import type { RawListEntry, RawMedia } from "./anilist-wire-types.js";
+import type {
+  RawListEntry,
+  RawMedia,
+  RawMediaWithListEntry,
+} from "./anilist-wire-types.js";
 
 export class AniListTracker implements Tracker {
   constructor(
@@ -73,12 +77,19 @@ export class AniListTracker implements Tracker {
     mediaId: string,
     accessToken?: string,
   ): Promise<TrackerListEntry | null> {
-    const data = await this.runGraphQL<{ MediaList?: RawListEntry | null }>(
-      GET_LIST_ENTRY,
-      { mediaId: toIntId(mediaId) },
-      accessToken,
-    );
-    return data.MediaList ? mapListEntry(data.MediaList) : null;
+    const data = await this.runGraphQL<{
+      Media?: RawMediaWithListEntry | null;
+    }>(GET_LIST_ENTRY, { mediaId: toIntId(mediaId) }, accessToken);
+    const media = data.Media;
+    if (!media?.mediaListEntry) {
+      return null;
+    }
+    return {
+      ...mapListEntry(media.mediaListEntry),
+      ...(typeof media.chapters === "number"
+        ? { totalChapters: media.chapters }
+        : {}),
+    };
   }
 
   async saveProgress(

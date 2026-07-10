@@ -16,6 +16,11 @@ export interface RawListEntry {
   readonly status?: unknown;
 }
 
+export interface RawMediaWithListEntry {
+  readonly chapters?: unknown;
+  readonly mediaListEntry?: RawListEntry | null;
+}
+
 export interface RawToken {
   readonly access_token?: unknown;
   readonly token_type?: unknown;

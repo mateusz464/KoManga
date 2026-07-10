@@ -159,12 +159,41 @@ describe("AniListTracker (port contract)", () => {
       expect(accessToken).toBe("access-token");
     });
 
-    it("getListEntry maps AniList list status into the tracker status", async () => {
+    // The entry is read via `Media(id:) { mediaListEntry }` — the *viewer's*
+    // list row — never via a bare `MediaList(mediaId:)`, which AniList resolves
+    // against an arbitrary user when no user filter is given (live, KOM-144).
+    it("getListEntry maps the viewer's list entry including AniList's chapter total", async () => {
       const { transport, request } = transportReturning({
         graphql: {
-          MediaList: {
-            progress: 12,
-            status: "CURRENT",
+          Media: {
+            chapters: 152,
+            mediaListEntry: {
+              progress: 12,
+              status: "CURRENT",
+            },
+          },
+        },
+      });
+      const client = tracker(transport);
+
+      await expect(client.getListEntry("30002")).resolves.toEqual({
+        progress: 12,
+        status: "reading",
+        totalChapters: 152,
+      });
+      expect(request).toHaveBeenCalledWith(
+        expect.any(String),
+        { mediaId: 30002 },
+        "access-token",
+      );
+    });
+
+    it("getListEntry omits totalChapters while AniList's total is unknown", async () => {
+      const { transport } = transportReturning({
+        graphql: {
+          Media: {
+            chapters: null,
+            mediaListEntry: { progress: 12, status: "CURRENT" },
           },
         },
       });
@@ -174,16 +203,11 @@ describe("AniListTracker (port contract)", () => {
         progress: 12,
         status: "reading",
       });
-      expect(request).toHaveBeenCalledWith(
-        expect.any(String),
-        { mediaId: 30002 },
-        "access-token",
-      );
     });
 
-    it("getListEntry returns null when AniList has no list row", async () => {
+    it("getListEntry returns null when the viewer has no list row", async () => {
       const { transport } = transportReturning({
-        graphql: { MediaList: null },
+        graphql: { Media: { chapters: 152, mediaListEntry: null } },
       });
       const client = tracker(transport);
 
@@ -193,9 +217,12 @@ describe("AniListTracker (port contract)", () => {
     it("uses a per-call linked-account token when one is supplied", async () => {
       const { transport, request } = transportReturning({
         graphql: {
-          MediaList: {
-            progress: 12,
-            status: "CURRENT",
+          Media: {
+            chapters: 152,
+            mediaListEntry: {
+              progress: 12,
+              status: "CURRENT",
+            },
           },
         },
       });

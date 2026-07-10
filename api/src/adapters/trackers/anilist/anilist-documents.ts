@@ -17,11 +17,18 @@ export const SEARCH_MEDIA = /* GraphQL */ `
   }
 `;
 
+// The entry must come from Media.mediaListEntry (the authenticated viewer's
+// row). A bare MediaList(mediaId:) has no user filter, so AniList resolves it
+// against an arbitrary user's list (live, KOM-144). `chapters` is AniList's
+// known total, used for the auto-COMPLETED transition; null while releasing.
 export const GET_LIST_ENTRY = /* GraphQL */ `
   query GetListEntry($mediaId: Int!) {
-    MediaList(mediaId: $mediaId) {
-      progress
-      status
+    Media(id: $mediaId) {
+      chapters
+      mediaListEntry {
+        progress
+        status
+      }
     }
   }
 `;
