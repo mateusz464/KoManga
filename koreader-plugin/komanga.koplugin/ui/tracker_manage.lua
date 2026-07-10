@@ -4,7 +4,6 @@ local Font = require("ui/font")
 local InfoMessage = require("ui/widget/infomessage")
 local TextBoxWidget = require("ui/widget/textboxwidget")
 local UIManager = require("ui/uimanager")
-local VerticalGroup = require("ui/widget/verticalgroup")
 local VerticalSpan = require("ui/widget/verticalspan")
 local Retry = require("ui/retry")
 local _ = require("gettext")
@@ -66,13 +65,9 @@ function TrackerManage:render()
             },
         },
     }
-    -- One addWidget call only: a second call reinits the dialog and frees the
-    -- first widget, which blanks a plain TextBoxWidget (see ui/tracker_link.lua).
     local width = self.dialog:getAddedWidgetAvailableWidth()
-    self.dialog:addWidget(VerticalGroup:new{
-        self:textWidget(_("Linked account: ") .. username, width),
-        VerticalSpan:new{ width = 12 },
-    })
+    self.dialog:addWidget(self:textWidget(_("Linked account: ") .. username, width))
+    self.dialog:addWidget(VerticalSpan:new{ width = 12 })
     UIManager:show(self.dialog, "flashui")
 end
 
