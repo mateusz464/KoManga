@@ -33,6 +33,24 @@ const MIGRATIONS = `
     added_at INTEGER NOT NULL,
     title    TEXT
   );
+
+  CREATE TABLE IF NOT EXISTS tracker_account (
+    service         TEXT    PRIMARY KEY,
+    access_token    TEXT    NOT NULL,
+    token_type      TEXT    NOT NULL,
+    expires_at      INTEGER NOT NULL,
+    anilist_user_id TEXT    NOT NULL,
+    username        TEXT    NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS tracker_link (
+    manga_id            TEXT    NOT NULL,
+    service             TEXT    NOT NULL,
+    media_id            TEXT,
+    last_synced_chapter REAL,
+    do_not_track        INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (manga_id, service)
+  );
 `;
 
 // Idempotent ALTER for a column added after the table first shipped (API-908):
@@ -58,5 +76,11 @@ export function openDatabase(file: string): AppDatabase {
   db.pragma("foreign_keys = ON");
   db.exec(MIGRATIONS);
   addColumnIfMissing(db, "library", "title", "TEXT");
+  addColumnIfMissing(
+    db,
+    "tracker_account",
+    "username",
+    "TEXT NOT NULL DEFAULT ''",
+  );
   return db;
 }

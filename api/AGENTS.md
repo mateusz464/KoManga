@@ -1,6 +1,6 @@
 # CLAUDE.md — KoManga API
 
-> Project context and conventions for the **API epic**. Read this before working any `API-NNN` ticket. The authoritative *what* lives in `RFC.md` and `TASKS.md`; this file is the *how*.
+> Project context and conventions for the **API epic**. Read this before working any `API-NNN` ticket. The authoritative _what_ lives in `RFC.md` and `TASKS.md`; this file is the _how_.
 
 ---
 
@@ -21,19 +21,19 @@ The Node/TypeScript API is the layer between the Kobo client and **Suwayomi-Serv
 
 ## 2. Tech stack (do not substitute without updating this file)
 
-| Concern | Choice |
-|---|---|
-| Language | TypeScript (strict) |
-| Runtime | Node.js (LTS) |
-| HTTP framework | Express |
-| Architecture | Layered: **routes → services → adapters** |
-| Suwayomi client | `graphql-request` |
-| Image processing | `sharp` |
-| Database | SQLite via `better-sqlite3` |
-| Migrations | Plain SQL, run on startup |
-| Tests | Vitest |
-| Container | Docker, orchestrated by Compose |
-| Public entry | Cloudflare Tunnel (`cloudflared`) |
+| Concern          | Choice                                    |
+| ---------------- | ----------------------------------------- |
+| Language         | TypeScript (strict)                       |
+| Runtime          | Node.js (LTS)                             |
+| HTTP framework   | Express                                   |
+| Architecture     | Layered: **routes → services → adapters** |
+| Suwayomi client  | `graphql-request`                         |
+| Image processing | `sharp`                                   |
+| Database         | SQLite via `better-sqlite3`               |
+| Migrations       | Plain SQL, run on startup                 |
+| Tests            | Vitest                                    |
+| Container        | Docker, orchestrated by Compose           |
+| Public entry     | Cloudflare Tunnel (`cloudflared`)         |
 
 ---
 
@@ -55,6 +55,7 @@ adapters/    The outside world behind interfaces: Suwayomi (GraphQL), SQLite
 - **Express stays at the edge.** `req`/`res` never travel past the routes layer. Services receive plain typed arguments and return plain typed values or throw typed errors.
 
 ### Suggested folder layout
+
 ```
 src/
   routes/            # express routers, one per feature area
@@ -80,7 +81,7 @@ The task list pairs a `[TEST]` ticket with its implementation ticket. The discip
 
 1. **Test ticket first.** Write tests that encode the agreed contract for the unit/endpoint. They must **fail** (red) because the implementation doesn't exist or is a stub.
 2. **Impl ticket second.** Write the minimum code to make those tests pass (green). Refactor with tests green.
-3. An impl ticket is **not Done** until *all* of its paired test ticket's assertions pass.
+3. An impl ticket is **not Done** until _all_ of its paired test ticket's assertions pass.
 4. **Mock at the port boundary**, not deeper. Service tests mock the Suwayomi/DB/image/cache ports. Adapter tests exercise the real library against controlled inputs (fixtures, temp DB, a live Suwayomi where the ticket says so).
 5. Endpoint tests go through Express (supertest-style) with services/ports mocked, asserting status codes and the response envelope (§6).
 
@@ -106,6 +107,7 @@ Do not write implementation ahead of its test ticket. Do not weaken a test to ma
 - **Typed errors:** services throw typed/domain errors; the error middleware is the single place that maps them to HTTP responses.
 
 ### Image profiles (core contract — see RFC §6)
+
 - `GET /api/page/:id?profile=` serves a page. `profile=raw` (default) or `profile=eink`.
 - **`raw`** = source bytes / lossless passthrough — for future full-colour clients that process client-side.
 - **`eink`** = greyscale, resized-to-fit the configured Kobo resolution, contrast-tuned, compact output format.
@@ -157,7 +159,7 @@ Do not build website/mobile features now — just don't foreclose them.
 
 ## 11. Coding standards
 
-- **Comments only for complex code that isn't understandable without them.** Do NOT narrate obvious lines, restate what the code says, or add a comment above every step/file. A comment must earn its place by explaining a non-obvious *what* or *why*; otherwise leave it out. Before writing any comment, ask "is this code genuinely unreadable without it?" — if not, delete it.
+- **Comments only for complex code that isn't understandable without them.** Do NOT narrate obvious lines, restate what the code says, or add a comment above every step/file. A comment must earn its place by explaining a non-obvious _what_ or _why_; otherwise leave it out. Before writing any comment, ask "is this code genuinely unreadable without it?" — if not, delete it.
 - **TypeScript strict mode on.** No `any` in committed code unless justified with a comment; prefer precise types at boundaries.
 - **Lint + format must pass** before a ticket is Done (`npm run lint`, `npm run format`).
 - Small, focused modules; a file does one job. Favour pure functions in services.

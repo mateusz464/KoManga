@@ -13,6 +13,7 @@ The Node/TypeScript API is the layer between the Kobo client and **Suwayomi-Serv
 - Processes manga page images, with e-ink processing as an **opt-in profile**, not a default.
 - Manages an **ephemeral session cache** for streaming and a **persistent CBZ store** for explicit downloads.
 - Owns **reading progress, library, and download** records in **SQLite**.
+- Owns **tracker account/link metadata** and pushes completed chapter progress to AniList.
 - Is **single-user but multi-client**, **publicly exposed** via Cloudflare Tunnel, and therefore secured.
 
 **Suwayomi is never exposed unauthenticated.** Kobo clients only ever see this API's REST surface, and content/reading traffic reaches Suwayomi only from this service on the internal Docker network. The only public Suwayomi surface allowed by the RFC is the admin WebUI through Cloudflare Tunnel, gated by owner-only Cloudflare Access.
@@ -28,6 +29,7 @@ The Node/TypeScript API is the layer between the Kobo client and **Suwayomi-Serv
 | HTTP framework | Express |
 | Architecture | Layered: **routes → services → adapters** |
 | Suwayomi client | `graphql-request` |
+| Tracker provider | AniList behind the `Tracker` port |
 | Image processing | `sharp` |
 | Database | SQLite via `better-sqlite3` |
 | Migrations | Plain SQL, run on startup |
@@ -47,10 +49,10 @@ routes/      HTTP only: parse/validate input, call a service, shape the response
 services/    Business logic. Orchestrates adapters. Knows nothing about Express
              (no req/res). Pure, testable functions/classes.
 adapters/    The outside world behind interfaces: Suwayomi (GraphQL), SQLite
-             repositories, image processing, cache. Each defined by a port.
+             repositories, image processing, cache, trackers. Each defined by a port.
 ```
 
-- **Ports & adapters.** Every external dependency (Suwayomi, DB, image processor, cache) is defined as a **TypeScript interface (a "port") in the service layer**, and implemented by a concrete adapter. Services depend on the interface, never the concrete class. This is what makes the TDD tasks possible — tests inject mocks of the ports.
+- **Ports & adapters.** Every external dependency (Suwayomi, DB, image processor, cache, tracker provider) is defined as a **TypeScript interface (a "port") in the service layer**, and implemented by a concrete adapter. Services depend on the interface, never the concrete class. This is what makes the TDD tasks possible — tests inject mocks of the ports.
 - **Dependency injection by construction.** Wire concrete adapters to services at startup (a small composition root). No service reaches out and constructs its own adapter; it receives them. No global singletons for external dependencies.
 - **Express stays at the edge.** `req`/`res` never travel past the routes layer. Services receive plain typed arguments and return plain typed values or throw typed errors.
 
@@ -65,6 +67,7 @@ src/
     db/              # better-sqlite3 repositories + migrations/
     images/          # sharp implementation of ImageProcessor
     cache/           # session cache implementation
+    trackers/        # AniList implementation of the Tracker port
   config/            # typed config loader (§5)
   http/              # app factory, middleware, error handler
   index.ts           # composition root + server start
@@ -92,7 +95,7 @@ Do not write implementation ahead of its test ticket. Do not weaken a test to ma
 
 - All config flows through **one typed module** in `src/config`. Never read `process.env` elsewhere.
 - **Fail fast:** missing a required variable throws a descriptive error at startup, before the server listens.
-- Every variable is documented in `.env.example`. Required at minimum: Suwayomi URL, the single-user auth credential/token, cache size/TTL limits, prefetch window, image target resolution/format, server port, paths for the SQLite file and the CBZ store.
+- Every variable is documented in `.env.example`. Required at minimum: Suwayomi URL, the single-user auth credential/token, AniList OAuth client id/secret/redirect URI, cache size/TTL limits, prefetch window, image target resolution/format, server port, paths for the SQLite file and the CBZ store.
 - **Secrets are never committed** and never logged. The auth credential comes from env/secret file only.
 
 ---
@@ -124,16 +127,23 @@ Do not write implementation ahead of its test ticket. Do not weaken a test to ma
 
 ## 8. Data ownership (RFC §7)
 
-- This service's SQLite owns **only** what is ours: `reading_progress`, `downloads`, `library`/follows, and `cache_index` bookkeeping.
+- This service's SQLite owns **only** what is ours: `reading_progress`, `downloads`, `library`/follows, `cache_index` bookkeeping, `tracker_account`, and `tracker_link`.
 - **Do not duplicate** Suwayomi's catalogue/source/chapter metadata; query Suwayomi for it (with short-lived caching only where it clearly helps).
 - **Reading progress is device-agnostic** — keyed by manga/chapter/page, never by device id. **Last-write-wins** via `updated_at`. This is what lets Kobo + web + mobile share one position.
+- **Tracker state is local ownership.** Store only the single-user AniList account token metadata (`tracker_account`) and per-manga matching/sync flags (`tracker_link`). Do not mirror AniList list entries or Suwayomi catalogue metadata into SQLite.
 - All DB access goes through **repository interfaces** (ports). No raw SQL in services or routes.
+
+### Tracking (RFC §5.5)
+- Tracking is currently **one-way KoManga → AniList**: a local chapter-complete event may update AniList progress, but AniList never rewrites KoManga reading progress or library state.
+- AniList OAuth uses protected link-session endpoints plus the single public callback. The callback is safe only because `state` is random, short-lived, single-use, and created by an authenticated request.
+- Manga matching is explicit: candidates come from AniList search, the user confirms a media id, and `do_not_track` suppresses future sync for that manga.
+- Completion sync must be non-blocking for reading. Tracker failures are logged server-side and must not fail the local chapter-complete action.
 
 ---
 
 ## 9. Security (RFC §9 — first-class, not an afterthought)
 
-- **Auth on every `/api/*` route.** A valid single-user credential/token is required; `/health` is the only public route. The scheme must **not assume one device** (multi-client).
+- **Auth on every `/api/*` route except `GET /api/tracker/anilist/callback`.** A valid single-user credential/token is required for API routes; `/health` is public. The callback exception is only for AniList OAuth and must stay data-less + state-gated. The scheme must **not assume one device** (multi-client).
 - **Rate limiting** on API routes, configurable, returning `429` over the limit.
 - **Suwayomi never unauthenticated or client-reachable** — Kobo clients only ever see the API's REST surface; content/reading traffic reaches Suwayomi only through the internal Docker network. The Suwayomi admin WebUI may be publicly reachable only through Cloudflare Tunnel behind owner-only Cloudflare Access.
 - **TLS terminated by Cloudflare**; no inbound ports opened on the home router.

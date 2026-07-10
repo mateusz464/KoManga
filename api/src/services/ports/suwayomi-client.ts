@@ -39,6 +39,10 @@ export interface Chapter {
   readonly pageCount?: number;
 }
 
+export interface ChapterDetails extends Chapter {
+  readonly mangaId: string;
+}
+
 export interface RawPage {
   readonly bytes: Buffer;
   readonly contentType: string;
@@ -64,6 +68,7 @@ export interface SuwayomiClient {
   search(params: SearchParams): Promise<SearchResult>;
   getMangaDetails(mangaId: string): Promise<MangaDetails>;
   listChapters(mangaId: string): Promise<Chapter[]>;
+  getChapterDetails(chapterId: string): Promise<ChapterDetails>;
   // Triggers Suwayomi's source scrape and returns the resulting chapters; unlike
   // listChapters (which only reads what Suwayomi has already stored) this
   // populates them from the source, so a freshly-searched manga returns chapters

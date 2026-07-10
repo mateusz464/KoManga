@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Author:** Matt
-**Last updated:** 2026-07-05
+**Last updated:** 2026-07-08
 **Scope:** Architecture & planning only. Implementation tasks tracked separately in `TASKS.md`.
 
 ---
@@ -24,6 +24,7 @@ The defining constraint is the Kobo's hardware: a slow ARM SoC and an e-ink disp
 - Stream manga pages on demand without downloading whole chapters first.
 - Optionally download a full chapter as a CBZ for offline keeping.
 - Sync reading progress server-side so it's consistent across devices.
+- Optionally push completed chapter progress one-way to AniList.
 - Single-user, publicly reachable, secured.
 - Run as a reproducible Docker Compose stack on the Mac Mini.
 
@@ -74,6 +75,7 @@ Runs the real Tachiyomi/Mihon source extensions on the JVM. Manages source insta
 - Manages the ephemeral page/session cache and its pruning.
 - Builds CBZ files for explicit chapter downloads.
 - Owns reading-progress and download metadata in SQLite.
+- Links to AniList, stores manga matches, and pushes completed chapter progress.
 - Enforces single-user auth and rate limiting.
 
 **Kobo client** *(historical: web client — retired, see §1/§13)*
@@ -132,6 +134,46 @@ The download store in §5.2 is **server-side**: the CBZ lives on the API host an
 
 This keeps offline behaviour a **client concern** (§13): it needs **no new API endpoint** (the transient `eink` CBZ already exists) and does not change the contract. The **server-side** persistent download store (§5.2, §7, §8) remains available for potential full-colour clients (website/mobile) but is **not** what the KOReader plugin relies on for offline reading. *(Open question: if no client ends up using the server-side store, it may be retired in a later API-epic cleanup.)*
 
+### 5.5 Tracker sync (AniList)
+
+Tracker support is deliberately narrow for v1: **one-way KoManga → AniList**
+chapter-completion sync. KoManga does not import AniList lists into the library,
+does not overwrite local reading progress from AniList, and does not perform
+multi-tracker fan-out yet.
+
+Account linking uses AniList OAuth:
+
+1. An authenticated client starts a link session with
+   `POST /api/tracker/anilist/link`.
+2. The API returns a short-lived `sessionId` and a protected QR PNG URL. The QR
+   encodes the AniList authorize URL with the `sessionId` as OAuth `state`.
+3. The user scans the QR and approves the AniList app.
+4. AniList redirects back to the API's public callback,
+   `GET /api/tracker/anilist/callback?code=&state=`.
+5. The API accepts the callback only if the `state` is known, unexpired, and not
+   already consumed; then it exchanges the code server-side and stores the
+   resulting AniList account token, AniList user id, and username.
+
+The linked account can be inspected by an authenticated client through
+`GET /api/tracker/anilist/account`; it returns only public account display
+fields, never OAuth token material. `DELETE /api/tracker/anilist/account`
+unlinks the account idempotently. Unlinking removes only the account row:
+confirmed manga matches remain because they are account-agnostic AniList media
+ids, so relinking can resume sync without rematching.
+
+Manga matching is explicit. The API can search AniList candidates using the
+Suwayomi manga title, but the user confirms the media id per manga. A manga can
+also be marked "do not track" so future completion sync skips it.
+
+Completion sync happens only after KoManga knows a chapter is complete. The API
+looks up the chapter's manga, the linked AniList account, and the confirmed manga
+match; unmatched, unlinked, or do-not-track manga are ignored. It sends the
+highest completed chapter number forward only when that number is greater than
+both the locally recorded `last_synced_chapter` and AniList's current list
+progress. If the completed chapter reaches AniList's known total chapter count,
+the remote status becomes `completed`; otherwise it remains/sets `reading`.
+Tracker failures are logged and do not block local reading.
+
 ---
 
 ## 6. Image Processing for E-Ink
@@ -152,6 +194,13 @@ This profile split is the main reason a thin client + fat server works for the K
 - **reading_progress** — `manga_id`, `chapter_id`, `page`, `updated_at`. Device-agnostic; last-write-wins (sufficient for single user).
 - **downloads** — `chapter_id`, `manga_id`, `cbz_path`, `status`, `created_at`. *(This is the **server-side** download store. The KOReader plugin keeps its own **device-local** download index for offline reading — §5.4 — which is not recorded in this SQLite DB.)*
 - **cache_index** — bookkeeping for the ephemeral session cache (keys, sizes, TTLs) to drive pruning.
+- **library** — followed manga ids plus lightweight local display/cache fields owned by KoManga.
+- **tracker_account** — one row per tracker service (currently `anilist`) with
+  OAuth access token metadata, AniList user id, and username. Single-user
+  account storage means relinking replaces the previous service row.
+- **tracker_link** — per manga tracker metadata: service, confirmed AniList
+  media id (nullable while unmatched), `last_synced_chapter`, and
+  `do_not_track`.
 
 Source/catalogue/chapter metadata is *not* duplicated here; it's queried from Suwayomi on demand (with short-lived caching where it helps).
 
@@ -171,8 +220,21 @@ Source/catalogue/chapter metadata is *not* duplicated here; it's queried from Su
 | `GET` | `/api/downloads` | List server-side downloaded chapters |
 | `GET`/`PUT` | `/api/progress/:mangaId` | Read/update reading progress |
 | `GET` | `/api/library` | Saved/followed manga |
+| `POST` | `/api/tracker/anilist/link` | Start an AniList OAuth link session; returns a session id and QR URL |
+| `GET` | `/api/tracker/anilist/link/:sessionId/qr.png` | Protected QR PNG for the AniList authorize URL |
+| `GET` | `/api/tracker/anilist/link/:sessionId/status` | Poll account-link status (`pending`, `linked`, `expired`) |
+| `GET` | `/api/tracker/anilist/callback?code=&state=` | Public AniList OAuth callback; validates single-use short-TTL state |
+| `GET` | `/api/tracker/anilist/account` | Read linked AniList account status without token material |
+| `DELETE` | `/api/tracker/anilist/account` | Unlink the AniList account; manga tracker matches are preserved |
+| `GET` | `/api/tracker/manga/:mangaId/candidates` | Search AniList candidate matches for a Suwayomi manga |
+| `GET` | `/api/tracker/manga/:mangaId/status` | Read account/match/do-not-track tracking state for one manga |
+| `PUT`/`DELETE` | `/api/tracker/manga/:mangaId/match` | Confirm or clear the AniList media match |
+| `POST` | `/api/tracker/manga/:mangaId/do-not-track` | Dismiss tracking for this manga |
+| `POST` | `/api/tracker/complete` | Accept a local chapter-complete event and asynchronously push eligible progress to AniList |
 
-All endpoints sit behind auth. The exact shapes get finalised during implementation.
+All `/api/*` endpoints sit behind auth except the AniList OAuth callback, which
+must be callable by AniList and exposes no stored data. The exact shapes get
+finalised during implementation.
 
 ---
 
@@ -181,6 +243,11 @@ All endpoints sit behind auth. The exact shapes get finalised during implementat
 Public exposure makes this first-class, not an afterthought:
 - **Cloudflare Tunnel** — no inbound ports; home IP hidden.
 - **Single-user auth** — a credential/token required on every API call. Optionally fronted by Cloudflare Access.
+- **AniList OAuth callback carve-out** — `GET /api/tracker/anilist/callback`
+  is the only public unauthenticated `/api/*` route. AniList cannot send
+  KoManga's bearer token back during OAuth. The route accepts only `code` and
+  `state`, exposes no library/account data, and succeeds only for a single-use,
+  short-TTL state created by an authenticated link-session request.
 - **TLS** — terminated by Cloudflare.
 - **Rate limiting** — protects both our API and the upstream sources from abuse/runaway clients.
 - **Suwayomi is never exposed unauthenticated** — the Kobo client never reaches it directly, no inbound router ports are opened for it, and content/reading traffic reaches it only from the Node API inside the Compose network.
@@ -195,10 +262,17 @@ Public exposure makes this first-class, not an afterthought:
 
 Single `docker-compose.yml` on the Mac Mini:
 - `suwayomi` — source engine; no default host/public port; named volume for its data. Its GraphQL/content path stays internal to the Compose network. Its admin WebUI may be routed by `cloudflared` only behind Cloudflare Access.
-- `api` — Node/TS service; mounts SQLite volume + download store; depends on `suwayomi`.
+- `api` — Node/TS service; mounts SQLite volume + download store; depends on `suwayomi`. AniList OAuth config (`ANILIST_CLIENT_ID`, `ANILIST_CLIENT_SECRET`, `ANILIST_REDIRECT_URI`) is passed only to this service; the client secret stays server-side.
 - `cloudflared` — optional Cloudflare Tunnel connector. In the tunnel profile, it routes the API hostname to `api` and may also route a separate owner-only Suwayomi WebUI hostname to `suwayomi:4567`.
 
 Volumes for: Suwayomi data, our SQLite DB, the persistent CBZ download store. The ephemeral session cache can live on a volume or tmpfs depending on size.
+
+AniList linking requires the OAuth redirect URI to be publicly reachable. Use
+the existing API hostname routed to `api:3000` by `cloudflared`, e.g.
+`https://manga.example.com/api/tracker/anilist/callback`; do **not** create a
+new callback hostname. A local-only stack can still browse/read, but QR/OAuth
+linking will not complete unless the tunnel (or an equivalent HTTPS public API
+route) is up and the same callback URL is registered in AniList.
 
 > **Reconciled 2026-07-07 (API-809):** API-808 made `cloudflared` optional for local-only runs. In a local-only deployment with no tunnel profile, there is no public Suwayomi WebUI route. The fallback stance is loopback-only maintenance access from the Mac Mini host, never LAN/public binding: a later Compose ticket may add an explicit opt-in local maintenance profile or document an SSH/loopback workflow, but the default stack keeps Suwayomi without a host port.
 

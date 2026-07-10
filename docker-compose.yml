@@ -46,15 +46,21 @@ services:
       # Single-user secret — supplied from the host environment / `.env`, never
       # committed (CLAUDE.md §5/§9). Compose fails fast if it is unset.
       AUTH_TOKEN: ${AUTH_TOKEN:?AUTH_TOKEN must be set (see api/.env.example)}
+      # AniList OAuth app credentials — the secret stays server-side and is used
+      # only for code→token exchange during account linking. The redirect URI
+      # must be on the existing API hostname routed by cloudflared, for example
+      # https://manga.example.com/api/tracker/anilist/callback; no separate
+      # callback hostname is needed. QR linking completes only while that public
+      # API route is reachable.
+      ANILIST_CLIENT_ID: ${ANILIST_CLIENT_ID:?ANILIST_CLIENT_ID must be set (see api/.env.example)}
+      ANILIST_CLIENT_SECRET: ${ANILIST_CLIENT_SECRET:?ANILIST_CLIENT_SECRET must be set (see api/.env.example)}
+      ANILIST_REDIRECT_URI: ${ANILIST_REDIRECT_URI:?ANILIST_REDIRECT_URI must be set (see api/.env.example)}
       PORT: "3000"
       # Persistent paths point at the named volumes mounted below.
       DATABASE_PATH: /data/db/komanga.sqlite
       CBZ_STORE_PATH: /data/downloads
-    # Published to loopback only so the host can reach it for local checks; the
-    # public entrypoint is the Cloudflare Tunnel (API-802), and loopback opens
-    # no inbound router ports (RFC §9).
     ports:
-      - "127.0.0.1:3000:3000"
+      - "0.0.0.0:3000:3000"
     volumes:
       # Our SQLite DB (reading progress, downloads, library — RFC §7).
       - api-data:/data/db
@@ -100,9 +106,11 @@ services:
       - tunnel
     # `tunnel run` with a token is a remotely-managed tunnel: the public
     # hostname → service mapping lives in the Cloudflare Zero Trust dashboard.
-    # Remote config routes the Kobo/API hostname to http://api:3000 and may route
-    # a separate Suwayomi admin WebUI hostname to http://suwayomi:4567, protected
-    # by an owner-only Cloudflare Access policy.
+    # Remote config routes the Kobo/API hostname to http://api:3000. That same
+    # hostname also receives the AniList OAuth callback path
+    # /api/tracker/anilist/callback; create no extra callback hostname. Remote
+    # config may also route a separate Suwayomi admin WebUI hostname to
+    # http://suwayomi:4567, protected by an owner-only Cloudflare Access policy.
     command: tunnel --no-autoupdate run
     depends_on:
       api:

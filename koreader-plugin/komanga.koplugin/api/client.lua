@@ -88,7 +88,7 @@ end
 -- envelope on top of it; raw-byte endpoints (covers, CBZs) read response.body
 -- directly. When set, `sink_path` streams the response to that file (large
 -- downloads) leaving response.body nil.
-function ApiClient:_send(method, url, body, extra_headers, sink_path)
+function ApiClient:_send(method, url, body, extra_headers, sink_path, authenticate)
     local headers = {}
     if extra_headers then
         for k, v in pairs(extra_headers) do
@@ -96,7 +96,7 @@ function ApiClient:_send(method, url, body, extra_headers, sink_path)
         end
     end
     -- Per-request, never cached: a credential set after construction still applies.
-    local credential = self.get_credential and self.get_credential()
+    local credential = authenticate ~= false and self.get_credential and self.get_credential()
     if credential then
         headers["Authorization"] = "Bearer " .. credential
     end
@@ -202,6 +202,51 @@ function ApiClient:unfollow(mangaId)
     return self:_request("DELETE", join_url(self.base_url, "/api/library/" .. mangaId))
 end
 
+function ApiClient:linkStart()
+    return self:_request("POST", join_url(self.base_url, "/api/tracker/anilist/link"))
+end
+
+function ApiClient:linkStatus(sessionId)
+    return self:_request(
+        "GET",
+        join_url(self.base_url, "/api/tracker/anilist/link/" .. sessionId .. "/status")
+    )
+end
+
+function ApiClient:trackerAccount()
+    return self:_request("GET", join_url(self.base_url, "/api/tracker/anilist/account"))
+end
+
+function ApiClient:trackerUnlink()
+    return self:_request("DELETE", join_url(self.base_url, "/api/tracker/anilist/account"))
+end
+
+function ApiClient:trackerCandidates(mangaId)
+    return self:_request("GET", join_url(self.base_url, "/api/tracker/manga/" .. mangaId .. "/candidates"))
+end
+
+function ApiClient:setTrackerMatch(mangaId, mediaId)
+    local url = join_url(self.base_url, "/api/tracker/manga/" .. mangaId .. "/match")
+    return self:_request("PUT", url, rapidjson.encode({ mediaId = mediaId }), JSON_HEADERS)
+end
+
+function ApiClient:clearTrackerMatch(mangaId)
+    return self:_request("DELETE", join_url(self.base_url, "/api/tracker/manga/" .. mangaId .. "/match"))
+end
+
+function ApiClient:doNotTrack(mangaId)
+    return self:_request("POST", join_url(self.base_url, "/api/tracker/manga/" .. mangaId .. "/do-not-track"))
+end
+
+function ApiClient:trackerStatus(mangaId)
+    return self:_request("GET", join_url(self.base_url, "/api/tracker/manga/" .. mangaId .. "/status"))
+end
+
+function ApiClient:complete(chapterId)
+    local url = join_url(self.base_url, "/api/tracker/complete")
+    return self:_request("POST", url, rapidjson.encode({ chapterId = chapterId }), JSON_HEADERS)
+end
+
 function ApiClient:pageImageUrl(pageId)
     return join_url(self.base_url, "/api/page/" .. pageId .. "?profile=eink")
 end
@@ -214,10 +259,37 @@ function ApiClient:coverImageUrl(mangaId)
     return join_url(self.base_url, "/api/manga/" .. mangaId .. "/cover?profile=eink")
 end
 
+function ApiClient:linkQrUrl(sessionId)
+    return join_url(self.base_url, "/api/tracker/anilist/link/" .. sessionId .. "/qr.png")
+end
+
 -- Raw image bytes, not the JSON envelope. A missing cover (404) is an ordinary
 -- error, which the caller degrades to text on.
 function ApiClient:fetchCover(mangaId)
     local response, err = self:_send("GET", self:coverImageUrl(mangaId))
+    if not response then
+        return nil, err
+    end
+    return response.body, nil
+end
+
+-- Raw PNG bytes, not the JSON envelope. The endpoint is protected like the rest
+-- of the tracker-link flow, so it goes through the same auth/error stage.
+function ApiClient:fetchLinkQr(sessionId)
+    local response, err = self:_send("GET", self:linkQrUrl(sessionId))
+    if not response then
+        return nil, err
+    end
+    return response.body, nil
+end
+
+-- AniList candidate covers are public CDN images. Fetch them through the same
+-- transport boundary without leaking KoManga's bearer credential to that host.
+function ApiClient:fetchTrackerCover(url)
+    if type(url) ~= "string" or not url:match("^https?://") then
+        return nil, { kind = "transport", message = "invalid tracker cover URL" }
+    end
+    local response, err = self:_send("GET", url, nil, nil, nil, false)
     if not response then
         return nil, err
     end

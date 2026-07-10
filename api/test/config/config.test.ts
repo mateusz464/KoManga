@@ -5,6 +5,10 @@ function validEnv(): NodeJS.ProcessEnv {
   return {
     SUWAYOMI_URL: "http://suwayomi:4567",
     AUTH_TOKEN: "s3cr3t-token",
+    ANILIST_CLIENT_ID: "anilist-client-id",
+    ANILIST_CLIENT_SECRET: "anilist-client-secret",
+    ANILIST_REDIRECT_URI:
+      "https://komanga.example.test/api/tracker/anilist/callback",
   };
 }
 
@@ -14,6 +18,19 @@ describe("loadConfig", () => {
 
     expect(config.suwayomi.url).toBe("http://suwayomi:4567");
     expect(config.auth.token).toBe("s3cr3t-token");
+  });
+
+  it("loads AniList OAuth credentials through the typed config module", () => {
+    const config = loadConfig(validEnv());
+
+    expect(config).toMatchObject({
+      anilist: {
+        clientId: "anilist-client-id",
+        clientSecret: "anilist-client-secret",
+        redirectUri:
+          "https://komanga.example.test/api/tracker/anilist/callback",
+      },
+    });
   });
 
   it("applies documented defaults for optional variables", () => {
@@ -76,6 +93,17 @@ describe("loadConfig", () => {
       expect(() => loadConfig(env)).toThrow(/AUTH_TOKEN/);
     });
 
+    it("throws a descriptive error when AniList OAuth credentials are missing", () => {
+      const env = validEnv();
+      delete env.ANILIST_CLIENT_ID;
+      delete env.ANILIST_CLIENT_SECRET;
+      delete env.ANILIST_REDIRECT_URI;
+
+      expect(() => loadConfig(env)).toThrow(/ANILIST_CLIENT_ID/);
+      expect(() => loadConfig(env)).toThrow(/ANILIST_CLIENT_SECRET/);
+      expect(() => loadConfig(env)).toThrow(/ANILIST_REDIRECT_URI/);
+    });
+
     it("treats a blank required variable as missing", () => {
       const env = { ...validEnv(), AUTH_TOKEN: "   " };
 
@@ -92,6 +120,9 @@ describe("loadConfig", () => {
         const message = (err as Error).message;
         expect(message).toMatch(/SUWAYOMI_URL/);
         expect(message).toMatch(/AUTH_TOKEN/);
+        expect(message).toMatch(/ANILIST_CLIENT_ID/);
+        expect(message).toMatch(/ANILIST_CLIENT_SECRET/);
+        expect(message).toMatch(/ANILIST_REDIRECT_URI/);
       }
     });
 

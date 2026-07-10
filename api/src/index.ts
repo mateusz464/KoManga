@@ -8,6 +8,9 @@ import { openDatabase } from "./adapters/db/database.js";
 import { SqliteDownloadsRepository } from "./adapters/db/downloads-repository.js";
 import { SqliteReadingProgressRepository } from "./adapters/db/reading-progress-repository.js";
 import { SqliteLibraryRepository } from "./adapters/db/library-repository.js";
+import { SqliteTrackerAccountRepository } from "./adapters/db/tracker-account-repository.js";
+import { SqliteTrackerLinkRepository } from "./adapters/db/tracker-link-repository.js";
+import { createAniListTracker } from "./adapters/trackers/anilist/create-anilist-tracker.js";
 import { createPinoLogger } from "./adapters/logging/pino-logger.js";
 import { createRequestLogger } from "./http/request-logger.js";
 import { createApp } from "./http/app.js";
@@ -44,6 +47,13 @@ const downloadStore = new FilesystemDownloadStore(config.paths.cbzStore);
 const downloadsRepository = new SqliteDownloadsRepository(db);
 const readingProgressRepository = new SqliteReadingProgressRepository(db);
 const libraryRepository = new SqliteLibraryRepository(db);
+const trackerAccountRepository = new SqliteTrackerAccountRepository(db);
+const trackerLinkRepository = new SqliteTrackerLinkRepository(db);
+const anilistTracker = createAniListTracker({
+  clientId: config.anilist.clientId,
+  clientSecret: config.anilist.clientSecret,
+  redirectUri: config.anilist.redirectUri,
+});
 
 const app = createApp({
   suwayomi,
@@ -63,6 +73,11 @@ const app = createApp({
   downloadsRepository,
   readingProgressRepository,
   libraryRepository,
+  anilistTracker,
+  trackerAccountRepository,
+  trackerLinkRepository,
+  anilistOAuth: config.anilist,
+  trackerLinkSessionTtlMs: config.cache.ttlSeconds * 1000,
 });
 
 app.listen(config.port, () => {

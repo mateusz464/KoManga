@@ -28,6 +28,11 @@ export interface Config {
   readonly auth: {
     readonly token: string;
   };
+  readonly anilist: {
+    readonly clientId: string;
+    readonly clientSecret: string;
+    readonly redirectUri: string;
+  };
   readonly cache: {
     readonly maxBytes: number;
     readonly ttlSeconds: number;
@@ -164,6 +169,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     },
     auth: {
       token: requireString("AUTH_TOKEN"),
+    },
+    anilist: {
+      clientId: requireString("ANILIST_CLIENT_ID"),
+      clientSecret: requireString("ANILIST_CLIENT_SECRET"),
+      redirectUri: requireString("ANILIST_REDIRECT_URI"),
     },
     cache: {
       maxBytes: positiveInt("CACHE_MAX_BYTES", DEFAULTS.CACHE_MAX_BYTES),

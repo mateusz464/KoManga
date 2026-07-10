@@ -93,6 +93,7 @@ function buildSuwayomi(
     search: unexpected,
     getMangaDetails: unexpected,
     listChapters: unexpected,
+    getChapterDetails: unexpected,
     fetchChapters: unexpected,
     getChapterPageCount: vi.fn(async (_chapterId: string) => pageCount),
     fetchPageUrls: unexpected,

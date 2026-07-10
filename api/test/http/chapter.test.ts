@@ -31,6 +31,7 @@ function clientWithPageCount(options: {
     search: unexpected,
     getMangaDetails: unexpected,
     listChapters: unexpected,
+    getChapterDetails: unexpected,
     fetchChapters: unexpected,
     getChapterPageCount,
     fetchPageUrls: unexpected,

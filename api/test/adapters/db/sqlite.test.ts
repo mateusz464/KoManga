@@ -10,6 +10,8 @@ import { SqliteReadingProgressRepository } from "../../../src/adapters/db/readin
 import { SqliteDownloadsRepository } from "../../../src/adapters/db/downloads-repository.js";
 import { SqliteCacheIndexRepository } from "../../../src/adapters/db/cache-index-repository.js";
 import { SqliteLibraryRepository } from "../../../src/adapters/db/library-repository.js";
+import { SqliteTrackerAccountRepository } from "../../../src/adapters/db/tracker-account-repository.js";
+import { SqliteTrackerLinkRepository } from "../../../src/adapters/db/tracker-link-repository.js";
 import type {
   ReadingProgress,
   ReadingProgressRepository,
@@ -26,6 +28,15 @@ import type {
   LibraryEntry,
   LibraryRepository,
 } from "../../../src/services/ports/library-repository.js";
+import type {
+  TrackerAccount,
+  TrackerAccountRepository,
+} from "../../../src/services/ports/tracker-account-repository.js";
+import type {
+  TrackerLink,
+  TrackerLinkRepository,
+  TrackerMatch,
+} from "../../../src/services/ports/tracker-link-repository.js";
 
 // The SQLite data layer exercised against the REAL better-sqlite3 library on a
 // temp on-disk DB: migrations are idempotent across reopens; reading_progress is
@@ -65,6 +76,8 @@ function repos(db: AppDatabase = freshDb()) {
     downloads: new SqliteDownloadsRepository(db),
     cacheIndex: new SqliteCacheIndexRepository(db),
     library: new SqliteLibraryRepository(db),
+    trackerAccounts: new SqliteTrackerAccountRepository(db),
+    trackerLinks: new SqliteTrackerLinkRepository(db),
   };
 }
 
@@ -110,6 +123,26 @@ const LIBRARY_ENTRY: LibraryEntry = {
   addedAt: 1_000,
 };
 
+const TRACKER_ACCOUNT: TrackerAccount = {
+  service: "anilist",
+  accessToken: "secret-access-token",
+  tokenType: "Bearer",
+  expiresAt: 1_900_000_000_000,
+  anilistUserId: "12345",
+  username: "AniListUser",
+};
+
+const TRACKER_MATCH: TrackerMatch = {
+  mangaId: "manga-1",
+  service: "anilist",
+  mediaId: "9876",
+};
+
+const TRACKER_LINK: TrackerLink = {
+  ...TRACKER_MATCH,
+  doNotTrack: false,
+};
+
 describe("SQLite data layer (API-501)", () => {
   describe("migrations", () => {
     it("creates the downloads, reading_progress and cache_index tables on a fresh DB", () => {
@@ -120,6 +153,33 @@ describe("SQLite data layer (API-501)", () => {
       expect(tables).toContain("downloads");
       expect(tables).toContain("cache_index");
       expect(tables).toContain("library");
+    });
+
+    it("creates tracker_account and tracker_link tables on a fresh DB", () => {
+      const db = freshDb();
+
+      const tables = tableNames(db);
+      expect(tables).toContain("tracker_account");
+      expect(tables).toContain("tracker_link");
+      expect(columnNames(db, "tracker_account")).toEqual(
+        expect.arrayContaining([
+          "service",
+          "access_token",
+          "token_type",
+          "expires_at",
+          "anilist_user_id",
+          "username",
+        ]),
+      );
+      expect(columnNames(db, "tracker_link")).toEqual(
+        expect.arrayContaining([
+          "manga_id",
+          "service",
+          "media_id",
+          "last_synced_chapter",
+          "do_not_track",
+        ]),
+      );
     });
 
     it("is safe to run again on an already-migrated DB and preserves data", () => {
@@ -134,6 +194,27 @@ describe("SQLite data layer (API-501)", () => {
       const second = repos(freshDb(file));
       expect(() => tableNames(second.db)).not.toThrow();
       expect(second.downloads.get(DOWNLOAD.chapterId)).toEqual(DOWNLOAD);
+    });
+
+    it("re-runs tracker migrations safely and preserves tracker rows", () => {
+      const file = "tracker-persist.sqlite";
+      const first = repos(freshDb(file));
+      first.trackerAccounts.upsert(TRACKER_ACCOUNT);
+      first.trackerLinks.setMatch(TRACKER_MATCH);
+      first.trackerLinks.updateLastSynced(
+        TRACKER_LINK.mangaId,
+        TRACKER_LINK.service,
+        12,
+      );
+      first.db.close();
+      opened.length = 0;
+
+      const second = repos(freshDb(file));
+      expect(second.trackerAccounts.get("anilist")).toEqual(TRACKER_ACCOUNT);
+      expect(second.trackerLinks.get(TRACKER_LINK.mangaId, "anilist")).toEqual({
+        ...TRACKER_LINK,
+        lastSyncedChapter: 12,
+      });
     });
   });
 
@@ -357,6 +438,163 @@ describe("SQLite data layer (API-501)", () => {
     });
   });
 
+  describe("TrackerAccountRepository (KOM-137)", () => {
+    it("returns undefined when no account has been stored for a service", () => {
+      const { trackerAccounts } = repos();
+
+      expect(trackerAccounts.get("anilist")).toBeUndefined();
+    });
+
+    it("upserts then returns the stored tracker account", () => {
+      const { trackerAccounts } = repos();
+
+      trackerAccounts.upsert(TRACKER_ACCOUNT);
+
+      expect(trackerAccounts.get("anilist")).toEqual(TRACKER_ACCOUNT);
+    });
+
+    it("keeps a single logical account per service and replaces it on upsert", () => {
+      const { db, trackerAccounts } = repos();
+
+      trackerAccounts.upsert(TRACKER_ACCOUNT);
+      trackerAccounts.upsert({
+        ...TRACKER_ACCOUNT,
+        accessToken: "replacement-secret",
+        expiresAt: 1_900_000_060_000,
+        anilistUserId: "67890",
+        username: "ReplacementUser",
+      });
+
+      const rows = db
+        .prepare("SELECT service FROM tracker_account WHERE service = ?")
+        .all("anilist");
+      expect(rows).toHaveLength(1);
+      expect(trackerAccounts.get("anilist")).toEqual({
+        ...TRACKER_ACCOUNT,
+        accessToken: "replacement-secret",
+        expiresAt: 1_900_000_060_000,
+        anilistUserId: "67890",
+        username: "ReplacementUser",
+      });
+    });
+
+    it("round-trips the linked AniList username", () => {
+      const { trackerAccounts } = repos();
+
+      trackerAccounts.upsert({
+        ...TRACKER_ACCOUNT,
+        username: "ReadableName",
+      });
+
+      expect(trackerAccounts.get("anilist")?.username).toBe("ReadableName");
+    });
+
+    it("deletes the stored account without touching tracker_link rows", () => {
+      const { trackerAccounts, trackerLinks } = repos();
+
+      trackerAccounts.upsert(TRACKER_ACCOUNT);
+      trackerLinks.setMatch(TRACKER_MATCH);
+
+      trackerAccounts.delete("anilist");
+
+      expect(trackerAccounts.get("anilist")).toBeUndefined();
+      expect(trackerLinks.get(TRACKER_LINK.mangaId, "anilist")).toEqual(
+        TRACKER_LINK,
+      );
+    });
+
+    it("delete is idempotent for an absent account", () => {
+      const { trackerAccounts } = repos();
+
+      expect(() => trackerAccounts.delete("anilist")).not.toThrow();
+      expect(trackerAccounts.get("anilist")).toBeUndefined();
+    });
+  });
+
+  describe("TrackerLinkRepository (KOM-137)", () => {
+    it("returns undefined when a manga has no tracker link", () => {
+      const { trackerLinks } = repos();
+
+      expect(trackerLinks.get("missing-manga", "anilist")).toBeUndefined();
+    });
+
+    it("sets then returns a tracker match for a manga", () => {
+      const { trackerLinks } = repos();
+
+      trackerLinks.setMatch(TRACKER_MATCH);
+
+      expect(trackerLinks.get(TRACKER_LINK.mangaId, "anilist")).toEqual(
+        TRACKER_LINK,
+      );
+    });
+
+    it("setMatch replaces the media id for an existing manga/service row", () => {
+      const { trackerLinks } = repos();
+
+      trackerLinks.setMatch(TRACKER_MATCH);
+      trackerLinks.setMatch({ ...TRACKER_LINK, mediaId: "5555" });
+
+      expect(trackerLinks.get(TRACKER_LINK.mangaId, "anilist")).toEqual({
+        ...TRACKER_LINK,
+        mediaId: "5555",
+      });
+    });
+
+    it("clears a tracker match while preserving the link row flags", () => {
+      const { trackerLinks } = repos();
+
+      trackerLinks.setMatch(TRACKER_MATCH);
+      trackerLinks.setDoNotTrack(TRACKER_LINK.mangaId, "anilist", true);
+      trackerLinks.clearMatch(TRACKER_LINK.mangaId, "anilist");
+
+      expect(trackerLinks.get(TRACKER_LINK.mangaId, "anilist")).toEqual({
+        mangaId: TRACKER_LINK.mangaId,
+        service: "anilist",
+        doNotTrack: true,
+      });
+    });
+
+    it("toggles the do-not-track flag for a manga/service row", () => {
+      const { trackerLinks } = repos();
+
+      trackerLinks.setDoNotTrack(TRACKER_LINK.mangaId, "anilist", true);
+      expect(trackerLinks.get(TRACKER_LINK.mangaId, "anilist")).toEqual({
+        mangaId: TRACKER_LINK.mangaId,
+        service: "anilist",
+        doNotTrack: true,
+      });
+
+      trackerLinks.setDoNotTrack(TRACKER_LINK.mangaId, "anilist", false);
+      expect(trackerLinks.get(TRACKER_LINK.mangaId, "anilist")).toEqual({
+        mangaId: TRACKER_LINK.mangaId,
+        service: "anilist",
+        doNotTrack: false,
+      });
+    });
+
+    it("updates the last synced chapter without changing the match or flags", () => {
+      const { trackerLinks } = repos();
+
+      trackerLinks.setMatch(TRACKER_MATCH);
+      trackerLinks.setDoNotTrack(TRACKER_LINK.mangaId, "anilist", true);
+      trackerLinks.updateLastSynced(TRACKER_LINK.mangaId, "anilist", 24);
+
+      expect(trackerLinks.get(TRACKER_LINK.mangaId, "anilist")).toEqual({
+        ...TRACKER_LINK,
+        lastSyncedChapter: 24,
+        doNotTrack: true,
+      });
+    });
+
+    it("clearMatch is a no-op for an absent manga/service row", () => {
+      const { trackerLinks } = repos();
+
+      expect(() =>
+        trackerLinks.clearMatch("missing-manga", "anilist"),
+      ).not.toThrow();
+    });
+  });
+
   describe("mockability (DB access behind interfaces)", () => {
     it("ReadingProgressRepository can be satisfied by a mock", () => {
       const mock: ReadingProgressRepository = {
@@ -404,6 +642,34 @@ describe("SQLite data layer (API-501)", () => {
       expect(mock.list()).toEqual([LIBRARY_ENTRY]);
       mock.add(LIBRARY_ENTRY);
       expect(mock.add).toHaveBeenCalledWith(LIBRARY_ENTRY);
+    });
+
+    it("TrackerAccountRepository can be satisfied by a mock", () => {
+      const mock: TrackerAccountRepository = {
+        get: vi.fn().mockReturnValue(TRACKER_ACCOUNT),
+        upsert: vi.fn(),
+        delete: vi.fn(),
+      };
+
+      mock.upsert(TRACKER_ACCOUNT);
+      mock.delete("anilist");
+      expect(mock.get("anilist")).toBe(TRACKER_ACCOUNT);
+      expect(mock.upsert).toHaveBeenCalledWith(TRACKER_ACCOUNT);
+      expect(mock.delete).toHaveBeenCalledWith("anilist");
+    });
+
+    it("TrackerLinkRepository can be satisfied by a mock", () => {
+      const mock: TrackerLinkRepository = {
+        get: vi.fn().mockReturnValue(TRACKER_LINK),
+        setMatch: vi.fn(),
+        clearMatch: vi.fn(),
+        setDoNotTrack: vi.fn(),
+        updateLastSynced: vi.fn(),
+      };
+
+      mock.setMatch(TRACKER_MATCH);
+      expect(mock.get(TRACKER_LINK.mangaId, "anilist")).toBe(TRACKER_LINK);
+      expect(mock.setMatch).toHaveBeenCalledWith(TRACKER_MATCH);
     });
   });
 });

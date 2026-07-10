@@ -7,6 +7,9 @@ import type { DownloadStore } from "../services/ports/download-store.js";
 import type { DownloadsRepository } from "../services/ports/downloads-repository.js";
 import type { ReadingProgressRepository } from "../services/ports/reading-progress-repository.js";
 import type { LibraryRepository } from "../services/ports/library-repository.js";
+import type { Tracker } from "../services/ports/tracker.js";
+import type { TrackerAccountRepository } from "../services/ports/tracker-account-repository.js";
+import type { TrackerLinkRepository } from "../services/ports/tracker-link-repository.js";
 import type { Logger } from "../services/ports/logger.js";
 import { SourceService } from "../services/source-service.js";
 import { SearchService } from "../services/search-service.js";
@@ -18,6 +21,8 @@ import { DownloadService } from "../services/download-service.js";
 import { ReaderService } from "../services/reader-service.js";
 import { ProgressService } from "../services/progress-service.js";
 import { LibraryService } from "../services/library-service.js";
+import { TrackerLinkService } from "../services/tracker-link-service.js";
+import { TrackingService } from "../services/tracking-service.js";
 import { sourcesRouter } from "../routes/sources.js";
 import { searchRouter } from "../routes/search.js";
 import { mangaRouter } from "../routes/manga.js";
@@ -28,6 +33,11 @@ import { downloadsRouter } from "../routes/downloads.js";
 import { readerRouter } from "../routes/reader.js";
 import { progressRouter } from "../routes/progress.js";
 import { libraryRouter } from "../routes/library.js";
+import {
+  protectedTrackerLinkRouter,
+  publicTrackerLinkRouter,
+} from "../routes/tracker-link.js";
+import { trackerRouter } from "../routes/tracker.js";
 import { createErrorHandler, notFoundHandler } from "./error-handler.js";
 import { requireAuth } from "./auth.js";
 import { rateLimit, type RateLimitOptions } from "./rate-limit.js";
@@ -58,6 +68,15 @@ export interface AppDependencies {
   readonly downloadsRepository?: DownloadsRepository;
   readonly readingProgressRepository?: ReadingProgressRepository;
   readonly libraryRepository?: LibraryRepository;
+  readonly anilistTracker?: Tracker;
+  readonly trackerAccountRepository?: TrackerAccountRepository;
+  readonly trackerLinkRepository?: TrackerLinkRepository;
+  readonly anilistOAuth?: {
+    readonly clientId: string;
+    readonly clientSecret: string;
+    readonly redirectUri: string;
+  };
+  readonly trackerLinkSessionTtlMs?: number;
 }
 
 // Mirrors config's CBZ_PAGE_CONCURRENCY default, for when a test omits the knob.
@@ -66,6 +85,18 @@ const DEFAULT_PAGE_CONCURRENCY = 6;
 export function createApp(deps: AppDependencies): express.Express {
   const app = express();
   const pageConcurrency = deps.pageConcurrency ?? DEFAULT_PAGE_CONCURRENCY;
+  const trackerLinkService =
+    deps.anilistTracker &&
+    deps.trackerAccountRepository &&
+    deps.anilistOAuth &&
+    deps.trackerLinkSessionTtlMs
+      ? new TrackerLinkService(
+          deps.anilistTracker,
+          deps.trackerAccountRepository,
+          deps.anilistOAuth,
+          deps.trackerLinkSessionTtlMs,
+        )
+      : undefined;
 
   // Before any routing, so even /health and rejected requests are logged.
   if (deps.requestLogger) {
@@ -82,8 +113,37 @@ export function createApp(deps: AppDependencies): express.Express {
     app.use("/api", rateLimit(deps.rateLimit));
   }
 
+  // The OAuth callback is intentionally public: AniList cannot send our bearer
+  // token back. It accepts only code+state and exposes no account data.
+  if (trackerLinkService) {
+    app.use("/api", publicTrackerLinkRouter(trackerLinkService));
+  }
+
   if (deps.authToken) {
     app.use("/api", requireAuth(deps.authToken));
+  }
+
+  if (trackerLinkService) {
+    app.use("/api", protectedTrackerLinkRouter(trackerLinkService));
+  }
+
+  if (
+    deps.anilistTracker &&
+    deps.trackerAccountRepository &&
+    deps.trackerLinkRepository
+  ) {
+    app.use(
+      "/api",
+      trackerRouter(
+        new TrackingService(
+          deps.suwayomi,
+          deps.anilistTracker,
+          deps.trackerAccountRepository,
+          deps.trackerLinkRepository,
+          deps.logger ?? NOOP_LOGGER,
+        ),
+      ),
+    );
   }
 
   app.use("/api", sourcesRouter(new SourceService(deps.suwayomi)));

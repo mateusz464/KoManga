@@ -9,6 +9,7 @@ local KEY_CREDENTIAL = "komanga_credential"
 local KEY_API_BASE_URL = "komanga_api_base_url"
 local KEY_PREFETCH_WINDOW = "komanga_prefetch_window"
 local KEY_PROGRESS_DEBOUNCE = "komanga_progress_debounce_seconds"
+local KEY_TRACKER_ANILIST_LINKED = "komanga_tracker_anilist_linked"
 
 function Settings.new(store)
     return setmetatable({ store = store }, Settings)
@@ -46,6 +47,15 @@ end
 
 function Settings:getProgressDebounceSeconds()
     return self.store:readSetting(KEY_PROGRESS_DEBOUNCE) or Config.progress_debounce_seconds
+end
+
+function Settings:isTrackerLinked()
+    return self.store:readSetting(KEY_TRACKER_ANILIST_LINKED) == true
+end
+
+function Settings:setTrackerLinked(linked)
+    self.store:saveSetting(KEY_TRACKER_ANILIST_LINKED, linked == true)
+    self.store:flush()
 end
 
 return Settings

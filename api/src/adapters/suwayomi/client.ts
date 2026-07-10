@@ -2,6 +2,7 @@ import { NotFoundError } from "../../http/errors.js";
 import {
   SuwayomiError,
   type Chapter,
+  type ChapterDetails,
   type MangaDetails,
   type MangaSummary,
   type PageRef,
@@ -78,6 +79,20 @@ const LIST_CHAPTERS = /* GraphQL */ `
   }
 `;
 
+const CHAPTER_DETAILS = /* GraphQL */ `
+  query ChapterDetails($id: Int!) {
+    chapter(id: $id) {
+      id
+      name
+      chapterNumber
+      scanlator
+      uploadDate
+      pageCount
+      mangaId
+    }
+  }
+`;
+
 // Scrapes the source for the manga's chapters and returns the populated list.
 // A query of `manga.chapters.nodes` (LIST_CHAPTERS) only reads what Suwayomi
 // has already stored; this mutation is what actually fetches from the source,
@@ -148,6 +163,10 @@ interface RawChapter {
   pageCount?: unknown;
 }
 
+interface RawChapterDetails extends RawChapter {
+  mangaId?: unknown;
+}
+
 export interface SuwayomiClientOptions {
   readonly baseUrl?: string;
   readonly fetchBytes?: (url: string) => Promise<RawPage>;
@@ -203,6 +222,30 @@ export class SuwayomiGraphQLClient implements SuwayomiClient {
       manga?: { chapters?: { nodes?: RawChapter[] } };
     }>(LIST_CHAPTERS, mangaId);
     return (data.manga?.chapters?.nodes ?? []).map(mapChapter);
+  }
+
+  // Rooted at the non-null `chapter(id:)` field: like `manga(id:)`, an unknown
+  // id surfaces as a non-null violation on the `chapter` path, mapped to 404
+  // not 502 (live, KOM-144).
+  async getChapterDetails(chapterId: string): Promise<ChapterDetails> {
+    let data: { chapter?: RawChapterDetails };
+    try {
+      data = (await this.transport.request(CHAPTER_DETAILS, {
+        id: toIntId(chapterId),
+      })) as { chapter?: RawChapterDetails };
+    } catch (cause) {
+      if (isNotFoundOnPath(cause, "chapter")) {
+        throw new NotFoundError(`Chapter ${chapterId} not found`);
+      }
+      throw new SuwayomiError(undefined, cause);
+    }
+    if (!data.chapter) {
+      throw new NotFoundError(`Chapter ${chapterId} not found`);
+    }
+    return {
+      ...mapChapter(data.chapter),
+      mangaId: String(data.chapter.mangaId ?? ""),
+    };
   }
 
   // Triggers Suwayomi's source scrape and returns the resulting chapters. A
@@ -362,43 +405,37 @@ interface RawGraphQLError {
   path?: unknown;
 }
 
-// A missing manga is signalled as a non-null violation on the `manga` path —
-// the only "not found" channel Suwayomi gives for `manga(id:)`.
-function isMangaNotFound(cause: unknown): boolean {
+function responseErrors(cause: unknown): RawGraphQLError[] {
   if (typeof cause !== "object" || cause === null || !("response" in cause)) {
-    return false;
+    return [];
   }
   const response = (cause as { response?: unknown }).response;
   if (typeof response !== "object" || response === null) {
-    return false;
+    return [];
   }
   const errors = (response as { errors?: unknown }).errors;
-  if (!Array.isArray(errors)) {
-    return false;
-  }
-  return errors.some((error: RawGraphQLError) => {
-    const onMangaPath =
-      Array.isArray(error?.path) && error.path.includes("manga");
+  return Array.isArray(errors) ? (errors as RawGraphQLError[]) : [];
+}
+
+// A missing manga/chapter is signalled as a non-null violation on that field's
+// path — the only "not found" channel Suwayomi gives for `manga(id:)` and
+// `chapter(id:)`.
+function isNotFoundOnPath(cause: unknown, path: string): boolean {
+  return responseErrors(cause).some((error) => {
+    const onPath = Array.isArray(error?.path) && error.path.includes(path);
     const isNullViolation = /null/i.test(String(error?.message ?? ""));
-    return onMangaPath && isNullViolation;
+    return onPath && isNullViolation;
   });
+}
+
+function isMangaNotFound(cause: unknown): boolean {
+  return isNotFoundOnPath(cause, "manga");
 }
 
 // An unknown chapter on `fetchChapterPages` comes back as a "Collection is
 // empty." error — the only signal Suwayomi gives for a missing chapter here.
 function isChapterNotFound(cause: unknown): boolean {
-  if (typeof cause !== "object" || cause === null || !("response" in cause)) {
-    return false;
-  }
-  const response = (cause as { response?: unknown }).response;
-  if (typeof response !== "object" || response === null) {
-    return false;
-  }
-  const errors = (response as { errors?: unknown }).errors;
-  if (!Array.isArray(errors)) {
-    return false;
-  }
-  return errors.some((error: RawGraphQLError) =>
+  return responseErrors(cause).some((error) =>
     /collection is empty/i.test(String(error?.message ?? "")),
   );
 }
@@ -407,18 +444,7 @@ function isChapterNotFound(cause: unknown): boolean {
 // the `fetchChapters` mutation — the signal to map to an empty list rather than
 // a 5xx (API-904). Empty payloads are handled separately by the caller.
 function isNoChaptersFound(cause: unknown): boolean {
-  if (typeof cause !== "object" || cause === null || !("response" in cause)) {
-    return false;
-  }
-  const response = (cause as { response?: unknown }).response;
-  if (typeof response !== "object" || response === null) {
-    return false;
-  }
-  const errors = (response as { errors?: unknown }).errors;
-  if (!Array.isArray(errors)) {
-    return false;
-  }
-  return errors.some((error: RawGraphQLError) =>
+  return responseErrors(cause).some((error) =>
     /no chapters found/i.test(String(error?.message ?? "")),
   );
 }
