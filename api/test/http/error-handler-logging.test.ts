@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import express from "express";
-import request from "supertest";
+import { request } from "../support/http.js";
 import { createErrorHandler } from "../../src/http/error-handler.js";
 import { BadRequestError } from "../../src/http/errors.js";
 import type { Logger } from "../../src/services/ports/logger.js";

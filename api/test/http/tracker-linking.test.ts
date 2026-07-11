@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import request, { type Response } from "supertest";
+import { request, type Response } from "../support/http.js";
 import type { IncomingMessage } from "node:http";
 import { createApp } from "../../src/http/app.js";
 import {
@@ -249,24 +249,28 @@ describe("AniList account-linking endpoints (KOM-139)", () => {
   });
 
   it("reports expired sessions and rejects expired callback states", async () => {
-    const { app, exchangeCode, upsert } = appWithTracker({ ttlMs: 1 });
-    const session = await createLinkSession(app);
+    const now = vi.spyOn(Date, "now").mockReturnValue(1_000);
+    try {
+      const { app, exchangeCode, upsert } = appWithTracker({ ttlMs: 1 });
+      const session = await createLinkSession(app);
+      now.mockReturnValue(1_002);
 
-    await new Promise((resolve) => setTimeout(resolve, 5));
+      const status = await request(app)
+        .get(`/api/tracker/anilist/link/${session.sessionId}/status`)
+        .set("Authorization", bearer(TOKEN));
+      const callback = await request(app)
+        .get("/api/tracker/anilist/callback")
+        .query({ code: "oauth-code", state: session.sessionId });
 
-    const status = await request(app)
-      .get(`/api/tracker/anilist/link/${session.sessionId}/status`)
-      .set("Authorization", bearer(TOKEN));
-    const callback = await request(app)
-      .get("/api/tracker/anilist/callback")
-      .query({ code: "oauth-code", state: session.sessionId });
-
-    expect(status.status).toBe(200);
-    expect(status.body).toEqual({ data: { status: "expired" } });
-    expect(callback.status).toBe(400);
-    expect(callback.body.error.code).toBe("BAD_REQUEST");
-    expect(exchangeCode).not.toHaveBeenCalled();
-    expect(upsert).not.toHaveBeenCalled();
+      expect(status.status).toBe(200);
+      expect(status.body).toEqual({ data: { status: "expired" } });
+      expect(callback.status).toBe(400);
+      expect(callback.body.error.code).toBe("BAD_REQUEST");
+      expect(exchangeCode).not.toHaveBeenCalled();
+      expect(upsert).not.toHaveBeenCalled();
+    } finally {
+      now.mockRestore();
+    }
   });
 
   it("returns the standard tracker error envelope when token exchange fails", async () => {

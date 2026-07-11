@@ -7,19 +7,20 @@ Test runner: **Vitest**. HTTP-level helper: **supertest**.
 
 ## Writing HTTP endpoint tests (the documented pattern)
 
-Endpoint tests exercise the Express app **through HTTP** without binding a port.
+Endpoint tests exercise the Express app **through HTTP** using a test-scoped
+loopback listener. The shared helper keeps that listener open until teardown so
+multi-request tests do not repeatedly create and close ephemeral servers.
 The composition root exposes an app factory, `createApp(deps)`, in
 `src/http/app.ts`. It takes the external ports (e.g. the `SuwayomiClient`) as
 injected dependencies, so tests pass mocks at the port boundary. supertest
-accepts the returned Express instance directly and issues in-process requests
-against it.
+uses the returned Express instance through `test/support/http.ts`.
 
 The pattern, per CLAUDE.md §4 (endpoint tests go through Express with
 services/ports mocked, asserting status codes and the response envelope):
 
 ```ts
 import { describe, expect, it } from "vitest";
-import request from "supertest";
+import { request } from "../support/http.js";
 import { createApp } from "../../src/http/app.js";
 import { stubSuwayomi } from "../support/stub-suwayomi.js";
 

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import request from "supertest";
+import { request } from "../support/http.js";
 import { createApp } from "../../src/http/app.js";
 import type { Logger } from "../../src/services/ports/logger.js";
 import {
@@ -26,7 +26,6 @@ const TOKEN = "single-user-token";
 const MANGA_ID = "42";
 const CHAPTER_ID = "4242";
 const MEDIA_ID = "30002";
-const NOW_FUTURE = Date.now() + 60_000;
 
 function bearer(token: string): string {
   return `Bearer ${token}`;
@@ -119,7 +118,7 @@ function linkedAccount(
     service: "anilist",
     accessToken: "linked-access-token",
     tokenType: "Bearer",
-    expiresAt: NOW_FUTURE,
+    expiresAt: Date.now() + 60_000,
     anilistUserId: "12345",
     username: "matt",
     ...overrides,
@@ -341,6 +340,7 @@ describe("POST /api/tracker/complete (KOM-143)", () => {
 
   it("responds before a background AniList write settles and logs the swallowed failure", async () => {
     let rejectSave!: (error: unknown) => void;
+    let saveRejected = false;
     const pendingSave = new Promise<TrackerListEntry>((_resolve, reject) => {
       rejectSave = reject;
     });
@@ -351,38 +351,44 @@ describe("POST /api/tracker/complete (KOM-143)", () => {
     const links = linkRepository(matchedLink());
     const log = logger();
 
-    const responseOrTimeout = await Promise.race([
-      postComplete(
-        appWithTracker({
-          tracker: tracker.tracker,
-          links: links.repo,
-          logger: log,
-        }),
-      ),
-      new Promise<"timeout">((resolve) =>
-        setTimeout(() => resolve("timeout"), 25),
-      ),
-    ]);
+    const rejectPendingSave = () => {
+      if (!saveRejected) {
+        saveRejected = true;
+        rejectSave(new TrackerError("graphql"));
+      }
+    };
+    let responseStatus: number | undefined;
+    const response = postComplete(
+      appWithTracker({
+        tracker: tracker.tracker,
+        links: links.repo,
+        logger: log,
+      }),
+    ).then((res) => {
+      responseStatus = res.status;
+      return res;
+    });
 
-    if (responseOrTimeout === "timeout") {
-      rejectSave(new TrackerError("graphql"));
-      throw new Error("POST /api/tracker/complete waited on saveProgress");
+    try {
+      await vi.waitFor(() => {
+        expect(tracker.saveProgress).toHaveBeenCalledWith(
+          MEDIA_ID,
+          24,
+          "reading",
+        );
+      });
+      await vi.waitFor(() => expect(responseStatus).toBeDefined());
+      expect(responseStatus).toBe(202);
+
+      rejectPendingSave();
+
+      await vi.waitFor(() => {
+        expect(log.error).toHaveBeenCalled();
+        expect(links.updateLastSynced).not.toHaveBeenCalled();
+      });
+    } finally {
+      rejectPendingSave();
+      await response;
     }
-
-    expect(responseOrTimeout.status).toBe(202);
-    await vi.waitFor(() => {
-      expect(tracker.saveProgress).toHaveBeenCalledWith(
-        MEDIA_ID,
-        24,
-        "reading",
-      );
-    });
-
-    rejectSave(new TrackerError("graphql"));
-
-    await vi.waitFor(() => {
-      expect(log.error).toHaveBeenCalled();
-      expect(links.updateLastSynced).not.toHaveBeenCalled();
-    });
   });
 });
