@@ -32,6 +32,7 @@ local ReaderMenu = require("ui/reader_menu")
 local SwipeOverride = require("ui/swipe_override")
 local ProgressSync = require("ui/progress_sync")
 local CompletionSync = require("ui/completion_sync")
+local NextChapterPrompt = require("ui/next_chapter_prompt")
 local DownloadDelete = require("ui/download_delete")
 local Retry = require("ui/retry")
 local _ = require("gettext")
@@ -69,6 +70,12 @@ function Komanga:init()
             net = self.net,
             api = self.api,
         }
+        self.next_chapter_prompt = NextChapterPrompt.new{
+            ui = self.ui,
+            net = self.net,
+            api = self.api,
+            auth = self.auth,
+        }
         SwipeOverride.register{
             ui = self.ui,
             settings = self.settings,
@@ -77,14 +84,29 @@ function Komanga:init()
     self.ui.menu:registerToMainMenu(self)
 end
 
--- Reader events. Each returns nothing so the event keeps propagating to KOReader's
--- own modules, and is inert (no progress_sync) in the file-manager context.
+-- Reader events. All but onEndOfBook return nothing so the event keeps propagating
+-- to KOReader's own modules; each is inert (no sync modules) in the file-manager
+-- context.
 function Komanga:onReaderReady(doc_settings)
     if self.progress_sync then
         self.progress_sync:onReaderReady(doc_settings)
     end
     if self.completion_sync then
         self.completion_sync:onReaderReady(doc_settings)
+    end
+    if self.next_chapter_prompt then
+        self.next_chapter_prompt:onReaderReady(doc_settings)
+    end
+end
+
+-- Consumed (returns true) only when the next-chapter popup is offered; otherwise
+-- KOReader's default end-of-document handling runs. In practice the prompt's
+-- ReaderStatus hook fields the event before it ever propagates this far (see
+-- ui/next_chapter_prompt.lua); this handler is the fallback for a ReaderUI
+-- without a status module.
+function Komanga:onEndOfBook()
+    if self.next_chapter_prompt then
+        return self.next_chapter_prompt:onEndOfBook()
     end
 end
 
