@@ -285,7 +285,7 @@ server.tool(
           description_html: ticketToHtml(ticket),
           state: stateId,
           priority: "none",
-          label_ids: labels.length > 0 ? labels : undefined,
+          labels: labels.length > 0 ? labels : undefined,
           parent: featureItem.id,
           external_id: ticket.id,
           external_source: "komanga-tasks",
@@ -396,7 +396,7 @@ server.tool(
       description_html,
       state: stateId,
       priority: priority ?? "none",
-      label_ids: labelIds,
+      labels: labelIds,
       parent: parent_id,
     });
 

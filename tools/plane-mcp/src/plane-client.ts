@@ -51,11 +51,18 @@ export interface CreateWorkItemInput {
   description_html?: string;
   state?: string;
   priority?: "urgent" | "high" | "medium" | "low" | "none";
-  label_ids?: string[];
+  labels?: string[];
   parent?: string | null;
   estimate_point?: number | null;
   external_id?: string;
   external_source?: string;
+}
+
+export function normalizeDescriptionHtml(html: string): string {
+  return html
+    .replace(/>\s+</g, "><")
+    .replace(/\s*\n\s*/g, " ")
+    .trim();
 }
 
 export interface PaginatedResponse<T> {
@@ -63,6 +70,16 @@ export interface PaginatedResponse<T> {
   total_results: number;
   next_page_results: boolean;
   next_cursor: string;
+}
+
+function withNormalizedDescription<
+  T extends { description_html?: string },
+>(input: T): T {
+  if (input.description_html === undefined) return input;
+  return {
+    ...input,
+    description_html: normalizeDescriptionHtml(input.description_html),
+  };
 }
 
 export class PlaneClient {
@@ -104,7 +121,8 @@ export class PlaneClient {
         );
       }
 
-      return res.json() as Promise<T>;
+      const text = await res.text();
+      return (text ? JSON.parse(text) : undefined) as T;
     }
 
     throw new Error(`Plane API ${method} ${path} → exhausted retries`);
@@ -215,7 +233,11 @@ export class PlaneClient {
     projectId: string,
     input: CreateWorkItemInput
   ): Promise<WorkItem> {
-    return this.request("POST", `/projects/${projectId}/work-items/`, input);
+    return this.request(
+      "POST",
+      `/projects/${projectId}/work-items/`,
+      withNormalizedDescription(input)
+    );
   }
 
   async updateWorkItem(
@@ -226,7 +248,7 @@ export class PlaneClient {
     return this.request(
       "PATCH",
       `/projects/${projectId}/work-items/${workItemId}/`,
-      input
+      withNormalizedDescription(input)
     );
   }
 
