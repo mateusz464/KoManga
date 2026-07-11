@@ -142,12 +142,6 @@ Linking uses AniList OAuth, so you need your own AniList app credentials once:
    `ANILIST_CLIENT_ID` / `ANILIST_CLIENT_SECRET`, and set `ANILIST_REDIRECT_URI`
    to the exact same Redirect URL, then restart the stack.
 
-> Linking works over a QR code the API generates, so the callback URL must be
-> publicly reachable. Run the stack with the Cloudflare Tunnel profile
-> (`docker compose --profile tunnel up -d`) while linking — a LAN-only server
-> can't complete the AniList handshake. See
-> [`docs/cloudflare-tunnel.md`](docs/cloudflare-tunnel.md).
-
 ### Link and track from your Kobo
 
 1. **Link your account.** In the plugin, open the **Tracking** menu and start
