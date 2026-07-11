@@ -43,6 +43,7 @@ local Komanga = WidgetContainer:extend{
 }
 
 function Komanga:init()
+    self.shown_screens = {}
     self.settings = Settings.open()
     -- on_prompt fires on any 401; the API client reads credentialGetter() per request.
     self.auth = Auth.new{
@@ -220,6 +221,31 @@ function Komanga:showServerUrlPrompt()
     }
 end
 
+-- The stacked screens (Library / Browse / Details) are tracked so the reader
+-- hand-off can close the whole stack: left open they sit beneath the reader all
+-- session and resurface one by one on KOReader exit (KOM-161). Tracker screens
+-- manage their own lifecycle and stay out of this.
+function Komanga:showScreen(widget)
+    self.shown_screens[#self.shown_screens + 1] = widget
+    UIManager:show(widget)
+end
+
+function Komanga:closeScreen(widget)
+    for i = #self.shown_screens, 1, -1 do
+        if self.shown_screens[i] == widget then
+            table.remove(self.shown_screens, i)
+        end
+    end
+    UIManager:close(widget)
+end
+
+function Komanga:closeShownScreens()
+    for i = #self.shown_screens, 1, -1 do
+        UIManager:close(self.shown_screens[i])
+        self.shown_screens[i] = nil
+    end
+end
+
 function Komanga:showLibrary()
     -- One shared index handle, so a deletion mutates the same in-memory index the
     -- Library view renders from.
@@ -246,10 +272,10 @@ function Komanga:showLibrary()
             }
         end,
         close_callback = function()
-            UIManager:close(home)
+            self:closeScreen(home)
         end,
     }
-    UIManager:show(home)
+    self:showScreen(home)
     home:start()
 end
 
@@ -332,10 +358,10 @@ function Komanga:showBrowse()
             self:showDetails(manga)
         end,
         close_callback = function()
-            UIManager:close(browser)
+            self:closeScreen(browser)
         end,
     }
-    UIManager:show(browser)
+    self:showScreen(browser)
     browser:start()
 end
 
@@ -450,10 +476,10 @@ function Komanga:showDetails(manga)
             self:openReader(details_state, chapter)
         end,
         close_callback = function()
-            UIManager:close(details)
+            self:closeScreen(details)
         end,
     }
-    UIManager:show(details)
+    self:showScreen(details)
     details:start()
 end
 
@@ -470,6 +496,9 @@ function Komanga:openReader(details_state, chapter)
         direction = details_state:getReadingDirection(),
         net = self.net,
         auth = self.auth,
+        on_before_show = function()
+            self:closeShownScreens()
+        end,
     }
 end
 
