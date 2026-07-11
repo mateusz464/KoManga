@@ -154,7 +154,25 @@ function ApiClient:search(opts)
     if opts.page then
         params[#params + 1] = "page=" .. urlencode(opts.page)
     end
+    for _, genre in ipairs(opts.genres or {}) do
+        params[#params + 1] = "genre=" .. urlencode(genre)
+    end
     return self:_request("GET", join_url(self.base_url, "/api/search?" .. table.concat(params, "&")))
+end
+
+function ApiClient:browse(opts)
+    local params = {
+        "source=" .. urlencode(opts.source),
+        "mode=" .. urlencode(opts.mode),
+    }
+    if opts.page then
+        params[#params + 1] = "page=" .. urlencode(opts.page)
+    end
+    return self:_request("GET", join_url(self.base_url, "/api/browse?" .. table.concat(params, "&")))
+end
+
+function ApiClient:listSourceGenres(source)
+    return self:_request("GET", join_url(self.base_url, "/api/source/" .. urlencode(source) .. "/filters"))
 end
 
 function ApiClient:getManga(mangaId)

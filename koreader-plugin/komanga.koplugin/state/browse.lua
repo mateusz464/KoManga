@@ -22,6 +22,8 @@ function Browse.new(api)
         error = nil,
         source = nil,
         query = nil,
+        mode = nil,
+        genre = nil,
     }, Browse)
 end
 
@@ -60,6 +62,8 @@ end
 function Browse:applySearch(source, query, data, err)
     self.source = source
     self.query = query
+    self.mode = "search"
+    self.genre = nil
     self.page = 1
     if err then
         self.error = err
@@ -70,6 +74,50 @@ function Browse:applySearch(source, query, data, err)
     self.has_next_page = data.hasNextPage or false
     self.searched = true
     return true
+end
+
+function Browse:fetchBrowse(source, mode)
+    return self.api:browse{ source = source, mode = mode, page = 1 }
+end
+
+function Browse:applyBrowse(source, mode, data, err)
+    self.source = source
+    self.query = nil
+    self.mode = mode
+    self.genre = nil
+    self.page = 1
+    if err then
+        self.error = err
+        return false, err
+    end
+    self.error = nil
+    self.results = data.mangas or {}
+    self.has_next_page = data.hasNextPage or false
+    self.searched = true
+    return true
+end
+
+function Browse:browse(source, mode)
+    return self:applyBrowse(source, mode, self:fetchBrowse(source, mode))
+end
+
+function Browse:fetchGenres(source)
+    return self.api:listSourceGenres(source)
+end
+
+function Browse:fetchGenre(source, genre)
+    return self.api:search{ source = source, query = "", genres = { genre.token }, page = 1 }
+end
+
+function Browse:applyGenre(source, genre, data, err)
+    local ok, apply_err = self:applySearch(source, "", data, err)
+    self.mode = "genres"
+    self.genre = genre
+    return ok, apply_err
+end
+
+function Browse:genre(source, genre)
+    return self:applyGenre(source, genre, self:fetchGenre(source, genre))
 end
 
 function Browse:search(source, query)
@@ -84,7 +132,14 @@ end
 
 -- Callers must gate on hasMore() first, so this is never a wasted request.
 function Browse:fetchMore()
-    return self.api:search{ source = self.source, query = self.query, page = self.page + 1 }
+    if self.mode == "popular" or self.mode == "latest" then
+        return self.api:browse{ source = self.source, mode = self.mode, page = self.page + 1 }
+    end
+    local opts = { source = self.source, query = self.query or "", page = self.page + 1 }
+    if self.mode == "genres" then
+        opts.genres = { self.genre.token }
+    end
+    return self.api:search(opts)
 end
 
 -- On error, results and page are kept intact so the caller can retry.
@@ -117,6 +172,14 @@ end
 
 function Browse:getQuery()
     return self.query
+end
+
+function Browse:getMode()
+    return self.mode
+end
+
+function Browse:getGenre()
+    return self.genre
 end
 
 function Browse:getPage()
