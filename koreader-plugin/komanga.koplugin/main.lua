@@ -29,6 +29,7 @@ local TrackerManager = require("ui/tracker_manager")
 local TrackerMatchView = require("ui/tracker_match")
 local ReaderLauncher = require("ui/reader_launcher")
 local ReaderMenu = require("ui/reader_menu")
+local SwipeOverride = require("ui/swipe_override")
 local ProgressSync = require("ui/progress_sync")
 local CompletionSync = require("ui/completion_sync")
 local DownloadDelete = require("ui/download_delete")
@@ -67,6 +68,10 @@ function Komanga:init()
             ui = self.ui,
             net = self.net,
             api = self.api,
+        }
+        SwipeOverride.register{
+            ui = self.ui,
+            settings = self.settings,
         }
     end
     self.ui.menu:registerToMainMenu(self)
@@ -144,6 +149,15 @@ function Komanga:addToMainMenu(menu_items)
                 text = _("Tracking"),
                 callback = function()
                     self:showTrackingManager()
+                end,
+            },
+            {
+                text = _("Turn pages by swiping left → right"),
+                checked_func = function()
+                    return self.settings:isSwipeLtrNextEnabled()
+                end,
+                callback = function()
+                    self.settings:setSwipeLtrNextEnabled(not self.settings:isSwipeLtrNextEnabled())
                 end,
             },
             {
