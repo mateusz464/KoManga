@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import request from "supertest";
+import { request } from "../support/http.js";
 import { createApp } from "../../src/http/app.js";
 import { stubSuwayomi } from "../support/stub-suwayomi.js";
 

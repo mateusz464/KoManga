@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import request from "supertest";
+import { request } from "../support/http.js";
 import { createApp } from "../../src/http/app.js";
 import type {
   LibraryEntry,

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import request, { type Response } from "supertest";
+import { request, type Response } from "../support/http.js";
 import type { IncomingMessage } from "node:http";
 import { createApp } from "../../src/http/app.js";
 import {

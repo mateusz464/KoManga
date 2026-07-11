@@ -1,7 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { Writable } from "node:stream";
 import express from "express";
-import request from "supertest";
+import { request } from "../support/http.js";
 import { createRequestLogger } from "../../src/http/request-logger.js";
 
 function collectingStream(): { stream: Writable; text: () => string } {
@@ -15,10 +15,6 @@ function collectingStream(): { stream: Writable; text: () => string } {
   return { stream, text: () => Buffer.concat(chunks).toString("utf8") };
 }
 
-// pino-http logs on response completion; give the finish handler a tick to run.
-const flush = (): Promise<void> =>
-  new Promise((resolve) => setImmediate(resolve));
-
 describe("createRequestLogger", () => {
   it("writes one structured request line (method, path, status) without the secret", async () => {
     const token = "req-log-secret-token";
@@ -31,7 +27,7 @@ describe("createRequestLogger", () => {
     });
 
     await request(app).get("/ping").set("authorization", `Bearer ${token}`);
-    await flush();
+    await vi.waitFor(() => expect(text()).not.toBe(""));
 
     const lines = text()
       .split("\n")

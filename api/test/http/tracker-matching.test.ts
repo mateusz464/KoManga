@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import request from "supertest";
+import { request } from "../support/http.js";
 import { createApp } from "../../src/http/app.js";
 import type {
   MangaDetails,
@@ -24,7 +24,6 @@ import { stubSuwayomi } from "../support/stub-suwayomi.js";
 const TOKEN = "single-user-token";
 const MANGA_ID = "42";
 const MEDIA_ID = "30002";
-const NOW_FUTURE = Date.now() + 60_000;
 
 const sampleManga: MangaDetails = {
   id: MANGA_ID,
@@ -134,7 +133,7 @@ function linkedAccount(
     service: "anilist",
     accessToken: "linked-access-token",
     tokenType: "Bearer",
-    expiresAt: NOW_FUTURE,
+    expiresAt: Date.now() + 60_000,
     anilistUserId: "12345",
     username: "matt",
     ...overrides,
