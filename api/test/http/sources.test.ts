@@ -70,6 +70,24 @@ describe("GET /api/sources", () => {
     expect(listSources).toHaveBeenCalledTimes(1);
   });
 
+  it("exposes whether each source supports latest listings", async () => {
+    const sources = [
+      {
+        id: "1",
+        name: "MangaDex",
+        lang: "en",
+        supportsLatest: true,
+      },
+      { id: "2", name: "Legacy Source", lang: "en", supportsLatest: false },
+    ];
+    const { suwayomi } = clientListing(sources);
+
+    const res = await request(createApp({ suwayomi })).get("/api/sources");
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ data: sources });
+  });
+
   it("returns 200 with an empty array when no sources are installed", async () => {
     const { suwayomi } = clientListing([]);
 
