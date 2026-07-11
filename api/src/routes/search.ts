@@ -9,24 +9,38 @@ export function searchRouter(service: SearchService): Router {
   router.get("/search", async (req, res) => {
     const query = firstParam(req.query.q);
     const sourceId = firstParam(req.query.source);
+    const genres = params(req.query.genre);
 
-    if (!query) {
+    if (!query && genres.length === 0) {
       throw new BadRequestError("Query parameter 'q' is required");
     }
     if (!sourceId) {
       throw new BadRequestError("Query parameter 'source' is required");
     }
 
-    const params: SearchParams = { sourceId, query };
+    const searchParams: SearchParams = {
+      sourceId,
+      query: query ?? "",
+      ...(genres.length > 0 ? { genres } : {}),
+    };
     const page = parsePage(firstParam(req.query.page));
 
     const result = await service.search(
-      page === undefined ? params : { ...params, page },
+      page === undefined ? searchParams : { ...searchParams, page },
     );
     res.json({ data: result });
   });
 
   return router;
+}
+
+function params(value: unknown): string[] {
+  if (typeof value === "string" && value.length > 0) return [value];
+  return Array.isArray(value)
+    ? value.filter(
+        (item): item is string => typeof item === "string" && item.length > 0,
+      )
+    : [];
 }
 
 // Express query values may be arrays/objects; accept only a non-empty scalar.

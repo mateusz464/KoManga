@@ -13,6 +13,7 @@ import type { TrackerLinkRepository } from "../services/ports/tracker-link-repos
 import type { Logger } from "../services/ports/logger.js";
 import { SourceService } from "../services/source-service.js";
 import { SearchService } from "../services/search-service.js";
+import { BrowseService } from "../services/browse-service.js";
 import { MangaService } from "../services/manga-service.js";
 import { ChapterService } from "../services/chapter-service.js";
 import { PageService } from "../services/page-service.js";
@@ -25,6 +26,7 @@ import { TrackerLinkService } from "../services/tracker-link-service.js";
 import { TrackingService } from "../services/tracking-service.js";
 import { sourcesRouter } from "../routes/sources.js";
 import { searchRouter } from "../routes/search.js";
+import { browseRouter } from "../routes/browse.js";
 import { mangaRouter } from "../routes/manga.js";
 import { chapterRouter } from "../routes/chapter.js";
 import { pageRouter } from "../routes/page.js";
@@ -148,6 +150,7 @@ export function createApp(deps: AppDependencies): express.Express {
 
   app.use("/api", sourcesRouter(new SourceService(deps.suwayomi)));
   app.use("/api", searchRouter(new SearchService(deps.suwayomi)));
+  app.use("/api", browseRouter(new BrowseService(deps.suwayomi)));
   app.use("/api", mangaRouter(new MangaService(deps.suwayomi)));
   app.use("/api", chapterRouter(new ChapterService(deps.suwayomi)));
 

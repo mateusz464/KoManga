@@ -5,6 +5,7 @@ export interface Source {
   readonly name: string;
   readonly lang: string;
   readonly iconUrl?: string;
+  readonly supportsLatest?: boolean;
 }
 
 export interface MangaSummary {
@@ -51,8 +52,20 @@ export interface RawPage {
 export interface SearchParams {
   readonly sourceId: string;
   readonly query: string;
+  readonly genres?: readonly string[];
   /** 1-based page number for paginated sources. Defaults to the first page. */
   readonly page?: number;
+}
+
+export interface BrowseParams {
+  readonly sourceId: string;
+  readonly mode: "popular" | "latest";
+  readonly page?: number;
+}
+
+export interface GenreOption {
+  readonly name: string;
+  readonly token: string;
 }
 
 export interface PageRef {
@@ -66,6 +79,8 @@ export interface PageRef {
 export interface SuwayomiClient {
   listSources(): Promise<Source[]>;
   search(params: SearchParams): Promise<SearchResult>;
+  browse?(params: BrowseParams): Promise<SearchResult>;
+  listSourceGenres?(sourceId: string): Promise<GenreOption[]>;
   getMangaDetails(mangaId: string): Promise<MangaDetails>;
   listChapters(mangaId: string): Promise<Chapter[]>;
   getChapterDetails(chapterId: string): Promise<ChapterDetails>;

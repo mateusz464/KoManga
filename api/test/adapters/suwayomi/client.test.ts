@@ -100,6 +100,7 @@ describe("SuwayomiGraphQLClient (port contract)", () => {
               displayName: "MangaDex",
               lang: "en",
               iconUrl: "/icon/1",
+              supportsLatest: false,
             },
           ],
         },
@@ -107,7 +108,13 @@ describe("SuwayomiGraphQLClient (port contract)", () => {
       const client = new SuwayomiGraphQLClient(transport);
 
       await expect(client.listSources()).resolves.toEqual([
-        { id: "1", name: "MangaDex", lang: "en", iconUrl: "/icon/1" },
+        {
+          id: "1",
+          name: "MangaDex",
+          lang: "en",
+          iconUrl: "/icon/1",
+          supportsLatest: false,
+        },
       ]);
     });
 
@@ -191,6 +198,29 @@ describe("SuwayomiGraphQLClient (port contract)", () => {
       expect(new Set(genres.map(({ token }) => token)).size).toBe(2);
     });
 
+    it("extracts tag-group genre options used by checkbox and tri-state sources", async () => {
+      const { transport } = transportReturning({
+        source: {
+          filters: [
+            {
+              __typename: "GroupFilter",
+              name: "Tags",
+              filters: [
+                { __typename: "CheckBoxFilter", name: "Action" },
+                { __typename: "TriStateFilter", name: "Drama" },
+              ],
+            },
+          ],
+        },
+      });
+      const client = new SuwayomiGraphQLClient(transport);
+
+      await expect(client.listSourceGenres("1")).resolves.toMatchObject([
+        { name: "Action", token: expect.any(String) },
+        { name: "Drama", token: expect.any(String) },
+      ]);
+    });
+
     it("maps echoed genre tokens to Suwayomi's positional SEARCH filters input", async () => {
       const { transport, request } = transportReturning({
         fetchSourceManga: { mangas: [], hasNextPage: false },
@@ -200,7 +230,11 @@ describe("SuwayomiGraphQLClient (port contract)", () => {
       await client.search({
         sourceId: "1",
         query: "",
-        genres: ["opaque-action"],
+        genres: [
+          Buffer.from(JSON.stringify({ position: 1, selectState: 2 })).toString(
+            "base64url",
+          ),
+        ],
       } as never);
 
       expect(request).toHaveBeenCalledWith(
