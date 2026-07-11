@@ -16,13 +16,14 @@ local _ = require("gettext")
 local NextChapterPrompt = {}
 NextChapterPrompt.__index = NextChapterPrompt
 
--- opts = { ui, net, api, auth? }; `ui` is the ReaderUI.
+-- opts = { ui, net, api, auth?, set_advancing? }; `ui` is the ReaderUI.
 function NextChapterPrompt.new(opts)
     return setmetatable({
         ui = opts.ui,
         net = opts.net,
         api = opts.api,
         auth = opts.auth,
+        set_advancing = opts.set_advancing,
         manga_id = nil,
         next_chapter = nil, -- state/next_chapter.lua, set only for a KoManga chapter
         prompting = false,
@@ -127,6 +128,11 @@ function NextChapterPrompt:openNext(next_chapter)
         direction = next_chapter.direction,
         net = self.net,
         auth = self.auth,
+        on_before_show = function()
+            if self.set_advancing then
+                self.set_advancing(true)
+            end
+        end,
     }
 end
 

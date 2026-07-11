@@ -33,6 +33,7 @@ local SwipeOverride = require("ui/swipe_override")
 local ProgressSync = require("ui/progress_sync")
 local CompletionSync = require("ui/completion_sync")
 local NextChapterPrompt = require("ui/next_chapter_prompt")
+local ReturnToDetails = require("ui/return_to_details")
 local DownloadDelete = require("ui/download_delete")
 local Retry = require("ui/retry")
 local _ = require("gettext")
@@ -61,6 +62,13 @@ function Komanga:init()
     -- close events below broadcast to it. Progress sync engages only for a KoManga
     -- chapter (recovered from the DocSettings sidecar on ReaderReady, KRP-602).
     if self.ui and self.ui.document then
+        self.return_to_details = ReturnToDetails.new{
+            ui = self.ui,
+            ui_manager = UIManager,
+            show_details = function(manga)
+                self:showDetails(manga)
+            end,
+        }
         self.progress_sync = ProgressSync.new{
             ui = self.ui,
             net = self.net,
@@ -76,6 +84,9 @@ function Komanga:init()
             net = self.net,
             api = self.api,
             auth = self.auth,
+            set_advancing = function(advancing)
+                self.return_to_details:setAdvancing(advancing)
+            end,
         }
         SwipeOverride.register{
             ui = self.ui,
@@ -89,6 +100,9 @@ end
 -- to KOReader's own modules; each is inert (no sync modules) in the file-manager
 -- context.
 function Komanga:onReaderReady(doc_settings)
+    if self.return_to_details then
+        self.return_to_details:onReaderReady(doc_settings)
+    end
     if self.progress_sync then
         self.progress_sync:onReaderReady(doc_settings)
     end
@@ -123,6 +137,9 @@ end
 function Komanga:onCloseDocument()
     if self.progress_sync then
         self.progress_sync:onClose()
+    end
+    if self.return_to_details then
+        self.return_to_details:onCloseDocument()
     end
 end
 
