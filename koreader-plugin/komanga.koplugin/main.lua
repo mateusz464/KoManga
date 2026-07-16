@@ -29,8 +29,12 @@ local TrackerManager = require("ui/tracker_manager")
 local TrackerMatchView = require("ui/tracker_match")
 local ReaderLauncher = require("ui/reader_launcher")
 local ReaderMenu = require("ui/reader_menu")
+local SwipeOverride = require("ui/swipe_override")
 local ProgressSync = require("ui/progress_sync")
 local CompletionSync = require("ui/completion_sync")
+local NextChapterPrompt = require("ui/next_chapter_prompt")
+local ReturnToDetails = require("ui/return_to_details")
+local ReturnToBrowse = require("ui/return_to_browse")
 local DownloadDelete = require("ui/download_delete")
 local Retry = require("ui/retry")
 local _ = require("gettext")
@@ -41,6 +45,7 @@ local Komanga = WidgetContainer:extend{
 }
 
 function Komanga:init()
+    self.shown_screens = {}
     self.settings = Settings.open()
     -- on_prompt fires on any 401; the API client reads credentialGetter() per request.
     self.auth = Auth.new{
@@ -54,10 +59,23 @@ function Komanga:init()
         base_url = self.settings:getApiBaseUrl(),
         get_credential = self.auth:credentialGetter(),
     }
+    self.return_to_browse = ReturnToBrowse.new{
+        ui_manager = UIManager,
+        show_browse_options = function(source)
+            self:showBrowse(source)
+        end,
+    }
     -- Reader context: the plugin is a registered ReaderUI module, so the page-update/
     -- close events below broadcast to it. Progress sync engages only for a KoManga
     -- chapter (recovered from the DocSettings sidecar on ReaderReady, KRP-602).
     if self.ui and self.ui.document then
+        self.return_to_details = ReturnToDetails.new{
+            ui = self.ui,
+            ui_manager = UIManager,
+            show_details = function(manga)
+                self:showDetails(manga)
+            end,
+        }
         self.progress_sync = ProgressSync.new{
             ui = self.ui,
             net = self.net,
@@ -68,18 +86,49 @@ function Komanga:init()
             net = self.net,
             api = self.api,
         }
+        self.next_chapter_prompt = NextChapterPrompt.new{
+            ui = self.ui,
+            net = self.net,
+            api = self.api,
+            auth = self.auth,
+            set_advancing = function(advancing)
+                self.return_to_details:setAdvancing(advancing)
+            end,
+        }
+        SwipeOverride.register{
+            ui = self.ui,
+            settings = self.settings,
+        }
     end
     self.ui.menu:registerToMainMenu(self)
 end
 
--- Reader events. Each returns nothing so the event keeps propagating to KOReader's
--- own modules, and is inert (no progress_sync) in the file-manager context.
+-- Reader events. All but onEndOfBook return nothing so the event keeps propagating
+-- to KOReader's own modules; each is inert (no sync modules) in the file-manager
+-- context.
 function Komanga:onReaderReady(doc_settings)
+    if self.return_to_details then
+        self.return_to_details:onReaderReady(doc_settings)
+    end
     if self.progress_sync then
         self.progress_sync:onReaderReady(doc_settings)
     end
     if self.completion_sync then
         self.completion_sync:onReaderReady(doc_settings)
+    end
+    if self.next_chapter_prompt then
+        self.next_chapter_prompt:onReaderReady(doc_settings)
+    end
+end
+
+-- Consumed (returns true) only when the next-chapter popup is offered; otherwise
+-- KOReader's default end-of-document handling runs. In practice the prompt's
+-- ReaderStatus hook fields the event before it ever propagates this far (see
+-- ui/next_chapter_prompt.lua); this handler is the fallback for a ReaderUI
+-- without a status module.
+function Komanga:onEndOfBook()
+    if self.next_chapter_prompt then
+        return self.next_chapter_prompt:onEndOfBook()
     end
 end
 
@@ -95,6 +144,9 @@ end
 function Komanga:onCloseDocument()
     if self.progress_sync then
         self.progress_sync:onClose()
+    end
+    if self.return_to_details then
+        self.return_to_details:onCloseDocument()
     end
 end
 
@@ -147,6 +199,15 @@ function Komanga:addToMainMenu(menu_items)
                 end,
             },
             {
+                text = _("Turn pages by swiping left → right"),
+                checked_func = function()
+                    return self.settings:isSwipeLtrNextEnabled()
+                end,
+                callback = function()
+                    self.settings:setSwipeLtrNextEnabled(not self.settings:isSwipeLtrNextEnabled())
+                end,
+            },
+            {
                 text = _("Set credential"),
                 callback = function()
                     CredentialPrompt.show(self.auth)
@@ -184,6 +245,31 @@ function Komanga:showServerUrlPrompt()
     }
 end
 
+-- The stacked screens (Library / Browse / Details) are tracked so the reader
+-- hand-off can close the whole stack: left open they sit beneath the reader all
+-- session and resurface one by one on KOReader exit (KOM-161). Tracker screens
+-- manage their own lifecycle and stay out of this.
+function Komanga:showScreen(widget)
+    self.shown_screens[#self.shown_screens + 1] = widget
+    UIManager:show(widget)
+end
+
+function Komanga:closeScreen(widget)
+    for i = #self.shown_screens, 1, -1 do
+        if self.shown_screens[i] == widget then
+            table.remove(self.shown_screens, i)
+        end
+    end
+    UIManager:close(widget)
+end
+
+function Komanga:closeShownScreens()
+    for i = #self.shown_screens, 1, -1 do
+        UIManager:close(self.shown_screens[i])
+        self.shown_screens[i] = nil
+    end
+end
+
 function Komanga:showLibrary()
     -- One shared index handle, so a deletion mutates the same in-memory index the
     -- Library view renders from.
@@ -210,10 +296,10 @@ function Komanga:showLibrary()
             }
         end,
         close_callback = function()
-            UIManager:close(home)
+            self:closeScreen(home)
         end,
     }
-    UIManager:show(home)
+    self:showScreen(home)
     home:start()
 end
 
@@ -285,21 +371,29 @@ function Komanga:resumeReader(manga_id, chapter_id)
     })
 end
 
-function Komanga:showBrowse()
+-- prompt_source re-opens that source's mode picker over the fresh source list
+-- threaded back in by return_to_browse after a pre-reading close.
+function Komanga:showBrowse(prompt_source)
+    self.return_to_browse:onBrowseOpened()
     local browser
     browser = SourceBrowser:new{
         browse = Browse.new(self.api),
         covers = Covers.new(self.api, { window = Config.cover_prefetch_window }),
         net = self.net,
         auth = self.auth,
+        prompt_source = prompt_source,
+        on_mode_selected = function(source)
+            self.return_to_browse:setSelection(source)
+        end,
         show_details = function(manga)
             self:showDetails(manga)
         end,
         close_callback = function()
-            UIManager:close(browser)
+            self:closeScreen(browser)
+            self.return_to_browse:onBrowseClosed()
         end,
     }
-    UIManager:show(browser)
+    self:showScreen(browser)
     browser:start()
 end
 
@@ -414,10 +508,10 @@ function Komanga:showDetails(manga)
             self:openReader(details_state, chapter)
         end,
         close_callback = function()
-            UIManager:close(details)
+            self:closeScreen(details)
         end,
     }
-    UIManager:show(details)
+    self:showScreen(details)
     details:start()
 end
 
@@ -434,6 +528,10 @@ function Komanga:openReader(details_state, chapter)
         direction = details_state:getReadingDirection(),
         net = self.net,
         auth = self.auth,
+        on_before_show = function()
+            self.return_to_browse:setReading()
+            self:closeShownScreens()
+        end,
     }
 end
 

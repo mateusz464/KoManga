@@ -185,6 +185,23 @@ koreader-plugin/komanga.koplugin/spec/run.sh --verbose  # extra args pass throug
 Runs from any cwd. If the emulator isn't built it falls back to a `busted` on
 `PATH`. Expected output: `N successes / 0 failures / 0 errors`.
 
+### Full-stack emulator integration specs
+Tests that drive KOReader's real `ReaderUI`, `UIManager`, widgets, sidecars, or
+touch dispatch live in the tracked `koreader-plugin/spec/emulator/` directory,
+outside the shipped plugin. Their runner stages copies into the disposable
+upstream checkout before invoking `kodev`; never edit or commit files inside
+`.emulator/src`.
+
+```sh
+koreader-plugin/spec/emulator/run.sh             # deterministic integration suite
+koreader-plugin/spec/emulator/run.sh --lint      # luacheck every tracked integration spec
+koreader-plugin/spec/emulator/run.sh --live      # also include the local-API check
+```
+
+The runner passes explicit spec paths to `kodev`. Do not append `.`: that scans
+the whole KOReader checkout and mixes unrelated upstream/plugin tests into the
+targeted run.
+
 ### Mocking the network at the `api/` boundary
 The plugin's only network boundary is `api/` (CLAUDE.md §5): `state/` and `ui/`
 modules receive an `ApiClient` and never call `socket.http` themselves. Logic

@@ -1,8 +1,10 @@
-import { NotFoundError } from "../../http/errors.js";
+import { BadRequestError, NotFoundError } from "../../http/errors.js";
 import {
   SuwayomiError,
+  type BrowseParams,
   type Chapter,
   type ChapterDetails,
+  type GenreOption,
   type MangaDetails,
   type MangaSummary,
   type PageRef,
@@ -25,6 +27,7 @@ const LIST_SOURCES = /* GraphQL */ `
         displayName
         lang
         iconUrl
+        supportsLatest
       }
     }
   }
@@ -32,9 +35,20 @@ const LIST_SOURCES = /* GraphQL */ `
 
 // Search is a mutation (it triggers a live source fetch) and `type` is required.
 const SEARCH = /* GraphQL */ `
-  mutation Search($source: LongString!, $query: String!, $page: Int!) {
+  mutation Search(
+    $source: LongString!
+    $query: String!
+    $page: Int!
+    $filters: [FilterChangeInput!]
+  ) {
     fetchSourceManga(
-      input: { type: SEARCH, source: $source, query: $query, page: $page }
+      input: {
+        type: SEARCH
+        source: $source
+        query: $query
+        page: $page
+        filters: $filters
+      }
     ) {
       mangas {
         id
@@ -42,6 +56,59 @@ const SEARCH = /* GraphQL */ `
         thumbnailUrl
       }
       hasNextPage
+    }
+  }
+`;
+
+const BROWSE = {
+  popular: /* GraphQL */ `
+    mutation BrowsePopular($source: LongString!, $page: Int!) {
+      fetchSourceManga(input: { type: POPULAR, source: $source, page: $page }) {
+        mangas {
+          id
+          title
+          thumbnailUrl
+        }
+        hasNextPage
+      }
+    }
+  `,
+  latest: /* GraphQL */ `
+    mutation BrowseLatest($source: LongString!, $page: Int!) {
+      fetchSourceManga(input: { type: LATEST, source: $source, page: $page }) {
+        mangas {
+          id
+          title
+          thumbnailUrl
+        }
+        hasNextPage
+      }
+    }
+  `,
+} as const;
+
+const SOURCE_FILTERS = /* GraphQL */ `
+  query SourceFilters($id: LongString!) {
+    source(id: $id) {
+      filters {
+        __typename
+        ... on SelectFilter {
+          name
+          values
+        }
+        ... on GroupFilter {
+          name
+          filters {
+            __typename
+            ... on CheckBoxFilter {
+              name
+            }
+            ... on TriStateFilter {
+              name
+            }
+          }
+        }
+      }
     }
   }
 `;
@@ -137,6 +204,7 @@ interface RawSource {
   name?: unknown;
   lang?: unknown;
   iconUrl?: unknown;
+  supportsLatest?: unknown;
 }
 
 interface RawMangaSummary {
@@ -198,12 +266,31 @@ export class SuwayomiGraphQLClient implements SuwayomiClient {
       source: params.sourceId,
       query: params.query,
       page: params.page ?? 1,
+      filters: decodeGenreTokens(params.genres ?? []),
     });
     const result = data.fetchSourceManga;
     return {
       mangas: (result?.mangas ?? []).map(mapMangaSummary),
       hasNextPage: result?.hasNextPage === true,
     };
+  }
+
+  async browse(params: BrowseParams): Promise<SearchResult> {
+    const data = await this.run<{
+      fetchSourceManga?: { mangas?: RawMangaSummary[]; hasNextPage?: unknown };
+    }>(BROWSE[params.mode], {
+      source: params.sourceId,
+      page: params.page ?? 1,
+    });
+    return mapSearchResult(data.fetchSourceManga);
+  }
+
+  async listSourceGenres(sourceId: string): Promise<GenreOption[]> {
+    const data = await this.run<{ source?: { filters?: unknown } }>(
+      SOURCE_FILTERS,
+      { id: sourceId },
+    );
+    return extractGenreOptions(data.source?.filters);
   }
 
   async getMangaDetails(mangaId: string): Promise<MangaDetails> {
@@ -454,8 +541,135 @@ function mapSource(node: RawSource): Source {
     id: String(node.id),
     name: String(node.displayName ?? node.name ?? ""),
     lang: String(node.lang ?? ""),
+    supportsLatest: node.supportsLatest === true,
     ...(node.iconUrl != null ? { iconUrl: String(node.iconUrl) } : {}),
   };
+}
+
+function mapSearchResult(result?: {
+  mangas?: RawMangaSummary[];
+  hasNextPage?: unknown;
+}): SearchResult {
+  return {
+    mangas: (result?.mangas ?? []).map(mapMangaSummary),
+    hasNextPage: result?.hasNextPage === true,
+  };
+}
+
+interface GenreToken {
+  readonly position: number;
+  readonly selectState?: number;
+  readonly groupChange?: {
+    readonly position: number;
+    readonly checkBoxState?: true;
+    readonly triState?: "INCLUDE";
+  };
+}
+
+function encodeGenreToken(value: GenreToken): string {
+  return Buffer.from(JSON.stringify(value)).toString("base64url");
+}
+
+function decodeGenreTokens(tokens: readonly string[]): GenreToken[] {
+  return tokens.map((token) => {
+    try {
+      const value = JSON.parse(
+        Buffer.from(token, "base64url").toString("utf8"),
+      ) as Partial<GenreToken>;
+      if (
+        !Number.isInteger(value.position) ||
+        (!Number.isInteger(value.selectState) &&
+          !isGroupGenreChange(value.groupChange))
+      ) {
+        throw new Error("invalid genre token");
+      }
+      return value as GenreToken;
+    } catch {
+      throw new BadRequestError("Invalid genre selection");
+    }
+  });
+}
+
+function extractGenreOptions(filters: unknown): GenreOption[] {
+  if (!Array.isArray(filters)) {
+    return [];
+  }
+  const genrePosition = filters.findIndex((filter) => isGenreFilter(filter));
+  if (genrePosition < 0) {
+    return [];
+  }
+  const filter = filters[genrePosition] as Record<string, unknown>;
+  const isSelect = Array.isArray(filter.values);
+  const values: unknown[] = isSelect
+    ? (filter.values as unknown[])
+    : Array.isArray(filter.filters)
+      ? filter.filters
+      : [];
+  return values.flatMap((value, optionPosition) => {
+    const name = optionName(value);
+    if (!name || /^all$/i.test(name)) {
+      return [];
+    }
+    return [
+      {
+        name,
+        token: encodeGenreToken(
+          isSelect
+            ? { position: genrePosition, selectState: optionPosition }
+            : {
+                position: genrePosition,
+                groupChange: {
+                  position: optionPosition,
+                  ...(isTriStateOption(value)
+                    ? { triState: "INCLUDE" as const }
+                    : { checkBoxState: true as const }),
+                },
+              },
+        ),
+      },
+    ];
+  });
+}
+
+function isGenreFilter(value: unknown): value is Record<string, unknown> {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    /(genre|tags)/i.test(
+      String((value as Record<string, unknown>).name ?? ""),
+    ) &&
+    (Array.isArray((value as Record<string, unknown>).values) ||
+      Array.isArray((value as Record<string, unknown>).filters))
+  );
+}
+
+function isGroupGenreChange(value: unknown): boolean {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    Number.isInteger((value as Record<string, unknown>).position) &&
+    ((value as Record<string, unknown>).checkBoxState === true ||
+      (value as Record<string, unknown>).triState === "INCLUDE")
+  );
+}
+
+function isTriStateOption(value: unknown): boolean {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    (value as Record<string, unknown>).__typename === "TriStateFilter"
+  );
+}
+
+function optionName(value: unknown): string | undefined {
+  if (typeof value === "string") {
+    return value;
+  }
+  if (typeof value !== "object" || value === null) {
+    return undefined;
+  }
+  const name = (value as Record<string, unknown>).name;
+  return typeof name === "string" ? name : undefined;
 }
 
 function mapMangaSummary(node: RawMangaSummary): MangaSummary {

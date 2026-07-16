@@ -5,5 +5,6 @@
 std = "luajit"
 unused_args = false -- KOReader widget callbacks take args they don't all use
 self = false        -- ignore implicit self on colon-defined methods
+read_globals = { "G_reader_settings" } -- KOReader's global settings instance
 
 files["spec/"] = { std = "+busted" }

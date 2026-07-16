@@ -53,6 +53,7 @@ Same split as the web-client epic, because an e-ink panel can't be asserted in a
 
 - **Logic tickets** (API client, auth, browse/search state, page mapping, prefetch, progress sync) — **strict TDD**: a `[TEST]` ticket writes failing `busted` specs, the impl ticket makes them pass. Mock the network at the `api/` boundary.
 - **`[DEVICE]` tickets** (anything visual/rendering/refresh) — acceptance is a **verified on-device check**. The emulator is for fast iteration only; **never close a `[DEVICE]` ticket from the emulator alone.**
+- **Full-stack emulator specs** live in tracked `spec/emulator/`. Run them with `./spec/emulator/run.sh`; it stages generated copies into the gitignored `.emulator` checkout. Edit and commit only `spec/emulator/`, never `.emulator/src/spec/unit/`.
 
 ---
 

@@ -5,6 +5,7 @@
 local Menu = require("ui/widget/menu")
 local InfoMessage = require("ui/widget/infomessage")
 local InputDialog = require("ui/widget/inputdialog")
+local ButtonDialog = require("ui/widget/buttondialog")
 local UIManager = require("ui/uimanager")
 local CoverThumbnail = require("ui/cover_thumbnail")
 local T = require("ffi/util").template
@@ -28,6 +29,8 @@ local SourceBrowser = Menu:extend{
     net = nil,          -- net.lua wrapper (the single network path)
     auth = nil,         -- state/auth.lua (optional — route a 401 to the prompt)
     show_details = nil, -- function(manga): open the manga-details screen
+    on_mode_selected = nil, -- function(source): a mode was picked
+    prompt_source = nil,    -- source whose mode picker re-opens on start
 }
 
 function SourceBrowser:init()
@@ -67,9 +70,15 @@ function SourceBrowser:handleError(err)
     return true
 end
 
--- Called by main.lua after the widget is shown.
+-- Called by main.lua after the widget is shown. A threaded-in prompt_source is the
+-- KOM-172 return: its mode picker opens immediately (no fetch needed) while the
+-- source list loads beneath it as on any other open.
 function SourceBrowser:start()
     self:loadSources()
+    if self.prompt_source then
+        self:promptMode(self.prompt_source)
+        self.prompt_source = nil
+    end
 end
 
 -- --- Source list ---------------------------------------------------------------
@@ -108,11 +117,103 @@ function SourceBrowser:renderSources()
             end
             item_table[#item_table + 1] = {
                 text = label,
-                callback = function() self:promptSearch(source) end,
+                callback = function() self:promptMode(source) end,
             }
         end
     end
     self:switchItemTable(_("KoManga — Sources"), item_table)
+end
+
+function SourceBrowser:promptMode(source)
+    local dialog
+    local function choose(callback)
+        return function()
+            UIManager:close(dialog)
+            if self.on_mode_selected then
+                self.on_mode_selected(source)
+            end
+            callback()
+        end
+    end
+    local first = {
+        { text = _("Popular"), callback = choose(function() self:runBrowse(source, "popular") end) },
+    }
+    if source.supportsLatest ~= false then
+        first[#first + 1] = {
+            text = _("Latest"), callback = choose(function() self:runBrowse(source, "latest") end),
+        }
+    end
+    dialog = ButtonDialog:new{
+        title = source.name or source.id,
+        buttons = {
+            first,
+            {
+                { text = _("Genres"), callback = choose(function() self:loadGenres(source) end) },
+                { text = _("Search"), callback = choose(function() self:promptSearch(source) end) },
+            },
+        },
+    }
+    UIManager:show(dialog)
+end
+
+function SourceBrowser:runBrowse(source, mode)
+    self.net:run(function()
+        return self.browse:fetchBrowse(source.id, mode)
+    end, {
+        text = _("Loading manga…"),
+        on_result = function(data, err)
+            self.browse:applyBrowse(source.id, mode, data, err)
+            self:renderResults()
+            self:loadCovers()
+        end,
+    })
+end
+
+function SourceBrowser:loadGenres(source)
+    self.net:run(function()
+        return self.browse:fetchGenres(source.id)
+    end, {
+        text = _("Loading genres…"),
+        on_result = function(genres, err)
+            if err then
+                self:handleError(err)
+            elseif #genres == 0 then
+                UIManager:show(InfoMessage:new{ text = _("No genres available.") })
+            else
+                self:promptGenre(source, genres)
+            end
+        end,
+    })
+end
+
+function SourceBrowser:promptGenre(source, genres)
+    local dialog
+    local rows = {}
+    for _, genre in ipairs(genres) do
+        local selected = genre
+        rows[#rows + 1] = { {
+            text = selected.name,
+            callback = function()
+                UIManager:close(dialog)
+                self:runGenre(source, selected)
+            end,
+        } }
+    end
+    dialog = ButtonDialog:new{ title = _("Choose genre"), buttons = rows }
+    UIManager:show(dialog)
+end
+
+function SourceBrowser:runGenre(source, genre)
+    self.net:run(function()
+        return self.browse:fetchGenre(source.id, genre)
+    end, {
+        text = _("Loading manga…"),
+        on_result = function(data, err)
+            self.browse:applyGenre(source.id, genre, data, err)
+            self:renderResults()
+            self:loadCovers()
+        end,
+    })
 end
 
 -- --- Search --------------------------------------------------------------------
@@ -202,7 +303,18 @@ function SourceBrowser:renderResults()
             }
         end
     end
-    self:switchItemTable(T(_("Search: %1"), self.browse:getQuery()), item_table)
+    local mode = self.browse:getMode()
+    local title
+    if mode == "search" then
+        title = T(_("Search: %1"), self.browse:getQuery())
+    elseif mode == "genres" then
+        title = T(_("Genre: %1"), self.browse:getGenre().name)
+    elseif mode == "latest" then
+        title = _("Latest")
+    else
+        title = _("Popular")
+    end
+    self:switchItemTable(title, item_table)
 end
 
 -- One-shot per call (only the planner's new ids are fetched) so it can't loop with

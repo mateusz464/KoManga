@@ -210,8 +210,10 @@ Source/catalogue/chapter metadata is *not* duplicated here; it's queried from Su
 
 | Method | Endpoint | Purpose |
 |---|---|---|
-| `GET` | `/api/sources` | List installed sources |
-| `GET` | `/api/search?q=&source=` | Search a source |
+| `GET` | `/api/sources` | List installed sources, including whether each supports latest listings |
+| `GET` | `/api/browse?source=&mode=&page=` | Browse a source's popular or latest listings |
+| `GET` | `/api/source/:id/filters` | List selectable genre filters as opaque client tokens |
+| `GET` | `/api/search?q=&source=&genre=` | Search a source, optionally using repeated opaque genre tokens; `q` may be omitted when genres are selected |
 | `GET` | `/api/manga/:id` | Manga details + chapter list |
 | `GET` | `/api/chapter/:id/pages` | Page list (metadata only) |
 | `GET` | `/api/page/:id?profile=` | Single page image; `profile=raw` (default) or `eink` |

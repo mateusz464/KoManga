@@ -100,6 +100,7 @@ describe("SuwayomiGraphQLClient (port contract)", () => {
               displayName: "MangaDex",
               lang: "en",
               iconUrl: "/icon/1",
+              supportsLatest: false,
             },
           ],
         },
@@ -107,8 +108,143 @@ describe("SuwayomiGraphQLClient (port contract)", () => {
       const client = new SuwayomiGraphQLClient(transport);
 
       await expect(client.listSources()).resolves.toEqual([
-        { id: "1", name: "MangaDex", lang: "en", iconUrl: "/icon/1" },
+        {
+          id: "1",
+          name: "MangaDex",
+          lang: "en",
+          iconUrl: "/icon/1",
+          supportsLatest: false,
+        },
       ]);
+    });
+
+    it("listSources maps supportsLatest", async () => {
+      const { transport } = transportReturning({
+        sources: {
+          nodes: [
+            {
+              id: "1",
+              displayName: "MangaDex",
+              lang: "en",
+              supportsLatest: true,
+            },
+          ],
+        },
+      });
+      const client = new SuwayomiGraphQLClient(transport);
+
+      await expect(client.listSources()).resolves.toEqual([
+        { id: "1", name: "MangaDex", lang: "en", supportsLatest: true },
+      ]);
+    });
+
+    it.each(["popular", "latest"] as const)(
+      "browse maps a %s source page and sends the corresponding listing type",
+      async (mode) => {
+        const { transport, request } = transportReturning({
+          fetchSourceManga: {
+            mangas: [{ id: "10", title: "Solo Leveling" }],
+            hasNextPage: true,
+          },
+        });
+        const client = new SuwayomiGraphQLClient(
+          transport,
+        ) as SuwayomiGraphQLClient & {
+          browse(params: {
+            sourceId: string;
+            mode: "popular" | "latest";
+            page?: number;
+          }): Promise<unknown>;
+        };
+
+        await expect(
+          client.browse({ sourceId: "1", mode, page: 2 }),
+        ).resolves.toEqual({
+          mangas: [{ id: "10", title: "Solo Leveling" }],
+          hasNextPage: true,
+        });
+        expect(request).toHaveBeenCalledWith(
+          expect.stringContaining(`type: ${mode.toUpperCase()}`),
+          expect.objectContaining({ source: "1", page: 2 }),
+        );
+      },
+    );
+
+    it("extracts select-style genre options as opaque positional tokens", async () => {
+      const { transport } = transportReturning({
+        source: {
+          filters: [
+            { type: "HeaderFilter", name: "Browse" },
+            {
+              type: "SelectFilter",
+              name: "Genre",
+              values: ["All", "Action", "Drama"],
+            },
+          ],
+        },
+      });
+      const client = new SuwayomiGraphQLClient(
+        transport,
+      ) as SuwayomiGraphQLClient & {
+        listSourceGenres(
+          sourceId: string,
+        ): Promise<readonly { name: string; token: string }[]>;
+      };
+
+      const genres = await client.listSourceGenres("1");
+
+      expect(genres.map(({ name }) => name)).toEqual(["Action", "Drama"]);
+      expect(genres.every(({ token }) => token.length > 0)).toBe(true);
+      expect(new Set(genres.map(({ token }) => token)).size).toBe(2);
+    });
+
+    it("extracts tag-group genre options used by checkbox and tri-state sources", async () => {
+      const { transport } = transportReturning({
+        source: {
+          filters: [
+            {
+              __typename: "GroupFilter",
+              name: "Tags",
+              filters: [
+                { __typename: "CheckBoxFilter", name: "Action" },
+                { __typename: "TriStateFilter", name: "Drama" },
+              ],
+            },
+          ],
+        },
+      });
+      const client = new SuwayomiGraphQLClient(transport);
+
+      await expect(client.listSourceGenres("1")).resolves.toMatchObject([
+        { name: "Action", token: expect.any(String) },
+        { name: "Drama", token: expect.any(String) },
+      ]);
+    });
+
+    it("maps echoed genre tokens to Suwayomi's positional SEARCH filters input", async () => {
+      const { transport, request } = transportReturning({
+        fetchSourceManga: { mangas: [], hasNextPage: false },
+      });
+      const client = new SuwayomiGraphQLClient(transport);
+
+      await client.search({
+        sourceId: "1",
+        query: "",
+        genres: [
+          Buffer.from(JSON.stringify({ position: 1, selectState: 2 })).toString(
+            "base64url",
+          ),
+        ],
+      } as never);
+
+      expect(request).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          source: "1",
+          query: "",
+          filters: expect.any(Array),
+        }),
+      );
     });
 
     it("search forwards source/query/page and maps the result page", async () => {

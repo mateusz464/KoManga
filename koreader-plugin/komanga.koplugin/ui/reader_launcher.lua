@@ -54,7 +54,10 @@ local function apply_reader_settings(opts)
     doc_settings:flush()
 end
 
--- opts = { reader, chapter_id, manga_id, title, chapter_number, direction, net, auth? }
+-- opts = { reader, chapter_id, manga_id, title, chapter_number, direction, net, auth?,
+--          on_before_show? }
+-- on_before_show fires only once the CBZ is acquired, right before the reader takes
+-- over — a failed or cancelled fetch leaves the caller's windows untouched.
 function ReaderLauncher.open(opts)
     local path = cbz_path(opts.chapter_id)
     -- fetchCbz streams straight to `path` inside net.lua's fork; only the small path
@@ -79,6 +82,9 @@ function ReaderLauncher.open(opts)
                 title = opts.title,
                 chapter_number = opts.chapter_number,
             }
+            if opts.on_before_show then
+                opts.on_before_show()
+            end
             ReaderUI:showReader(saved_path)
         end,
     }

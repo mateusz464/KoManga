@@ -93,6 +93,21 @@ describe("GET /api/search", () => {
     );
   });
 
+  it("forwards repeated opaque genre tokens and permits genre-only browsing", async () => {
+    const { suwayomi, search } = clientSearching(sampleResult);
+
+    const res = await request(createApp({ suwayomi })).get(
+      "/api/search?source=1&genre=opaque-action&genre=opaque-drama",
+    );
+
+    expect(res.status).toBe(200);
+    expect(search).toHaveBeenCalledWith({
+      sourceId: "1",
+      query: "",
+      genres: ["opaque-action", "opaque-drama"],
+    });
+  });
+
   it("returns 200 with an empty result set when the source has no matches", async () => {
     const emptyResult: SearchResult = { mangas: [], hasNextPage: false };
     const { suwayomi } = clientSearching(emptyResult);

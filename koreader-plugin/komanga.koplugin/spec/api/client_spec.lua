@@ -80,6 +80,24 @@ describe("ApiClient", function()
             assert.is_truthy(req.url:find("page=2", 1, true))
         end)
 
+        it("browses a source listing and lists its genre filters", function()
+            local client, rec = make(FakeTransport.ok({}))
+            client:browse({ source = "mangadex", mode = "latest", page = 2 })
+            client:listSourceGenres("mangadex")
+
+            assert.are.equal(BASE .. "/api/browse?source=mangadex&mode=latest&page=2", rec.requests[1].url)
+            assert.are.equal(BASE .. "/api/source/mangadex/filters", rec.requests[2].url)
+        end)
+
+        it("echoes opaque genre tokens without parsing them", function()
+            local client, rec = make(FakeTransport.ok({}))
+            client:search({ source = "mangadex", query = "", genres = { "opaque%token" }, page = 1 })
+
+            local url = sole(rec).url
+            assert.is_truthy(url:find("q=", 1, true))
+            assert.is_truthy(url:find("genre=opaque%25token", 1, true))
+        end)
+
         it("omits the page param when no page is given", function()
             local client, rec = make(FakeTransport.ok({}))
             client:search({ source = "mangadex", query = "berserk" })

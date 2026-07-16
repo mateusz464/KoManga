@@ -53,4 +53,33 @@ describe("settings", function()
         assert.is_true(s:isTrackerLinked())
         assert.is_true(store.flushes > 0)
     end)
+
+    it("defaults the left → right swipe page-turn preference to off", function()
+        local s = Settings.new(FakeStore.new())
+        assert.is_false(s:isSwipeLtrNextEnabled())
+    end)
+
+    it("persists the left → right swipe page-turn preference", function()
+        local store = FakeStore.new()
+        local s = Settings.new(store)
+
+        s:setSwipeLtrNextEnabled(true)
+
+        assert.is_true(s:isSwipeLtrNextEnabled())
+        assert.is_true(store.flushes > 0)
+    end)
+
+    it("reads a swipe preference persisted by a previous session", function()
+        local store = FakeStore.new{ komanga_swipe_ltr_next = true }
+        assert.is_true(Settings.new(store):isSwipeLtrNextEnabled())
+    end)
+
+    it("turns the swipe preference back off", function()
+        local store = FakeStore.new{ komanga_swipe_ltr_next = true }
+        local s = Settings.new(store)
+
+        s:setSwipeLtrNextEnabled(false)
+
+        assert.is_false(s:isSwipeLtrNextEnabled())
+    end)
 end)

@@ -10,6 +10,7 @@ local KEY_API_BASE_URL = "komanga_api_base_url"
 local KEY_PREFETCH_WINDOW = "komanga_prefetch_window"
 local KEY_PROGRESS_DEBOUNCE = "komanga_progress_debounce_seconds"
 local KEY_TRACKER_ANILIST_LINKED = "komanga_tracker_anilist_linked"
+local KEY_SWIPE_LTR_NEXT = "komanga_swipe_ltr_next"
 
 function Settings.new(store)
     return setmetatable({ store = store }, Settings)
@@ -55,6 +56,15 @@ end
 
 function Settings:setTrackerLinked(linked)
     self.store:saveSetting(KEY_TRACKER_ANILIST_LINKED, linked == true)
+    self.store:flush()
+end
+
+function Settings:isSwipeLtrNextEnabled()
+    return self.store:readSetting(KEY_SWIPE_LTR_NEXT) == true
+end
+
+function Settings:setSwipeLtrNextEnabled(enabled)
+    self.store:saveSetting(KEY_SWIPE_LTR_NEXT, enabled == true)
     self.store:flush()
 end
 

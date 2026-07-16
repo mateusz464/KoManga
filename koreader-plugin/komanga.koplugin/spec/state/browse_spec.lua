@@ -278,4 +278,47 @@ describe("browse/search state", function()
             assert.is_true(browse:hasMore())
         end)
     end)
+
+    describe("source browsing modes", function()
+        it("loads popular results and paginates through the browse endpoint", function()
+            local api = FakeApi.new{ browse = paged{ [1] = PAGE_1, [2] = PAGE_2 } }
+            local browse = Browse.new(api)
+
+            assert.is_true(browse:browse("mangadex", "popular"))
+            assert.are.equal("popular", browse:getMode())
+            assert.is_true(browse:loadMore())
+            assert.are.same({ "m1", "m2", "m3" }, ids(browse:getResults()))
+            assert.are.equal("browse", api.calls[2].method)
+            assert.are.equal(2, api.calls[2].args[1].page)
+        end)
+
+        it("loads genre options then echoes the selected opaque token to search", function()
+            local api = FakeApi.new{
+                listSourceGenres = { { name = "Action", token = "opaque-action" } },
+                search = PAGE_2(),
+            }
+            local browse = Browse.new(api)
+
+            local genres = browse:fetchGenres("mangadex")
+            assert.are.equal("opaque-action", genres[1].token)
+            assert.is_true(browse:genre("mangadex", genres[1]))
+            assert.are.equal("genres", browse:getMode())
+            assert.are.equal("opaque-action", browse:getGenre().token)
+            assert.are.same({ "opaque-action" }, api.calls[2].args[1].genres)
+        end)
+
+        it("keeps the active mode and results intact after a paging error", function()
+            local api = FakeApi.new{ browse = function(opts)
+                if opts.page == 1 then return PAGE_1() end
+                return nil, TRANSPORT_ERROR
+            end }
+            local browse = Browse.new(api)
+            browse:browse("mangadex", "latest")
+
+            assert.is_false(browse:loadMore())
+            assert.are.equal("latest", browse:getMode())
+            assert.are.same({ "m1", "m2" }, ids(browse:getResults()))
+            assert.are.equal(1, browse:getPage())
+        end)
+    end)
 end)
