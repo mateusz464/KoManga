@@ -34,6 +34,7 @@ local ProgressSync = require("ui/progress_sync")
 local CompletionSync = require("ui/completion_sync")
 local NextChapterPrompt = require("ui/next_chapter_prompt")
 local ReturnToDetails = require("ui/return_to_details")
+local ReturnToBrowse = require("ui/return_to_browse")
 local DownloadDelete = require("ui/download_delete")
 local Retry = require("ui/retry")
 local _ = require("gettext")
@@ -57,6 +58,12 @@ function Komanga:init()
     self.api = ApiClient.new{
         base_url = self.settings:getApiBaseUrl(),
         get_credential = self.auth:credentialGetter(),
+    }
+    self.return_to_browse = ReturnToBrowse.new{
+        ui_manager = UIManager,
+        show_browse_options = function(source)
+            self:showBrowse(source)
+        end,
     }
     -- Reader context: the plugin is a registered ReaderUI module, so the page-update/
     -- close events below broadcast to it. Progress sync engages only for a KoManga
@@ -364,18 +371,26 @@ function Komanga:resumeReader(manga_id, chapter_id)
     })
 end
 
-function Komanga:showBrowse()
+-- prompt_source re-opens that source's mode picker over the fresh source list
+-- threaded back in by return_to_browse after a pre-reading close.
+function Komanga:showBrowse(prompt_source)
+    self.return_to_browse:onBrowseOpened()
     local browser
     browser = SourceBrowser:new{
         browse = Browse.new(self.api),
         covers = Covers.new(self.api, { window = Config.cover_prefetch_window }),
         net = self.net,
         auth = self.auth,
+        prompt_source = prompt_source,
+        on_mode_selected = function(source)
+            self.return_to_browse:setSelection(source)
+        end,
         show_details = function(manga)
             self:showDetails(manga)
         end,
         close_callback = function()
             self:closeScreen(browser)
+            self.return_to_browse:onBrowseClosed()
         end,
     }
     self:showScreen(browser)
@@ -514,6 +529,7 @@ function Komanga:openReader(details_state, chapter)
         net = self.net,
         auth = self.auth,
         on_before_show = function()
+            self.return_to_browse:setReading()
             self:closeShownScreens()
         end,
     }

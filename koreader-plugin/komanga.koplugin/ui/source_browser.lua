@@ -29,6 +29,8 @@ local SourceBrowser = Menu:extend{
     net = nil,          -- net.lua wrapper (the single network path)
     auth = nil,         -- state/auth.lua (optional — route a 401 to the prompt)
     show_details = nil, -- function(manga): open the manga-details screen
+    on_mode_selected = nil, -- function(source): a mode was picked
+    prompt_source = nil,    -- source whose mode picker re-opens on start
 }
 
 function SourceBrowser:init()
@@ -68,9 +70,15 @@ function SourceBrowser:handleError(err)
     return true
 end
 
--- Called by main.lua after the widget is shown.
+-- Called by main.lua after the widget is shown. A threaded-in prompt_source is the
+-- KOM-172 return: its mode picker opens immediately (no fetch needed) while the
+-- source list loads beneath it as on any other open.
 function SourceBrowser:start()
     self:loadSources()
+    if self.prompt_source then
+        self:promptMode(self.prompt_source)
+        self.prompt_source = nil
+    end
 end
 
 -- --- Source list ---------------------------------------------------------------
@@ -121,6 +129,9 @@ function SourceBrowser:promptMode(source)
     local function choose(callback)
         return function()
             UIManager:close(dialog)
+            if self.on_mode_selected then
+                self.on_mode_selected(source)
+            end
             callback()
         end
     end
